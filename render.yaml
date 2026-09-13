@@ -1,0 +1,80 @@
+services:
+  - type: web
+    name: forespace-web
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python manage.py migrate --settings=config.settings.prod && gunicorn config.wsgi:application --workers 3 --timeout 60
+    plan: free
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.prod
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false          # set manually in Render dashboard (from Neon)
+      - key: REDIS_URL
+        fromService:
+          name: forespace-redis
+          type: redis
+          property: connectionString
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_API_URL
+        value: https://openrouter.ai/api/v1
+      - key: AI_MODEL
+        value: meta-llama/llama-3.3-70b-instruct
+      - key: AI_MODEL_PROSE
+        value: openai/gpt-5.6-luna
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: MAIL_SERVER
+        value: smtp.hostinger.com
+      - key: MAIL_PORT
+        value: 465
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: MAIL_DEFAULT_SENDER
+        sync: false
+      - key: BASE_URL
+        sync: false          # set to your Render URL once deployed
+
+  - type: worker
+    name: forespace-worker
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A config worker -Q crawl,parse,triage,extract,resolve,adjudicate,project,analytics,analysis --loglevel=info
+    plan: free
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.prod
+      - key: SECRET_KEY
+        fromService:
+          name: forespace-web
+          type: web
+          envVarKey: SECRET_KEY
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: forespace-redis
+          type: redis
+          property: connectionString
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_API_URL
+        value: https://openrouter.ai/api/v1
+      - key: AI_MODEL
+        value: meta-llama/llama-3.3-70b-instruct
+      - key: AI_MODEL_PROSE
+        value: openai/gpt-5.6-luna
+
+  - type: redis
+    name: forespace-redis
+    plan: free
+    maxmemoryPolicy: noeviction

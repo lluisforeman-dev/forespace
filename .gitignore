@@ -1,0 +1,17 @@
+*.pyc
+__pycache__/
+*.pyo
+.env
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+staticfiles/
+*.sqlite3
+*.db
+.DS_Store
+.neon
+.env.local
+node_modules/
