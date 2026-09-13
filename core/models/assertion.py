@@ -1,5 +1,5 @@
 from django.db import models
-from django.contrib.postgres.fields import DateTimeTZRangeField, ArrayField
+from django.contrib.postgres.fields import DateTimeRangeField, ArrayField
 from django.utils import timezone
 from psycopg2.extras import DateTimeTZRange
 
@@ -109,7 +109,7 @@ class Assertion(models.Model):
     value_high = models.DecimalField(max_digits=30, decimal_places=10, null=True, blank=True)
 
     # Time — bitemporality: valid_range = when true in the world, observed_at = when we learned it
-    valid_range = DateTimeTZRangeField(default=_open_range)
+    valid_range = DateTimeRangeField(default=_open_range)
     observed_at = models.DateTimeField(auto_now_add=True)
     superseded_at = models.DateTimeField(null=True, blank=True)
 
@@ -220,7 +220,7 @@ class Relation(models.Model):
         'core.Entity', on_delete=models.CASCADE, related_name='object_relations',
     )
     qualifiers = models.JSONField(default=dict)  # role, share, tier, contract value
-    valid_range = DateTimeTZRangeField(default=_open_range)
+    valid_range = DateTimeRangeField(default=_open_range)
     observed_at = models.DateTimeField(auto_now_add=True)
     superseded_at = models.DateTimeField(null=True, blank=True)
     document = models.ForeignKey(

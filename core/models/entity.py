@@ -1,6 +1,6 @@
 import uuid
 from django.db import models
-from django.contrib.postgres.fields import DateTimeTZRangeField
+from django.contrib.postgres.fields import DateTimeRangeField
 
 
 class Entity(models.Model):
@@ -90,7 +90,7 @@ class EntityAlias(models.Model):
     alias_norm = models.CharField(max_length=500)  # casefolded, unpunctuated, suffix-stripped
     alias_kind = models.CharField(max_length=20, choices=ALIAS_KINDS)
     lang = models.CharField(max_length=2, null=True, blank=True)
-    valid_range = DateTimeTZRangeField(null=True, blank=True)  # former names have an end date
+    valid_range = DateTimeRangeField(null=True, blank=True)  # former names have an end date
     document = models.ForeignKey(
         'core.Document', null=True, blank=True, on_delete=models.SET_NULL,
     )

@@ -1,6 +1,6 @@
 import uuid
 from django.db import models
-from django.contrib.postgres.fields import DateTimeTZRangeField
+from django.contrib.postgres.fields import DateTimeRangeField
 from django.utils import timezone
 from psycopg2.extras import DateTimeTZRange
 
@@ -71,7 +71,7 @@ class Classification(models.Model):
     node = models.ForeignKey(TaxonomyNode, on_delete=models.PROTECT, related_name='classifications')
     weight = models.DecimalField(max_digits=4, decimal_places=3, default=1.0)
     is_primary = models.BooleanField(default=False)
-    valid_range = DateTimeTZRangeField(default=_open_range)
+    valid_range = DateTimeRangeField(default=_open_range)
     document = models.ForeignKey(
         'core.Document', null=True, blank=True, on_delete=models.SET_NULL,
     )
