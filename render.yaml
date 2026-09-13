@@ -3,7 +3,7 @@ services:
     name: forespace-web
     runtime: python
     region: frankfurt
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: python manage.py migrate --settings=config.settings.prod && gunicorn config.wsgi:application --workers 3 --timeout 60
     plan: free
     envVars:
@@ -49,7 +49,7 @@ services:
     name: forespace-worker
     runtime: python
     region: frankfurt
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: celery -A config worker -Q crawl,parse,triage,extract,resolve,adjudicate,project,analytics,analysis --loglevel=info
     plan: free
     envVars:
