@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import environ
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -12,7 +13,14 @@ if env_file.exists():
 # --- Core ---
 SECRET_KEY = env('SECRET_KEY')
 DEBUG = env.bool('DEBUG', default=False)
-ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=[])
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
+
+# Render sets RENDER_EXTERNAL_HOSTNAME automatically — include it so prod doesn't 400
+_render_host = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+if _render_host:
+    ALLOWED_HOSTS.append(_render_host)
+
+CSRF_TRUSTED_ORIGINS = [f'https://{h}' for h in ALLOWED_HOSTS if not h.startswith(('localhost', '127'))]
 
 DJANGO_APPS = [
     'django.contrib.admin',
