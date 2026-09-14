@@ -45,6 +45,18 @@ class Document(models.Model):
     # from pgvector.django import VectorField
     # embedding = VectorField(dimensions=1536, null=True, blank=True)
     trust_override = models.SmallIntegerField(null=True, blank=True)
+    PIPELINE_STATUSES = [
+        ('fetched', 'Fetched'),
+        ('parsed', 'Parsed'),
+        ('triaged', 'Triaged'),
+        ('skipped', 'Skipped'),
+        ('extracted', 'Extracted'),
+        ('done', 'Done'),
+        ('failed', 'Failed'),
+    ]
+    pipeline_status = models.CharField(
+        max_length=20, choices=PIPELINE_STATUSES, default='fetched',
+    )
 
     class Meta:
         db_table = 'document'
