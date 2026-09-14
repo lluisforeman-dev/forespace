@@ -50,7 +50,7 @@ services:
     runtime: python
     region: frankfurt
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: celery -A config worker -Q crawl,parse,triage,extract,resolve,adjudicate,project,analytics,analysis --loglevel=info
+    startCommand: celery -A config worker -Q crawl,parse,triage,extract,resolve,adjudicate,project,analytics,analysis --loglevel=info --concurrency 2
     plan: free
     envVars:
       - key: DJANGO_SETTINGS_MODULE
@@ -75,6 +75,30 @@ services:
         value: meta-llama/llama-3.3-70b-instruct
       - key: AI_MODEL_PROSE
         value: openai/gpt-5.6-luna
+
+  - type: cron
+    name: forespace-scheduler
+    runtime: python
+    region: frankfurt
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    schedule: "0 6 * * *"    # 06:00 UTC daily
+    startCommand: python manage.py run_scheduled_sources --settings=config.settings.prod
+    plan: free
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.prod
+      - key: SECRET_KEY
+        fromService:
+          name: forespace-web
+          type: web
+          envVarKey: SECRET_KEY
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: forespace-redis
+          type: redis
+          property: connectionString
 
   - type: redis
     name: forespace-redis

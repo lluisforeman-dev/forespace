@@ -19,6 +19,7 @@ from psycopg2.extras import DateTimeTZRange
 from core.models import Assertion, AttributeDef, Document, ExtractionRun
 from ingest.ai import get_client
 from ingest.confidence import score as compute_score
+from ingest.cost import log_call
 from ingest.schemas import ExtractedClaim, ExtractionResult
 from ingest.tasks.resolve import resolve_mention
 
@@ -112,6 +113,8 @@ def extract_document(self, document_id: str):
     )
 
     try:
+        import time as _time
+        _t0 = _time.monotonic()
         resp = get_client().chat.completions.create(
             model=model,
             messages=[
@@ -122,6 +125,7 @@ def extract_document(self, document_id: str):
             max_tokens=2000,
             temperature=0,
         )
+        log_call('extract', model, resp, run=run, duration_ms=int((_time.monotonic() - _t0) * 1000))
         result = ExtractionResult.model_validate_json(resp.choices[0].message.content)
     except Exception as exc:
         logger.error('extract_document %s LLM error: %s', document_id, exc)

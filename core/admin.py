@@ -4,6 +4,7 @@ from .models import (
     Entity, EntityIdentifier, EntityAlias, EntityMerge,
     AttributeDef, PredicateDef, Assertion, Conflict, Relation,
     Taxonomy, TaxonomyNode, Classification,
+    LLMCall, ScheduledSource,
 )
 
 
@@ -146,3 +147,30 @@ class ClassificationAdmin(admin.ModelAdmin):
     list_display = ['entity', 'node', 'weight', 'is_primary', 'confidence', 'method']
     list_filter = ['is_primary', 'method']
     raw_id_fields = ['entity', 'node', 'document', 'run']
+
+
+@admin.register(LLMCall)
+class LLMCallAdmin(admin.ModelAdmin):
+    list_display = ['task', 'model', 'tokens_in', 'tokens_out', 'cost_usd', 'called_at']
+    list_filter = ['task', 'model']
+    readonly_fields = ['called_at', 'cost_usd', 'tokens_in', 'tokens_out']
+    raw_id_fields = ['run', 'entity']
+    date_hierarchy = 'called_at'
+
+
+@admin.register(ScheduledSource)
+class ScheduledSourceAdmin(admin.ModelAdmin):
+    list_display = ['source', 'feed_type', 'cadence', 'is_active', 'last_checked_at']
+    list_filter = ['feed_type', 'cadence', 'is_active']
+    search_fields = ['feed_url', 'source__name']
+    raw_id_fields = ['source', 'entity_hint']
+
+    actions = ['activate', 'deactivate']
+
+    @admin.action(description='Activate selected sources')
+    def activate(self, request, queryset):
+        queryset.update(is_active=True)
+
+    @admin.action(description='Deactivate selected sources')
+    def deactivate(self, request, queryset):
+        queryset.update(is_active=False)

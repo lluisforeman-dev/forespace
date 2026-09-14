@@ -1,14 +1,17 @@
-"""Entity resolution — levels 1–3 (Phase 2 scope).
+"""Entity resolution — levels 1–4.
 
 Level 1: external identifier match (skipped for free-text mentions in press releases)
 Level 2: exact canonical name or alias_norm match
 Level 3: pg_trgm similarity on alias_norm (threshold 0.35)
+Level 4: LLM disambiguation for borderline trigram candidates (0.2–0.35 similarity)
 Fallback: create a stub entity for human review
 
 Always returns an entity_id string — never silently drops an unresolved mention.
 """
+import json
 import logging
 
+from django.conf import settings
 from django.db import connection, transaction
 from django.utils.text import slugify
 
@@ -18,6 +21,16 @@ from core.normalize import normalize_name
 logger = logging.getLogger(__name__)
 
 _TRGM_THRESHOLD = 0.35
+_TRGM_LLM_MIN = 0.20   # below this, skip LLM — too dissimilar to be worth the cost
+
+_LLM_RESOLVE_SYSTEM = (
+    'You are an entity resolver for a space-industry knowledge graph. '
+    'Answer only with valid JSON.'
+)
+_LLM_RESOLVE_USER = """\
+Is the mention "{mention}" referring to the same organisation as "{candidate}"?
+Consider abbreviations, trading names, and common misspellings.
+Reply: {{"same": true, "confidence": "high"|"medium"|"low"}} or {{"same": false}}"""
 
 
 def resolve_mention(mention: str, document_id: str | None = None) -> str:
@@ -47,23 +60,59 @@ def resolve_mention(mention: str, document_id: str | None = None) -> str:
     with connection.cursor() as cur:
         cur.execute(
             """
-            SELECT entity_id, similarity(alias_norm, %s) AS sim
+            SELECT entity_id, alias_norm, similarity(alias_norm, %s) AS sim
             FROM entity_alias
             WHERE similarity(alias_norm, %s) > %s
             ORDER BY sim DESC
-            LIMIT 1
+            LIMIT 3
             """,
-            [norm, norm, _TRGM_THRESHOLD],
+            [norm, norm, _TRGM_LLM_MIN],
         )
-        row = cur.fetchone()
+        rows = cur.fetchall()
 
-    if row:
-        entity_id, sim = row
-        logger.info('L3 match: "%s" → %s (sim=%.2f)', mention, entity_id, sim)
-        return str(entity_id)
+    if rows:
+        best_entity_id, best_alias_norm, best_sim = rows[0]
+        if best_sim >= _TRGM_THRESHOLD:
+            logger.info('L3 match: "%s" → %s (sim=%.2f)', mention, best_entity_id, best_sim)
+            return str(best_entity_id)
+
+        # Level 4 — LLM disambiguation for borderline candidates
+        resolved = _llm_disambiguate(mention, rows)
+        if resolved:
+            logger.info('L4 LLM match: "%s" → %s', mention, resolved)
+            return resolved
 
     # Fallback — stub entity queued for human review
     return _create_stub(mention, norm, document_id)
+
+
+def _llm_disambiguate(mention: str, candidates: list) -> str | None:
+    """Ask the LLM whether any borderline trigram candidate matches the mention."""
+    try:
+        from ingest.ai import get_client
+        from ingest.cost import log_call
+        client = get_client()
+
+        for entity_id, alias_norm, sim in candidates:
+            resp = client.chat.completions.create(
+                model=settings.AI_MODEL,  # cheap model for this binary question
+                messages=[
+                    {'role': 'system', 'content': _LLM_RESOLVE_SYSTEM},
+                    {'role': 'user', 'content': _LLM_RESOLVE_USER.format(
+                        mention=mention, candidate=alias_norm,
+                    )},
+                ],
+                response_format={'type': 'json_object'},
+                max_tokens=60,
+                temperature=0,
+            )
+            log_call('resolve', settings.AI_MODEL, resp)
+            result = json.loads(resp.choices[0].message.content)
+            if result.get('same') and result.get('confidence') in ('high', 'medium'):
+                return str(entity_id)
+    except Exception as exc:
+        logger.warning('L4 LLM resolve failed for "%s": %s', mention, exc)
+    return None
 
 
 def _create_stub(mention: str, norm: str, document_id: str | None) -> str:

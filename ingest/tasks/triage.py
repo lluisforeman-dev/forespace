@@ -46,6 +46,9 @@ def triage_document(self, document_id: str):
     snippet = doc.text_content[:2000]
 
     try:
+        import time
+        from ingest.cost import log_call
+        t0 = time.monotonic()
         resp = get_client().chat.completions.create(
             model=settings.AI_MODEL,
             messages=[
@@ -56,6 +59,7 @@ def triage_document(self, document_id: str):
             max_tokens=100,
             temperature=0,
         )
+        log_call('triage', settings.AI_MODEL, resp, duration_ms=int((time.monotonic() - t0) * 1000))
         result = json.loads(resp.choices[0].message.content)
         relevant = bool(result.get('relevant', False))
     except Exception as exc:

@@ -18,6 +18,7 @@ class Entity(models.Model):
         ('merged', 'Merged'),
         ('disputed', 'Disputed'),
         ('stub', 'Stub'),
+        ('dormant', 'Dormant'),   # no signal in 12+ months — deprioritised by scheduler
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -30,6 +31,7 @@ class Entity(models.Model):
         'self', null=True, blank=True,
         on_delete=models.SET_NULL, related_name='redirected_from',
     )
+    watchlist = models.BooleanField(default=False)  # priority=2× in scheduler
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
