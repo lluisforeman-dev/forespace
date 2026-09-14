@@ -132,6 +132,7 @@ def extract_document(self, document_id: str):
 
     valid_attrs = {a.key: a for a in AttributeDef.objects.all()}
     accepted = rejected = 0
+    new_assertion_ids: list[int] = []
 
     for claim in result.claims:
         # ── Quote verification (§7c) — reject anything the model fabricated ──
@@ -167,7 +168,7 @@ def extract_document(self, document_id: str):
 
         with transaction.atomic():
             entity_id = resolve_mention(claim.subject_mention, document_id=document_id)
-            Assertion.objects.create(
+            assertion = Assertion.objects.create(
                 entity_id=entity_id,
                 attribute_id=claim.attribute_key,
                 quote=claim.quote,
@@ -181,6 +182,7 @@ def extract_document(self, document_id: str):
                 valid_range=valid_range,
                 **_map_value(claim, attr.datatype),
             )
+        new_assertion_ids.append(assertion.pk)
         accepted += 1
 
     run.status = 'completed'
@@ -193,3 +195,9 @@ def extract_document(self, document_id: str):
         'extract_document %s: %d accepted, %d rejected',
         document_id, accepted, rejected,
     )
+
+    if new_assertion_ids:
+        from ingest.tasks.adjudicate import adjudicate_assertions
+        from ingest.tasks.project import refresh_entity_current
+        adjudicate_assertions.delay(new_assertion_ids)
+        refresh_entity_current.apply_async(countdown=5)  # slight delay so adjudicate finishes first

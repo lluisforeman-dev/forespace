@@ -1,0 +1,25 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>Curation Dashboard</h1>
+<div style="display:flex;gap:2rem;flex-wrap:wrap;margin:1.5rem 0;">
+
+  <div style="border:1px solid #ccc;border-radius:4px;padding:1.5rem;min-width:180px;text-align:center;">
+    <div style="font-size:2.5rem;font-weight:bold;color:{% if stub_count %}#e74c3c{% else %}#27ae60{% endif %}">{{ stub_count }}</div>
+    <div style="margin-top:.5rem;">Stub Entities</div>
+    <a href="{% url 'curation:stubs' %}" style="font-size:.85rem;">Review →</a>
+  </div>
+
+  <div style="border:1px solid #ccc;border-radius:4px;padding:1.5rem;min-width:180px;text-align:center;">
+    <div style="font-size:2.5rem;font-weight:bold;color:{% if conflict_count %}#e67e22{% else %}#27ae60{% endif %}">{{ conflict_count }}</div>
+    <div style="margin-top:.5rem;">Open Conflicts</div>
+    <a href="{% url 'curation:conflicts' %}" style="font-size:.85rem;">Review →</a>
+  </div>
+
+  <div style="border:1px solid #ccc;border-radius:4px;padding:1.5rem;min-width:180px;text-align:center;">
+    <div style="font-size:2.5rem;font-weight:bold;color:{% if candidate_count %}#2980b9{% else %}#27ae60{% endif %}">{{ candidate_count }}</div>
+    <div style="margin-top:.5rem;">Candidate Assertions</div>
+    <a href="{% url 'curation:candidates' %}" style="font-size:.85rem;">Review →</a>
+  </div>
+
+</div>
+{% endblock %}

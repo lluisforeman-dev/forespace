@@ -1,0 +1,48 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>Open Conflicts <small style="font-size:.6em;color:#666;">({{ conflicts|length }} shown)</small></h1>
+<p style="color:#666;font-size:.9rem;">
+  Two accepted assertions for the same (entity, attribute) disagree.
+  Pick a winner, flag as range, or mark both wrong.
+</p>
+
+{% if not conflicts %}
+  <p style="color:#27ae60;">No open conflicts.</p>
+{% else %}
+{% for c in conflicts %}
+<div style="border:1px solid #{% if c.severity == 'high' %}e74c3c{% elif c.severity == 'medium' %}e67e22{% else %}ccc{% endif %};border-radius:4px;padding:1rem;margin-bottom:1rem;">
+  <div style="font-weight:bold;">
+    {{ c.entity.canonical_name }} — <code>{{ c.attribute_key }}</code>
+    <span style="font-size:.8em;color:#888;margin-left:.5rem;">severity: {{ c.severity }}</span>
+  </div>
+  <div style="font-size:.85rem;color:#666;margin:.3rem 0;">
+    Assertion IDs: {{ c.assertion_ids|join:", " }} &nbsp;|&nbsp;
+    Detected: {{ c.detected_at|date:"Y-m-d H:i" }}
+  </div>
+
+  <form method="post" action="{% url 'curation:resolve_conflict' c.id %}" style="margin-top:.7rem;">
+    {% csrf_token %}
+    <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+      <button name="action" value="pick_first" style="background:#27ae60;color:#fff;border:none;padding:.3rem .8rem;border-radius:3px;cursor:pointer;">
+        Pick #{{ c.assertion_ids.0 }}
+      </button>
+      {% if c.assertion_ids|length >= 2 %}
+      <button name="action" value="pick_second" style="background:#2980b9;color:#fff;border:none;padding:.3rem .8rem;border-radius:3px;cursor:pointer;">
+        Pick #{{ c.assertion_ids.1 }}
+      </button>
+      {% endif %}
+      <button name="action" value="range" style="background:#8e44ad;color:#fff;border:none;padding:.3rem .8rem;border-radius:3px;cursor:pointer;">
+        Use Range
+      </button>
+      <button name="action" value="both_wrong" style="background:#e74c3c;color:#fff;border:none;padding:.3rem .8rem;border-radius:3px;cursor:pointer;">
+        Both Wrong
+      </button>
+      <input type="text" name="notes" placeholder="Optional notes" style="font-size:.85rem;padding:.3rem;width:200px;">
+    </div>
+  </form>
+</div>
+{% endfor %}
+{% endif %}
+
+<p style="margin-top:1rem;"><a href="{% url 'curation:dashboard' %}">← Dashboard</a></p>
+{% endblock %}

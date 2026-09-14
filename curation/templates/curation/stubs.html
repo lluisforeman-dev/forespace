@@ -1,0 +1,49 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>Stub Entities <small style="font-size:.6em;color:#666;">({{ stubs|length }} shown)</small></h1>
+<p style="color:#666;font-size:.9rem;">
+  Stubs are unresolved entity mentions created by the pipeline.
+  Promote to <strong>active</strong> once you verify they are real entities.
+</p>
+
+{% if not stubs %}
+  <p style="color:#27ae60;">No stubs — all mentions resolved.</p>
+{% else %}
+<table style="width:100%;border-collapse:collapse;font-size:.9rem;">
+  <thead>
+    <tr style="background:#f5f5f5;">
+      <th style="text-align:left;padding:.5rem;border-bottom:1px solid #ddd;">Mention</th>
+      <th style="text-align:left;padding:.5rem;border-bottom:1px solid #ddd;">Aliases</th>
+      <th style="text-align:left;padding:.5rem;border-bottom:1px solid #ddd;">Assertions</th>
+      <th style="text-align:left;padding:.5rem;border-bottom:1px solid #ddd;">Action</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for entity in stubs %}
+    <tr style="border-bottom:1px solid #eee;">
+      <td style="padding:.5rem;">
+        <strong>{{ entity.canonical_name }}</strong><br>
+        <code style="font-size:.8em;color:#888;">{{ entity.id }}</code>
+      </td>
+      <td style="padding:.5rem;">
+        {% for a in entity.aliases.all %}{{ a.alias }}{% if not forloop.last %}, {% endif %}{% endfor %}
+      </td>
+      <td style="padding:.5rem;">{{ entity.assertions.count }}</td>
+      <td style="padding:.5rem;">
+        <form method="post" action="{% url 'curation:promote_stub' entity.id %}" style="display:inline;">
+          {% csrf_token %}
+          <input type="text" name="canonical_name" value="{{ entity.canonical_name }}"
+                 style="width:200px;font-size:.85rem;padding:.2rem;" placeholder="Canonical name">
+          <button type="submit" style="background:#27ae60;color:#fff;border:none;padding:.3rem .7rem;border-radius:3px;cursor:pointer;">
+            Promote to Active
+          </button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<p style="margin-top:1rem;"><a href="{% url 'curation:dashboard' %}">← Dashboard</a></p>
+{% endblock %}

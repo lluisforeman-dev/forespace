@@ -1,0 +1,64 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>Candidate Assertions <small style="font-size:.6em;color:#666;">({{ candidates|length }} shown)</small></h1>
+<p style="color:#666;font-size:.9rem;">
+  Confidence &lt; 50 — excluded from entity_current until a curator approves.
+  Source quote shown for verification.
+</p>
+
+{% if not candidates %}
+  <p style="color:#27ae60;">No candidate assertions awaiting review.</p>
+{% else %}
+<table style="width:100%;border-collapse:collapse;font-size:.875rem;">
+  <thead>
+    <tr style="background:#f5f5f5;">
+      <th style="text-align:left;padding:.5rem;border-bottom:1px solid #ddd;">Entity</th>
+      <th style="text-align:left;padding:.5rem;border-bottom:1px solid #ddd;">Attribute</th>
+      <th style="text-align:left;padding:.5rem;border-bottom:1px solid #ddd;">Value</th>
+      <th style="text-align:left;padding:.5rem;border-bottom:1px solid #ddd;">Conf.</th>
+      <th style="text-align:left;padding:.5rem;border-bottom:1px solid #ddd;">Source quote</th>
+      <th style="text-align:left;padding:.5rem;border-bottom:1px solid #ddd;">Action</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for a in candidates %}
+    <tr style="border-bottom:1px solid #eee;vertical-align:top;">
+      <td style="padding:.5rem;">{{ a.entity.canonical_name }}</td>
+      <td style="padding:.5rem;"><code>{{ a.attribute_id }}</code></td>
+      <td style="padding:.5rem;">
+        {% if a.value_num %}{{ a.value_num }}{% if a.unit %} {{ a.unit }}{% endif %}
+        {% elif a.value_text %}{{ a.value_text|truncatechars:60 }}
+        {% elif a.value_date %}{{ a.value_date }}
+        {% elif a.value_bool is not None %}{{ a.value_bool }}
+        {% endif %}
+      </td>
+      <td style="padding:.5rem;font-weight:bold;color:{% if a.confidence >= 50 %}#27ae60{% else %}#e74c3c{% endif %}">
+        {{ a.confidence }}
+      </td>
+      <td style="padding:.5rem;max-width:300px;">
+        {% if a.quote %}
+          <span style="font-style:italic;color:#555;">"{{ a.quote|truncatechars:120 }}"</span>
+          {% if a.document %}<br><small style="color:#999;">{{ a.document.source.name }}</small>{% endif %}
+        {% endif %}
+      </td>
+      <td style="padding:.5rem;white-space:nowrap;">
+        <form method="post" action="{% url 'curation:review_assertion' a.id %}" style="display:inline;">
+          {% csrf_token %}
+          <button name="action" value="accept"
+                  style="background:#27ae60;color:#fff;border:none;padding:.25rem .6rem;border-radius:3px;cursor:pointer;">
+            Accept
+          </button>
+          <button name="action" value="reject"
+                  style="background:#e74c3c;color:#fff;border:none;padding:.25rem .6rem;border-radius:3px;cursor:pointer;margin-left:.25rem;">
+            Reject
+          </button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<p style="margin-top:1rem;"><a href="{% url 'curation:dashboard' %}">← Dashboard</a></p>
+{% endblock %}
