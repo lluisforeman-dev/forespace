@@ -203,5 +203,16 @@ def extract_document(self, document_id: str):
     if new_assertion_ids:
         from ingest.tasks.adjudicate import adjudicate_assertions
         from ingest.tasks.project import refresh_entity_current
+        from ingest.tasks.relate import extract_relations
         adjudicate_assertions.delay(new_assertion_ids)
         refresh_entity_current.apply_async(countdown=5)  # slight delay so adjudicate finishes first
+        extract_relations.delay(document_id)
+
+    # Classify every entity touched by this extraction
+    entity_ids = list(
+        Assertion.objects.filter(pk__in=new_assertion_ids).values_list('entity_id', flat=True).distinct()
+    )
+    if entity_ids:
+        from ingest.tasks.classify import classify_entity
+        for eid in entity_ids:
+            classify_entity.apply_async(args=[str(eid), str(run.pk)], countdown=10)

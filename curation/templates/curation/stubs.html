@@ -22,7 +22,7 @@
   {% for entity in stubs %}
     <tr style="border-bottom:1px solid #eee;">
       <td style="padding:.5rem;">
-        <strong>{{ entity.canonical_name }}</strong><br>
+        <a href="{% url 'curation:entity_profile' entity.id %}"><strong>{{ entity.canonical_name }}</strong></a><br>
         <code style="font-size:.8em;color:#888;">{{ entity.id }}</code>
       </td>
       <td style="padding:.5rem;">

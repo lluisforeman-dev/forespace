@@ -10,15 +10,18 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 
-from core.models import Assertion, Conflict, Entity
+from core.models import Assertion, Classification, Conflict, Entity, Relation
+from ingest.tasks.analytics import get_snapshot
 
 
 @staff_member_required
 def dashboard(request):
+    snapshot = get_snapshot()
     ctx = {
         'stub_count': Entity.objects.filter(status='stub').count(),
         'conflict_count': Conflict.objects.filter(resolution='pending').count(),
         'candidate_count': Assertion.objects.filter(status='candidate').count(),
+        'analytics': snapshot,
         'title': 'Curation Dashboard',
     }
     return render(request, 'curation/dashboard.html', ctx)
@@ -143,3 +146,45 @@ def review_assertion(request, assertion_id):
         assertion.save(update_fields=['status', 'review_state'])
 
     return HttpResponseRedirect(reverse('curation:candidates'))
+
+
+@staff_member_required
+def entity_profile(request, entity_id):
+    """Full profile view for a single entity — assertions, relations, classifications."""
+    entity = get_object_or_404(Entity, pk=entity_id)
+
+    assertions = (
+        Assertion.objects
+        .filter(entity=entity, superseded_at__isnull=True)
+        .select_related('attribute', 'document__source')
+        .order_by('attribute_id', '-confidence')
+    )
+
+    relations_out = (
+        Relation.objects
+        .filter(subject=entity, superseded_at__isnull=True)
+        .select_related('object')
+        .order_by('predicate')[:50]
+    )
+    relations_in = (
+        Relation.objects
+        .filter(object=entity, superseded_at__isnull=True)
+        .select_related('subject')
+        .order_by('predicate')[:50]
+    )
+
+    classifications = (
+        Classification.objects
+        .filter(entity=entity)
+        .select_related('node__taxonomy')
+        .order_by('node__taxonomy__key', '-weight')
+    )
+
+    return render(request, 'curation/entity_profile.html', {
+        'entity': entity,
+        'assertions': assertions,
+        'relations_out': relations_out,
+        'relations_in': relations_in,
+        'classifications': classifications,
+        'title': entity.canonical_name,
+    })

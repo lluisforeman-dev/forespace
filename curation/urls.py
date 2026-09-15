@@ -11,4 +11,5 @@ urlpatterns = [
     path('conflicts/<int:conflict_id>/resolve/', views.resolve_conflict, name='resolve_conflict'),
     path('candidates/', views.candidates, name='candidates'),
     path('candidates/<int:assertion_id>/review/', views.review_assertion, name='review_assertion'),
+    path('entity/<uuid:entity_id>/', views.entity_profile, name='entity_profile'),
 ]

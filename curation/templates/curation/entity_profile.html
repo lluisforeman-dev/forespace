@@ -1,0 +1,96 @@
+{% extends "admin/base_site.html" %}
+{% block title %}{{ title }} | ForeSpace{% endblock %}
+
+{% block content %}
+<h1>{{ entity.canonical_name }}
+  <small style="font-size:.6em;color:#888">{{ entity.entity_type }} · {{ entity.status }}</small>
+</h1>
+<p>
+  <a href="{% url 'curation:stubs' %}" class="button">← Stubs</a>
+  {% if entity.watchlist %}
+    <span style="background:#f5a623;color:#fff;padding:2px 8px;border-radius:3px;font-size:.85em">★ Watchlist</span>
+  {% endif %}
+</p>
+
+{% if classifications %}
+<h2>Taxonomy</h2>
+<table>
+  <thead><tr><th>Facet</th><th>Node</th><th>Weight</th><th>Primary</th><th>Confidence</th></tr></thead>
+  <tbody>
+  {% for c in classifications %}
+    <tr>
+      <td>{{ c.node.taxonomy.key }}</td>
+      <td>{{ c.node.label }}<br><small>{{ c.node.path }}</small></td>
+      <td>{{ c.weight|floatformat:2 }}</td>
+      <td>{% if c.is_primary %}✓{% endif %}</td>
+      <td>{{ c.confidence }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Accepted Assertions</h2>
+{% if assertions %}
+<table>
+  <thead><tr><th>Attribute</th><th>Value</th><th>Confidence</th><th>Source</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for a in assertions %}
+    <tr style="{% if a.status == 'rejected' %}opacity:.4{% elif a.status == 'candidate' %}background:#fffbe6{% endif %}">
+      <td>{{ a.attribute_id }}</td>
+      <td>
+        {% if a.value_text %}{{ a.value_text }}{% endif %}
+        {% if a.value_num %}{{ a.value_num }}{% if a.unit %} {{ a.unit }}{% endif %}{% endif %}
+        {% if a.value_date %}{{ a.value_date }}{% endif %}
+        {% if a.value_bool is not None %}{{ a.value_bool|yesno:"Yes,No" }}{% endif %}
+      </td>
+      <td>{{ a.confidence }}</td>
+      <td>{% if a.document %}{{ a.document.source.name|default:"-" }}{% endif %}</td>
+      <td>{{ a.status }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No assertions yet.</p>
+{% endif %}
+
+<h2>Relations (outgoing)</h2>
+{% if relations_out %}
+<table>
+  <thead><tr><th>Predicate</th><th>Object</th><th>Qualifiers</th><th>Confidence</th></tr></thead>
+  <tbody>
+  {% for r in relations_out %}
+    <tr>
+      <td>{{ r.predicate }}</td>
+      <td><a href="{% url 'curation:entity_profile' r.object.pk %}">{{ r.object.canonical_name }}</a></td>
+      <td><small>{{ r.qualifiers }}</small></td>
+      <td>{{ r.confidence }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>None.</p>
+{% endif %}
+
+<h2>Relations (incoming)</h2>
+{% if relations_in %}
+<table>
+  <thead><tr><th>Subject</th><th>Predicate</th><th>Qualifiers</th><th>Confidence</th></tr></thead>
+  <tbody>
+  {% for r in relations_in %}
+    <tr>
+      <td><a href="{% url 'curation:entity_profile' r.subject.pk %}">{{ r.subject.canonical_name }}</a></td>
+      <td>{{ r.predicate }}</td>
+      <td><small>{{ r.qualifiers }}</small></td>
+      <td>{{ r.confidence }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>None.</p>
+{% endif %}
+
+{% endblock %}

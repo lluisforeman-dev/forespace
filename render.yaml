@@ -100,6 +100,30 @@ services:
           type: redis
           property: connectionString
 
+  - type: cron
+    name: forespace-analytics
+    runtime: python
+    region: frankfurt
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    schedule: "0 */6 * * *"  # every 6 hours
+    startCommand: python manage.py warm_analytics_cache --settings=config.settings.prod
+    plan: free
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.prod
+      - key: SECRET_KEY
+        fromService:
+          name: forespace-web
+          type: web
+          envVarKey: SECRET_KEY
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: forespace-redis
+          type: redis
+          property: connectionString
+
   - type: redis
     name: forespace-redis
     region: frankfurt

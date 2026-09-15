@@ -1,6 +1,7 @@
 {% extends "admin/base_site.html" %}
 {% block content %}
 <h1>Curation Dashboard</h1>
+
 <div style="display:flex;gap:2rem;flex-wrap:wrap;margin:1.5rem 0;">
 
   <div style="border:1px solid #ccc;border-radius:4px;padding:1.5rem;min-width:180px;text-align:center;">
@@ -21,5 +22,59 @@
     <a href="{% url 'curation:candidates' %}" style="font-size:.85rem;">Review →</a>
   </div>
 
+  {% if analytics.watchlist_count %}
+  <div style="border:1px solid #f5a623;border-radius:4px;padding:1.5rem;min-width:180px;text-align:center;">
+    <div style="font-size:2.5rem;font-weight:bold;color:#f5a623;">{{ analytics.watchlist_count }}</div>
+    <div style="margin-top:.5rem;">★ Watchlist</div>
+  </div>
+  {% endif %}
+
 </div>
+
+{% if analytics %}
+<h2>Pipeline — last 24 h</h2>
+<table>
+  <thead><tr><th>LLM Calls</th><th>Cost (USD)</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>{{ analytics.last_24h.llm_calls }}</td>
+      <td>${{ analytics.last_24h.cost_usd|floatformat:4 }}</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Assertions</h2>
+<table>
+  <thead><tr><th>Status</th><th>Count</th></tr></thead>
+  <tbody>
+  {% for status, count in analytics.assertion_counts.items %}
+    <tr><td>{{ status }}</td><td>{{ count }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if analytics.funding.total_usd %}
+<h2>Funding Data</h2>
+<p>Total funding tracked: <strong>${{ analytics.funding.total_usd|floatformat:0 }}</strong>
+across {{ analytics.funding.data_points }} data points.</p>
+{% endif %}
+
+{% if analytics.taxonomy %}
+<h2>Taxonomy Breakdown</h2>
+{% for facet_key, nodes in analytics.taxonomy.items %}
+  {% if nodes %}
+  <h3>{{ facet_key }}</h3>
+  <table>
+    <thead><tr><th>Node</th><th>Entities</th></tr></thead>
+    <tbody>
+    {% for node in nodes %}
+      <tr><td>{{ node.label }} <small style="color:#888">{{ node.path }}</small></td><td>{{ node.count }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+{% endfor %}
+{% endif %}
+
+{% endif %}
 {% endblock %}
