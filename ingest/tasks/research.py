@@ -240,7 +240,7 @@ def research_topic(self, topic: str, topic_type: str = 'company'):
                     quote=quote,
                     method='structured_api',
                     confidence=confidence,
-                    status='accepted' if confidence >= 50 else 'candidate',
+                    status='candidate',
                     valid_range=DateTimeTZRange(range_start, None),
                     **_map_value(value, unit, attr.datatype),
                 )

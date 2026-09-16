@@ -63,15 +63,24 @@ def _adjudicate_one(new_a: Assertion) -> None:
     attr: AttributeDef = new_a.attribute
     is_immutable = attr.volatility_days is None
 
-    # ── Rule 1: identical value ───────────────────────────────────────────
+    # ── Rule 1: identical value from a different source ──────────────────
     if _values_equal(new_a, best):
-        bump = min(100, best.confidence + 5)
+        same_source = (
+            new_a.document_id is not None
+            and new_a.document_id == best.document_id
+        )
+        if same_source:
+            # Same document repeated — no new evidence, just reject silently
+            Assertion.objects.filter(pk=new_a.pk).update(status='rejected')
+            return
+        # Independent source corroborates — bump proportionally to its confidence
+        bump = min(100, best.confidence + max(3, new_a.confidence // 10))
         with transaction.atomic():
             Assertion.objects.filter(pk=best.pk).update(confidence=bump)
             Assertion.objects.filter(pk=new_a.pk).update(status='rejected')
         logger.info(
-            'Adjudicate: duplicate for entity=%s attr=%s — corroboration bump to %d',
-            new_a.entity_id, new_a.attribute_id, bump,
+            'Adjudicate: corroboration entity=%s attr=%s (src_conf=%d) — bump to %d',
+            new_a.entity_id, new_a.attribute_id, new_a.confidence, bump,
         )
         return
 
