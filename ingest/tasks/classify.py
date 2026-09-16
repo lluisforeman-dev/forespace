@@ -11,32 +11,17 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Literal
 
 from celery import shared_task
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
-from pydantic import BaseModel, AliasChoices, Field
 
 from core.models import Assertion, Classification, Entity, Taxonomy, TaxonomyNode
 from ingest.ai import get_client
 from ingest.cost import log_call
 
 logger = logging.getLogger(__name__)
-
-
-class FacetClassification(BaseModel):
-    # LLM sometimes sends 'facet' instead of 'facet_key'
-    facet_key: str = Field(validation_alias=AliasChoices('facet_key', 'facet'), default='')
-    node_path: str | None = None               # e.g. 'upstream.launch.small_lift'
-    weight: float = 0.5                        # 0.0–1.0, weighted membership
-    is_primary: bool = False
-    confidence: Literal["high", "medium", "low"] = "medium"
-
-
-class ClassificationResult(BaseModel):
-    classifications: list[FacetClassification]
 
 
 _SYSTEM = """\
@@ -101,7 +86,8 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
             temperature=0,
         )
         log_call('extract', model, resp, entity=entity)
-        result = ClassificationResult.model_validate_json(resp.choices[0].message.content)
+        raw = json.loads(resp.choices[0].message.content)
+        classifications = raw.get('classifications', [])
     except Exception as exc:
         logger.error('classify_entity %s error: %s', entity_id, exc)
         raise self.retry(exc=exc)
@@ -114,24 +100,27 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
     from core.models import ExtractionRun
     run = ExtractionRun.objects.filter(pk=run_id).first() if run_id else None
 
+    conf_map = {'high': 85, 'medium': 65, 'low': 45}
     created = skipped = 0
     with transaction.atomic():
-        for fc in result.classifications:
-            if not fc.node_path:
+        for item in classifications:
+            facet_key = item.get('facet_key') or item.get('facet', '')
+            node_path = item.get('node_path') or item.get('node', '')
+            if not facet_key or not node_path:
                 skipped += 1
                 continue
-            node = valid_nodes.get((fc.facet_key, fc.node_path))
+            node = valid_nodes.get((facet_key, node_path))
             if not node:
-                logger.warning('classify: unknown node %s/%s', fc.facet_key, fc.node_path)
+                logger.warning('classify: unknown node %s/%s', facet_key, node_path)
                 skipped += 1
                 continue
-            conf = {'high': 85, 'medium': 65, 'low': 45}[fc.confidence]
+            conf = conf_map.get(item.get('confidence', 'medium'), 65)
             Classification.objects.update_or_create(
                 entity=entity,
                 node=node,
                 defaults={
-                    'weight': min(1.0, max(0.0, fc.weight)),
-                    'is_primary': fc.is_primary,
+                    'weight': min(1.0, max(0.0, float(item.get('weight', 0.5)))),
+                    'is_primary': bool(item.get('is_primary', False)),
                     'confidence': conf,
                     'method': 'extracted',
                     'run': run,
