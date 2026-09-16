@@ -100,9 +100,9 @@ CELERY_TASK_TRACK_STARTED = True
 # --- AI — OpenRouter (same keys as astronode) ---
 AI_API_KEY = env('AI_API_KEY', default='')
 AI_API_URL = env('AI_API_URL', default='https://openrouter.ai/api/v1')
-AI_MODEL = env('AI_MODEL', default='meta-llama/llama-3.3-70b-instruct')
+AI_MODEL = env('AI_MODEL', default='openai/gpt-5.6-luna')
 AI_MODEL_PROSE = env('AI_MODEL_PROSE', default='openai/gpt-5.6-luna')
-AI_MODEL_SONAR = env('AI_MODEL_SONAR', default='meta-llama/llama-3.3-70b-instruct')
+AI_MODEL_SONAR = env('AI_MODEL_SONAR', default='openai/gpt-5.6-luna:online')
 
 # --- Mail — Hostinger SMTP (same as astronode) ---
 EMAIL_HOST = env('MAIL_SERVER', default='smtp.hostinger.com')

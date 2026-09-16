@@ -23,11 +23,11 @@ services:
       - key: AI_API_URL
         value: https://openrouter.ai/api/v1
       - key: AI_MODEL
-        value: meta-llama/llama-3.3-70b-instruct
+        value: openai/gpt-5.6-luna
       - key: AI_MODEL_PROSE
         value: openai/gpt-5.6-luna
       - key: AI_MODEL_SONAR
-        value: meta-llama/llama-3.3-70b-instruct
+        value: openai/gpt-5.6-luna:online
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_PUBLISHABLE_KEY
@@ -74,10 +74,11 @@ services:
       - key: AI_API_URL
         value: https://openrouter.ai/api/v1
       - key: AI_MODEL
-        value: meta-llama/llama-3.3-70b-instruct
+        value: openai/gpt-5.6-luna
       - key: AI_MODEL_PROSE
         value: openai/gpt-5.6-luna
-
+      - key: AI_MODEL_SONAR
+        value: openai/gpt-5.6-luna:online
 
   - type: cron
     name: forespace-scheduler
