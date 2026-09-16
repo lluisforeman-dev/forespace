@@ -25,7 +25,7 @@ services:
       - key: AI_MODEL
         value: meta-llama/llama-3.3-70b-instruct
       - key: AI_MODEL_PROSE
-        value: openai/gpt-5.6-luna
+        value: openai/gpt-4o-mini
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_PUBLISHABLE_KEY
@@ -74,7 +74,8 @@ services:
       - key: AI_MODEL
         value: meta-llama/llama-3.3-70b-instruct
       - key: AI_MODEL_PROSE
-        value: openai/gpt-5.6-luna
+        value: openai/gpt-4o-mini
+
 
   - type: cron
     name: forespace-scheduler
