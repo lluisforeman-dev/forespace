@@ -43,7 +43,10 @@
         <td>{{ a.value_text|default:a.value_num|default:a.value_bool|default:"—" }}</td>
         <td>{{ a.confidence }}</td>
         <td><span class="badge badge-{{ a.status }}">{{ a.status }}</span></td>
-        <td>{{ a.document.source.name|default:"—" }}</td>
+        <td>
+          {{ a.document.source.name|default:"—" }}
+          {% if a.document.url %}<br><a href="{{ a.document.url }}" target="_blank" rel="noopener" style="font-size:11px;color:#89b4fa;word-break:break-all">{{ a.document.url|truncatechars:60 }}</a>{% endif %}
+        </td>
         <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#666" title="{{ a.quote }}">{{ a.quote|default:"" }}</td>
       </tr>
       {% endfor %}

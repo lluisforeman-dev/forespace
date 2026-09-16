@@ -38,6 +38,7 @@ For EACH claim provide:
   unit             - unit of measurement (e.g. "USD", "kg") or null
   as_of            - ISO date YYYY-MM-DD when the value was true, or null
   quote            - exact sentence from your web source supporting the claim
+  source_url       - URL of the web page where you found this fact, or null
   extractor_confidence - "high", "medium", or "low"
 
 RULES:
@@ -195,6 +196,23 @@ def research_topic(self, topic: str, topic_type: str = 'company'):
         value = claim.get('value')
         unit = claim.get('unit')
         extractor_conf = claim.get('extractor_confidence', 'medium')
+        source_url = claim.get('source_url') or None
+
+        # Use a per-URL document if the LLM provided a source link
+        if source_url:
+            url_sha = hashlib.sha256(source_url.encode()).hexdigest()
+            claim_doc, _ = Document.objects.get_or_create(
+                content_sha256=url_sha,
+                defaults={
+                    'source': source,
+                    'url': source_url,
+                    'storage_key': 'sonar-url',
+                    'title': source_url[:200],
+                    'pipeline_status': 'done',
+                },
+            )
+        else:
+            claim_doc = doc
 
         confidence = compute_score(
             extractor_confidence=extractor_conf,
@@ -217,7 +235,7 @@ def research_topic(self, topic: str, topic_type: str = 'company'):
                 a = Assertion.objects.create(
                     entity_id=entity_id,
                     attribute_id=attr_key,
-                    document=doc,
+                    document=claim_doc,
                     run=run,
                     quote=quote,
                     method='structured_api',
