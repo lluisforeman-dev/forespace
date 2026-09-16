@@ -195,22 +195,26 @@ def research_topic(self, topic: str, topic_type: str = 'company'):
             if as_of else timezone.now()
         )
 
-        with transaction.atomic():
-            entity_id = resolve_mention(mention, document_id=str(doc.id))
-            a = Assertion.objects.create(
-                entity_id=entity_id,
-                attribute_id=attr_key,
-                document=doc,
-                run=run,
-                quote=quote,
-                method='structured_api',
-                confidence=confidence,
-                status='accepted' if confidence >= 50 else 'candidate',
-                valid_range=DateTimeTZRange(range_start, None),
-                **_map_value(value, unit, attr.datatype),
-            )
-        new_ids.append(a.pk)
-        accepted += 1
+        try:
+            with transaction.atomic():
+                entity_id = resolve_mention(mention, document_id=str(doc.id))
+                a = Assertion.objects.create(
+                    entity_id=entity_id,
+                    attribute_id=attr_key,
+                    document=doc,
+                    run=run,
+                    quote=quote,
+                    method='structured_api',
+                    confidence=confidence,
+                    status='accepted' if confidence >= 50 else 'candidate',
+                    valid_range=DateTimeTZRange(range_start, None),
+                    **_map_value(value, unit, attr.datatype),
+                )
+            new_ids.append(a.pk)
+            accepted += 1
+        except Exception as e:
+            logger.debug('Skipping duplicate claim %s.%s: %s', mention, attr_key, e)
+            rejected += 1
 
     run.status = 'completed'
     run.finished_at = timezone.now()
