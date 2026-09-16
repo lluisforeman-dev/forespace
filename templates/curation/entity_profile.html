@@ -7,6 +7,28 @@
     <span class="badge badge-{{ entity.status }}" style="font-size:13px;vertical-align:middle;margin-left:8px">{{ entity.status }}</span>
   </h2>
   <p style="color:#888;font-size:13px;margin-top:4px">{{ entity.get_entity_type_display }} · created {{ entity.created_at|date:"Y-m-d" }}</p>
+
+  <form method="post" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    {% csrf_token %}
+    <input name="canonical_name" value="{{ entity.canonical_name }}" style="padding:4px 8px;background:#1e1e2e;border:1px solid #444;color:#cdd6f4;border-radius:4px;min-width:200px">
+    <select name="entity_type" style="padding:4px 8px;background:#1e1e2e;border:1px solid #444;color:#cdd6f4;border-radius:4px">
+      <option value="organization" {% if entity.entity_type == "organization" %}selected{% endif %}>Organization</option>
+      <option value="facility"     {% if entity.entity_type == "facility"     %}selected{% endif %}>Facility</option>
+      <option value="asset"        {% if entity.entity_type == "asset"        %}selected{% endif %}>Asset</option>
+      <option value="person"       {% if entity.entity_type == "person"       %}selected{% endif %}>Person</option>
+      <option value="event"        {% if entity.entity_type == "event"        %}selected{% endif %}>Event</option>
+      <option value="program"      {% if entity.entity_type == "program"      %}selected{% endif %}>Program</option>
+      <option value="document_node"{% if entity.entity_type == "document_node"%}selected{% endif %}>Document</option>
+    </select>
+    <select name="status" style="padding:4px 8px;background:#1e1e2e;border:1px solid #444;color:#cdd6f4;border-radius:4px">
+      <option value="active"   {% if entity.status == "active"   %}selected{% endif %}>Active</option>
+      <option value="stub"     {% if entity.status == "stub"     %}selected{% endif %}>Stub</option>
+      <option value="merged"   {% if entity.status == "merged"   %}selected{% endif %}>Merged</option>
+      <option value="disputed" {% if entity.status == "disputed" %}selected{% endif %}>Disputed</option>
+      <option value="dormant"  {% if entity.status == "dormant"  %}selected{% endif %}>Dormant</option>
+    </select>
+    <button type="submit" class="btn">Save</button>
+  </form>
 </div>
 
 {% if assertions %}

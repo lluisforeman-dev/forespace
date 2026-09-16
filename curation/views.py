@@ -286,6 +286,21 @@ def entity_profile(request, entity_id):
     """Full profile view for a single entity — assertions, relations, classifications."""
     entity = get_object_or_404(Entity, pk=entity_id)
 
+    if request.method == 'POST':
+        new_type = request.POST.get('entity_type')
+        new_name = request.POST.get('canonical_name', '').strip()
+        new_status = request.POST.get('status')
+        valid_types = [t[0] for t in Entity.ENTITY_TYPES]
+        valid_statuses = [s[0] for s in Entity.STATUS_CHOICES]
+        if new_type and new_type in valid_types:
+            entity.entity_type = new_type
+        if new_name:
+            entity.canonical_name = new_name
+        if new_status and new_status in valid_statuses:
+            entity.status = new_status
+        entity.save()
+        return redirect('curation:entity_profile', entity_id=entity_id)
+
     assertions = (
         Assertion.objects
         .filter(entity=entity, superseded_at__isnull=True)
