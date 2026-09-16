@@ -3,7 +3,7 @@
 Staff-only. A curator sees incoming candidates and can accept, correct, or reject.
 Goal: a human can correct the graph and the correction sticks.
 """
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib import messages
@@ -15,6 +15,48 @@ from django.utils import timezone
 
 from core.models import Assertion, Classification, Conflict, Entity, Relation, Source, ScheduledSource
 from ingest.tasks.analytics import get_snapshot
+
+
+# Curated space industry RSS feeds for auto-news mode
+SPACE_NEWS_FEEDS = [
+    ('SpaceNews',           'https://spacenews.com/feed/'),
+    ('NASASpaceflight',     'https://www.nasaspaceflight.com/feed/'),
+    ('SpaceflightNow',      'https://spaceflightnow.com/feed/'),
+    ('Ars Technica Space',  'https://feeds.arstechnica.com/arstechnica/space'),
+    ('Payload',             'https://payloadspace.com/feed/'),
+    ('The Planetary Society', 'https://www.planetary.org/rss/articles'),
+    ('Teslarati',           'https://www.teslarati.com/feed/'),
+]
+
+CELERY_QUEUES = [
+    'crawl', 'parse', 'triage', 'extract',
+    'resolve', 'adjudicate', 'project', 'analytics', 'analysis',
+]
+
+
+def _queue_lengths():
+    """Return total queued tasks across all Celery queues via Redis."""
+    try:
+        import redis
+        from django.conf import settings
+        r = redis.from_url(settings.CELERY_BROKER_URL)
+        return sum(r.llen(q) for q in CELERY_QUEUES)
+    except Exception:
+        return None
+
+
+def _get_or_create_scheduled_source(source_name, feed_url, kind='trade_press', trust=70):
+    domain = urlparse(feed_url).netloc[:255]
+    source, _ = Source.objects.get_or_create(
+        name=source_name,
+        defaults={'kind': kind, 'base_trust': trust, 'domain': domain},
+    )
+    sched, _ = ScheduledSource.objects.get_or_create(
+        source=source,
+        feed_url=feed_url,
+        defaults={'feed_type': 'rss', 'cadence': 'daily', 'is_active': True},
+    )
+    return sched
 
 
 @staff_member_required
@@ -31,48 +73,100 @@ def dashboard(request):
         'candidate_count': Assertion.objects.filter(status='candidate').count(),
         'analytics': snapshot,
         'recent_entities': recent_entities,
+        'queued_tasks': _queue_lengths(),
+        'num_feeds': len(SPACE_NEWS_FEEDS),
         'title': 'ForeSpace',
     }
     return render(request, 'curation/dashboard.html', ctx)
 
 
 @staff_member_required
-def ingest_trigger(request):
+def auto_news(request):
+    """Trigger all curated space news feeds."""
     if request.method != 'POST':
         return HttpResponseRedirect(reverse('curation:dashboard'))
+    from ingest.tasks.rss import ingest_rss_feed
+    for source_name, feed_url in SPACE_NEWS_FEEDS:
+        sched = _get_or_create_scheduled_source(source_name, feed_url)
+        ingest_rss_feed.delay(sched.id)
+    messages.success(request, f'{len(SPACE_NEWS_FEEDS)} space news feeds queued.')
+    return HttpResponseRedirect(reverse('curation:dashboard'))
 
+
+@staff_member_required
+def company_research(request):
+    """Search Google News RSS for recent articles about a company."""
+    if request.method != 'POST':
+        return HttpResponseRedirect(reverse('curation:dashboard'))
+    company = request.POST.get('company', '').strip()
+    if not company:
+        messages.error(request, 'Enter a company name.')
+        return HttpResponseRedirect(reverse('curation:dashboard'))
+    from ingest.tasks.rss import ingest_rss_feed
+    feed_url = f'https://news.google.com/rss/search?q={quote(company)}+space&hl=en-US&gl=US&ceid=US:en'
+    sched = _get_or_create_scheduled_source(
+        f'Google News — {company}', feed_url, kind='aggregator', trust=55,
+    )
+    ingest_rss_feed.delay(sched.id)
+    messages.success(request, f'Researching "{company}" — pipeline started.')
+    return HttpResponseRedirect(reverse('curation:dashboard'))
+
+
+@staff_member_required
+def question_research(request):
+    """Search Google News RSS using a natural-language question as the query."""
+    if request.method != 'POST':
+        return HttpResponseRedirect(reverse('curation:dashboard'))
+    question = request.POST.get('question', '').strip()
+    if not question:
+        messages.error(request, 'Enter a question.')
+        return HttpResponseRedirect(reverse('curation:dashboard'))
+    from ingest.tasks.rss import ingest_rss_feed
+    feed_url = f'https://news.google.com/rss/search?q={quote(question)}&hl=en-US&gl=US&ceid=US:en'
+    sched = _get_or_create_scheduled_source(
+        f'Question — {question[:60]}', feed_url, kind='aggregator', trust=55,
+    )
+    ingest_rss_feed.delay(sched.id)
+    messages.success(request, f'Searching for: "{question}" — pipeline started.')
+    return HttpResponseRedirect(reverse('curation:dashboard'))
+
+
+@staff_member_required
+def stop_all_tasks(request):
+    """Purge all pending Celery tasks across every queue."""
+    if request.method != 'POST':
+        return HttpResponseRedirect(reverse('curation:dashboard'))
+    from config.celery import app as celery_app
+    discarded = celery_app.control.purge()
+    messages.warning(request, f'Stopped — {discarded} queued task(s) discarded. Running tasks will finish naturally.')
+    return HttpResponseRedirect(reverse('curation:dashboard'))
+
+
+@staff_member_required
+def ingest_trigger(request):
+    """Legacy: manual RSS or URL ingest."""
+    if request.method != 'POST':
+        return HttpResponseRedirect(reverse('curation:dashboard'))
     kind = request.POST.get('kind')
-
     if kind == 'rss':
         feed_url = request.POST.get('feed_url', '').strip()
         source_name = request.POST.get('source_name', '').strip()
         if feed_url and source_name:
             from ingest.tasks.rss import ingest_rss_feed
-            domain = urlparse(feed_url).netloc[:255]
-            source, _ = Source.objects.get_or_create(
-                name=source_name,
-                defaults={'kind': 'trade_press', 'base_trust': 70, 'domain': domain},
-            )
-            sched, created = ScheduledSource.objects.get_or_create(
-                source=source,
-                feed_url=feed_url,
-                defaults={'feed_type': 'rss', 'cadence': 'daily', 'is_active': True},
-            )
+            sched = _get_or_create_scheduled_source(source_name, feed_url)
             ingest_rss_feed.delay(sched.id)
             messages.success(request, f'RSS feed queued: {feed_url}')
         else:
             messages.error(request, 'Source name and feed URL are required.')
-
     elif kind == 'url':
         url = request.POST.get('url', '').strip()
         source_name = request.POST.get('source_name', 'manual').strip() or 'manual'
         if url:
             from ingest.tasks.crawl import crawl_url
             crawl_url.delay(url, source_name)
-            messages.success(request, f'URL queued for crawling: {url}')
+            messages.success(request, f'URL queued: {url}')
         else:
             messages.error(request, 'URL is required.')
-
     return HttpResponseRedirect(reverse('curation:dashboard'))
 
 

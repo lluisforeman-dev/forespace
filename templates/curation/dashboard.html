@@ -2,34 +2,67 @@
 {% block title %}ForeSpace{% endblock %}
 {% block content %}
 
-<div class="grid2">
-  <div class="card">
-    <h2>Ingest RSS Feed</h2>
-    <form method="post" action="{% url 'curation:ingest_trigger' %}">
-      {% csrf_token %}
-      <input type="hidden" name="kind" value="rss">
-      <label>Source name</label>
-      <input type="text" name="source_name" placeholder="e.g. SpaceNews">
-      <label>RSS feed URL</label>
-      <input type="url" name="feed_url" placeholder="https://spacenews.com/feed/">
-      <button type="submit" class="btn btn-primary">Queue feed</button>
-    </form>
+<!-- Task monitor bar -->
+<div style="display:flex;align-items:center;gap:16px;background:#fff;border:1px solid #ddd;border-radius:6px;padding:12px 20px;margin-bottom:20px;">
+  <div style="flex:1">
+    <span style="font-size:13px;color:#555;">Tasks queued: </span>
+    <strong style="font-size:15px;">
+      {% if queued_tasks is not None %}{{ queued_tasks }}{% else %}—{% endif %}
+    </strong>
+    <span style="font-size:12px;color:#999;margin-left:8px">Refresh page to update count</span>
   </div>
-
-  <div class="card">
-    <h2>Crawl a URL</h2>
-    <form method="post" action="{% url 'curation:ingest_trigger' %}">
-      {% csrf_token %}
-      <input type="hidden" name="kind" value="url">
-      <label>Source name</label>
-      <input type="text" name="source_name" placeholder="e.g. SpaceX blog">
-      <label>URL</label>
-      <input type="url" name="url" placeholder="https://www.spacex.com/updates/">
-      <button type="submit" class="btn btn-primary">Crawl now</button>
-    </form>
-  </div>
+  <form method="post" action="{% url 'curation:stop_all' %}" onsubmit="return confirm('Stop all queued tasks?')">
+    {% csrf_token %}
+    <button class="btn" style="background:#dc3545;color:#fff;font-size:13px;padding:8px 20px;">
+      &#9632; Stop all tasks
+    </button>
+  </form>
 </div>
 
+<!-- Three modes -->
+<div class="grid2" style="grid-template-columns:1fr 1fr 1fr;">
+
+  <div class="card">
+    <h2>1. Space news (auto)</h2>
+    <p style="font-size:12px;color:#666;margin-bottom:14px;">
+      Fetches the latest articles from {{ num_feeds }} curated space industry feeds
+      (SpaceNews, NASASpaceflight, SpaceflightNow, Ars Technica, Payload…) and runs them through the full pipeline.
+    </p>
+    <form method="post" action="{% url 'curation:auto_news' %}">
+      {% csrf_token %}
+      <button class="btn btn-primary" style="width:100%">Fetch space news now</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>2. Research a company</h2>
+    <p style="font-size:12px;color:#666;margin-bottom:14px;">
+      Searches Google News for recent articles about the company and ingests them.
+    </p>
+    <form method="post" action="{% url 'curation:company_research' %}">
+      {% csrf_token %}
+      <label>Company name</label>
+      <input type="text" name="company" placeholder="e.g. SpaceX, Rocket Lab, ESA" autofocus>
+      <button class="btn btn-primary" style="width:100%">Research company</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>3. Ask a question</h2>
+    <p style="font-size:12px;color:#666;margin-bottom:14px;">
+      Searches for articles relevant to your question and populates the database with what it finds.
+    </p>
+    <form method="post" action="{% url 'curation:question_research' %}">
+      {% csrf_token %}
+      <label>Question</label>
+      <input type="text" name="question" placeholder="e.g. Who invested in SpaceX Series D?">
+      <button class="btn btn-primary" style="width:100%">Search &amp; ingest</button>
+    </form>
+  </div>
+
+</div>
+
+<!-- Stats -->
 <div class="stats">
   <div class="stat">
     <div class="num">{{ analytics.entity_counts.organization.active|default:0 }}</div>
@@ -53,12 +86,17 @@
   </div>
   {% if analytics.last_24h %}
   <div class="stat">
-    <div class="num">${{ analytics.last_24h.cost_usd|floatformat:2 }}</div>
+    <div class="num">${{ analytics.last_24h.cost_usd|floatformat:3 }}</div>
     <div class="lbl">LLM cost 24h</div>
+  </div>
+  <div class="stat">
+    <div class="num">{{ analytics.last_24h.llm_calls }}</div>
+    <div class="lbl">LLM calls 24h</div>
   </div>
   {% endif %}
 </div>
 
+<!-- Recent entities -->
 <div class="card">
   <h2>Recent entities</h2>
   {% if recent_entities %}
@@ -78,7 +116,7 @@
     </tbody>
   </table>
   {% else %}
-  <p style="color:#888;font-size:13px;">No entities yet. Add an RSS feed or URL above to start building the database.</p>
+  <p style="color:#888;font-size:13px;">No entities yet — press one of the buttons above to start building the database.</p>
   {% endif %}
 </div>
 
