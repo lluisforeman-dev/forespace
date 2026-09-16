@@ -17,7 +17,7 @@ from celery import shared_task
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
-from pydantic import BaseModel
+from pydantic import BaseModel, AliasChoices, Field
 
 from core.models import Assertion, Classification, Entity, Taxonomy, TaxonomyNode
 from ingest.ai import get_client
@@ -27,11 +27,12 @@ logger = logging.getLogger(__name__)
 
 
 class FacetClassification(BaseModel):
-    facet_key: str                              # taxonomy.key, e.g. 'value_chain'
-    node_path: str                              # e.g. 'upstream.launch.small_lift'
-    weight: float                               # 0.0–1.0, weighted membership
-    is_primary: bool
-    confidence: Literal["high", "medium", "low"]
+    # LLM sometimes sends 'facet' instead of 'facet_key'
+    facet_key: str = Field(validation_alias=AliasChoices('facet_key', 'facet'), default='')
+    node_path: str | None = None               # e.g. 'upstream.launch.small_lift'
+    weight: float = 0.5                        # 0.0–1.0, weighted membership
+    is_primary: bool = False
+    confidence: Literal["high", "medium", "low"] = "medium"
 
 
 class ClassificationResult(BaseModel):
@@ -116,6 +117,9 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
     created = skipped = 0
     with transaction.atomic():
         for fc in result.classifications:
+            if not fc.node_path:
+                skipped += 1
+                continue
             node = valid_nodes.get((fc.facet_key, fc.node_path))
             if not node:
                 logger.warning('classify: unknown node %s/%s', fc.facet_key, fc.node_path)
