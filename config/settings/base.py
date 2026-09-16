@@ -118,5 +118,9 @@ STRIPE_WEBHOOK_SECRET = env('STRIPE_WEBHOOK_SECRET', default='')
 
 BASE_URL = env('BASE_URL', default='http://localhost:8000')
 
+LOGIN_URL = '/login/'
+LOGIN_REDIRECT_URL = '/curation/'
+LOGOUT_REDIRECT_URL = '/login/'
+
 # --- Security headers (override in prod) ---
 X_FRAME_OPTIONS = 'SAMEORIGIN'

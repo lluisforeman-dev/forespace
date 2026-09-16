@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}ForeSpace{% endblock %}
+{% block content %}
+
+<div class="grid2">
+  <div class="card">
+    <h2>Ingest RSS Feed</h2>
+    <form method="post" action="{% url 'curation:ingest_trigger' %}">
+      {% csrf_token %}
+      <input type="hidden" name="kind" value="rss">
+      <label>Source name</label>
+      <input type="text" name="source_name" placeholder="e.g. SpaceNews">
+      <label>RSS feed URL</label>
+      <input type="url" name="feed_url" placeholder="https://spacenews.com/feed/">
+      <button type="submit" class="btn btn-primary">Queue feed</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Crawl a URL</h2>
+    <form method="post" action="{% url 'curation:ingest_trigger' %}">
+      {% csrf_token %}
+      <input type="hidden" name="kind" value="url">
+      <label>Source name</label>
+      <input type="text" name="source_name" placeholder="e.g. SpaceX blog">
+      <label>URL</label>
+      <input type="url" name="url" placeholder="https://www.spacex.com/updates/">
+      <button type="submit" class="btn btn-primary">Crawl now</button>
+    </form>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat">
+    <div class="num">{{ analytics.entity_counts.organization.active|default:0 }}</div>
+    <div class="lbl">Companies</div>
+  </div>
+  <div class="stat">
+    <div class="num">{{ analytics.assertion_counts.accepted|default:0 }}</div>
+    <div class="lbl">Assertions</div>
+  </div>
+  <div class="stat">
+    <div class="num"><a href="{% url 'curation:candidates' %}">{{ candidate_count }}</a></div>
+    <div class="lbl">Candidates</div>
+  </div>
+  <div class="stat">
+    <div class="num"><a href="{% url 'curation:conflicts' %}">{{ conflict_count }}</a></div>
+    <div class="lbl">Conflicts</div>
+  </div>
+  <div class="stat">
+    <div class="num"><a href="{% url 'curation:stubs' %}">{{ stub_count }}</a></div>
+    <div class="lbl">Stubs</div>
+  </div>
+  {% if analytics.last_24h %}
+  <div class="stat">
+    <div class="num">${{ analytics.last_24h.cost_usd|floatformat:2 }}</div>
+    <div class="lbl">LLM cost 24h</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Recent entities</h2>
+  {% if recent_entities %}
+  <table>
+    <thead>
+      <tr><th>Name</th><th>Type</th><th>Status</th><th>Created</th></tr>
+    </thead>
+    <tbody>
+      {% for e in recent_entities %}
+      <tr>
+        <td><a href="{% url 'curation:entity_profile' e.id %}">{{ e.canonical_name }}</a></td>
+        <td>{{ e.get_entity_type_display }}</td>
+        <td><span class="badge badge-{{ e.status }}">{{ e.status }}</span></td>
+        <td>{{ e.created_at|date:"Y-m-d H:i" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:#888;font-size:13px;">No entities yet. Add an RSS feed or URL above to start building the database.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ForeSpace — Login</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; font-size: 14px; background: #1a1a2e; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .box { background: #fff; border-radius: 8px; padding: 40px; width: 360px; }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 6px; color: #1a1a2e; }
+    p.sub { font-size: 13px; color: #888; margin-bottom: 28px; }
+    label { display: block; font-size: 12px; font-weight: 600; color: #555; margin-bottom: 4px; }
+    input { width: 100%; padding: 9px 11px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; margin-bottom: 16px; }
+    input:focus { outline: none; border-color: #1a1a2e; }
+    button { width: 100%; padding: 10px; background: #1a1a2e; color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 4px; }
+    button:hover { background: #2d2d5e; }
+    .errors { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; border-radius: 4px; padding: 10px 12px; margin-bottom: 16px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>ForeSpace</h1>
+    <p class="sub">Space industry knowledge graph</p>
+    {% if form.errors %}
+    <div class="errors">Invalid username or password.</div>
+    {% endif %}
+    <form method="post">
+      {% csrf_token %}
+      <label for="id_username">Username</label>
+      <input type="text" name="username" id="id_username" autofocus autocomplete="username">
+      <label for="id_password">Password</label>
+      <input type="password" name="password" id="id_password" autocomplete="current-password">
+      <input type="hidden" name="next" value="{{ next }}">
+      <button type="submit">Sign in</button>
+    </form>
+  </div>
+</body>
+</html>

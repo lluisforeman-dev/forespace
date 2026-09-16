@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}{{ entity.canonical_name }} — ForeSpace{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>{{ entity.canonical_name }}
+    <span class="badge badge-{{ entity.status }}" style="font-size:13px;vertical-align:middle;margin-left:8px">{{ entity.status }}</span>
+  </h2>
+  <p style="color:#888;font-size:13px;margin-top:4px">{{ entity.get_entity_type_display }} · created {{ entity.created_at|date:"Y-m-d" }}</p>
+</div>
+
+{% if assertions %}
+<div class="card">
+  <h2>Assertions</h2>
+  <table>
+    <thead><tr><th>Attribute</th><th>Value</th><th>Confidence</th><th>Status</th><th>Source</th><th>Quote</th></tr></thead>
+    <tbody>
+      {% for a in assertions %}
+      <tr>
+        <td>{{ a.attribute_id }}</td>
+        <td>{{ a.value_text|default:a.value_num|default:a.value_bool|default:"—" }}</td>
+        <td>{{ a.confidence }}</td>
+        <td><span class="badge badge-{{ a.status }}">{{ a.status }}</span></td>
+        <td>{{ a.document.source.name|default:"—" }}</td>
+        <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#666" title="{{ a.quote }}">{{ a.quote|default:"" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if relations_out %}
+<div class="card">
+  <h2>Relations (outgoing)</h2>
+  <table>
+    <thead><tr><th>Predicate</th><th>Target</th><th>Confidence</th></tr></thead>
+    <tbody>
+      {% for r in relations_out %}
+      <tr>
+        <td>{{ r.predicate_id }}</td>
+        <td><a href="{% url 'curation:entity_profile' r.object.id %}">{{ r.object }}</a></td>
+        <td>{{ r.confidence }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if relations_in %}
+<div class="card">
+  <h2>Relations (incoming)</h2>
+  <table>
+    <thead><tr><th>Subject</th><th>Predicate</th><th>Confidence</th></tr></thead>
+    <tbody>
+      {% for r in relations_in %}
+      <tr>
+        <td><a href="{% url 'curation:entity_profile' r.subject.id %}">{{ r.subject }}</a></td>
+        <td>{{ r.predicate_id }}</td>
+        <td>{{ r.confidence }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if classifications %}
+<div class="card">
+  <h2>Classifications</h2>
+  <table>
+    <thead><tr><th>Taxonomy</th><th>Path</th><th>Weight</th><th>Primary</th></tr></thead>
+    <tbody>
+      {% for c in classifications %}
+      <tr>
+        <td>{{ c.node.taxonomy.key }}</td>
+        <td>{{ c.node.path }}</td>
+        <td>{{ c.weight }}</td>
+        <td>{% if c.is_primary %}Yes{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% endblock %}

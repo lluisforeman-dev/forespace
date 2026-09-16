@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}ForeSpace{% endblock %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; font-size: 14px; background: #f5f5f5; color: #222; }
+    a { color: #0066cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    nav { background: #1a1a2e; color: #fff; padding: 0 24px; display: flex; align-items: center; gap: 24px; height: 48px; }
+    nav .brand { font-weight: 700; font-size: 16px; color: #fff; letter-spacing: .5px; }
+    nav a { color: #aac; font-size: 13px; }
+    nav a:hover { color: #fff; text-decoration: none; }
+    nav .spacer { flex: 1; }
+    nav .user { color: #888; font-size: 12px; }
+
+    .container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+
+    .messages { list-style: none; margin-bottom: 16px; }
+    .messages li { padding: 10px 14px; border-radius: 4px; margin-bottom: 6px; font-size: 13px; }
+    .messages .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .messages .error   { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+
+    .card { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 20px; margin-bottom: 20px; }
+    .card h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: #333; }
+
+    .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+    .stat { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 14px 20px; min-width: 120px; }
+    .stat .num { font-size: 28px; font-weight: 700; color: #1a1a2e; }
+    .stat .lbl { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: .5px; margin-top: 2px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 8px 10px; border-bottom: 2px solid #ddd; color: #555; font-weight: 600; font-size: 12px; text-transform: uppercase; }
+    td { padding: 8px 10px; border-bottom: 1px solid #eee; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafafa; }
+
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+    .badge-active   { background: #d4edda; color: #155724; }
+    .badge-stub     { background: #fff3cd; color: #856404; }
+    .badge-dormant  { background: #e2e3e5; color: #495057; }
+    .badge-disputed { background: #f8d7da; color: #721c24; }
+
+    input[type=text], input[type=url], input[type=password] {
+      width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px;
+      font-size: 13px; margin-bottom: 10px;
+    }
+    input[type=text]:focus, input[type=url]:focus, input[type=password]:focus {
+      outline: none; border-color: #0066cc; box-shadow: 0 0 0 2px rgba(0,102,204,.15);
+    }
+    label { display: block; font-size: 12px; font-weight: 600; color: #555; margin-bottom: 4px; }
+    .btn { padding: 8px 18px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; }
+    .btn-primary { background: #1a1a2e; color: #fff; }
+    .btn-primary:hover { background: #2d2d5e; }
+    .btn-sm { padding: 4px 12px; font-size: 12px; }
+
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+{% if user.is_authenticated %}
+<nav>
+  <span class="brand">ForeSpace</span>
+  <a href="{% url 'curation:dashboard' %}">Dashboard</a>
+  <a href="{% url 'curation:stubs' %}">Stubs</a>
+  <a href="{% url 'curation:conflicts' %}">Conflicts</a>
+  <a href="{% url 'curation:candidates' %}">Candidates</a>
+  <span class="spacer"></span>
+  <span class="user">{{ user.username }}</span>
+  <a href="{% url 'logout' %}">Logout</a>
+</nav>
+{% endif %}
+<div class="container">
+  {% if messages %}
+  <ul class="messages">
+    {% for m in messages %}
+    <li class="{{ m.tags }}">{{ m }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% block content %}{% endblock %}
+</div>
+</body>
+</html>

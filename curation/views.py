@@ -3,28 +3,77 @@
 Staff-only. A curator sees incoming candidates and can accept, correct, or reject.
 Goal: a human can correct the graph and the correction sticks.
 """
+from urllib.parse import urlparse
+
 from django.contrib.admin.views.decorators import staff_member_required
+from django.contrib import messages
 from django.db import transaction
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 
-from core.models import Assertion, Classification, Conflict, Entity, Relation
+from core.models import Assertion, Classification, Conflict, Entity, Relation, Source, ScheduledSource
 from ingest.tasks.analytics import get_snapshot
 
 
 @staff_member_required
 def dashboard(request):
     snapshot = get_snapshot()
+    recent_entities = (
+        Entity.objects
+        .exclude(status='merged')
+        .order_by('-created_at')[:50]
+    )
     ctx = {
         'stub_count': Entity.objects.filter(status='stub').count(),
         'conflict_count': Conflict.objects.filter(resolution='pending').count(),
         'candidate_count': Assertion.objects.filter(status='candidate').count(),
         'analytics': snapshot,
-        'title': 'Curation Dashboard',
+        'recent_entities': recent_entities,
+        'title': 'ForeSpace',
     }
     return render(request, 'curation/dashboard.html', ctx)
+
+
+@staff_member_required
+def ingest_trigger(request):
+    if request.method != 'POST':
+        return HttpResponseRedirect(reverse('curation:dashboard'))
+
+    kind = request.POST.get('kind')
+
+    if kind == 'rss':
+        feed_url = request.POST.get('feed_url', '').strip()
+        source_name = request.POST.get('source_name', '').strip()
+        if feed_url and source_name:
+            from ingest.tasks.rss import ingest_rss_feed
+            domain = urlparse(feed_url).netloc[:255]
+            source, _ = Source.objects.get_or_create(
+                name=source_name,
+                defaults={'kind': 'trade_press', 'base_trust': 70, 'domain': domain},
+            )
+            sched, created = ScheduledSource.objects.get_or_create(
+                source=source,
+                feed_url=feed_url,
+                defaults={'feed_type': 'rss', 'cadence': 'daily', 'is_active': True},
+            )
+            ingest_rss_feed.delay(sched.id)
+            messages.success(request, f'RSS feed queued: {feed_url}')
+        else:
+            messages.error(request, 'Source name and feed URL are required.')
+
+    elif kind == 'url':
+        url = request.POST.get('url', '').strip()
+        source_name = request.POST.get('source_name', 'manual').strip() or 'manual'
+        if url:
+            from ingest.tasks.crawl import crawl_url
+            crawl_url.delay(url, source_name)
+            messages.success(request, f'URL queued for crawling: {url}')
+        else:
+            messages.error(request, 'URL is required.')
+
+    return HttpResponseRedirect(reverse('curation:dashboard'))
 
 
 @staff_member_required

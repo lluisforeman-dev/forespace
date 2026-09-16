@@ -5,6 +5,7 @@ app_name = 'curation'
 
 urlpatterns = [
     path('', views.dashboard, name='dashboard'),
+    path('ingest/', views.ingest_trigger, name='ingest_trigger'),
     path('stubs/', views.stubs, name='stubs'),
     path('stubs/<uuid:entity_id>/promote/', views.promote_stub, name='promote_stub'),
     path('conflicts/', views.conflicts, name='conflicts'),
