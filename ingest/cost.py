@@ -16,6 +16,8 @@ _RATES: dict[str, tuple[float, float]] = {
     'openai/gpt-5.6-luna': (0.003, 0.015),
     'anthropic/claude-3-haiku': (0.00025, 0.00125),
     'anthropic/claude-3.5-sonnet': (0.003, 0.015),
+    'perplexity/llama-3.1-sonar-small-128k-online': (0.0002, 0.0002),
+    'perplexity/llama-3.1-sonar-large-128k-online': (0.001, 0.001),
 }
 _DEFAULT = (0.001, 0.003)
 

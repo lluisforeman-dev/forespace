@@ -82,52 +82,42 @@ def dashboard(request):
 
 @staff_member_required
 def auto_news(request):
-    """Trigger all curated space news feeds."""
+    """Use Sonar to find and extract last week's space news."""
     if request.method != 'POST':
         return HttpResponseRedirect(reverse('curation:dashboard'))
-    from ingest.tasks.rss import ingest_rss_feed
-    for source_name, feed_url in SPACE_NEWS_FEEDS:
-        sched = _get_or_create_scheduled_source(source_name, feed_url)
-        ingest_rss_feed.delay(sched.id)
-    messages.success(request, f'{len(SPACE_NEWS_FEEDS)} space news feeds queued.')
+    from ingest.tasks.research import research_topic
+    research_topic.delay('space industry news last 7 days', 'news')
+    messages.success(request, 'Space news research queued — Sonar is searching the web.')
     return HttpResponseRedirect(reverse('curation:dashboard'))
 
 
 @staff_member_required
 def company_research(request):
-    """Search Google News RSS for recent articles about a company."""
+    """Use Sonar to research a specific company."""
     if request.method != 'POST':
         return HttpResponseRedirect(reverse('curation:dashboard'))
     company = request.POST.get('company', '').strip()
     if not company:
         messages.error(request, 'Enter a company name.')
         return HttpResponseRedirect(reverse('curation:dashboard'))
-    from ingest.tasks.rss import ingest_rss_feed
-    feed_url = f'https://news.google.com/rss/search?q={quote(company)}+space&hl=en-US&gl=US&ceid=US:en'
-    sched = _get_or_create_scheduled_source(
-        f'Google News — {company}', feed_url, kind='aggregator', trust=55,
-    )
-    ingest_rss_feed.delay(sched.id)
-    messages.success(request, f'Researching "{company}" — pipeline started.')
+    from ingest.tasks.research import research_topic
+    research_topic.delay(company, 'company')
+    messages.success(request, f'Researching "{company}" — Sonar is on it.')
     return HttpResponseRedirect(reverse('curation:dashboard'))
 
 
 @staff_member_required
 def question_research(request):
-    """Search Google News RSS using a natural-language question as the query."""
+    """Use Sonar to answer a question by searching the web."""
     if request.method != 'POST':
         return HttpResponseRedirect(reverse('curation:dashboard'))
     question = request.POST.get('question', '').strip()
     if not question:
         messages.error(request, 'Enter a question.')
         return HttpResponseRedirect(reverse('curation:dashboard'))
-    from ingest.tasks.rss import ingest_rss_feed
-    feed_url = f'https://news.google.com/rss/search?q={quote(question)}&hl=en-US&gl=US&ceid=US:en'
-    sched = _get_or_create_scheduled_source(
-        f'Question — {question[:60]}', feed_url, kind='aggregator', trust=55,
-    )
-    ingest_rss_feed.delay(sched.id)
-    messages.success(request, f'Searching for: "{question}" — pipeline started.')
+    from ingest.tasks.research import research_topic
+    research_topic.delay(question, 'question')
+    messages.success(request, f'Queued: "{question}"')
     return HttpResponseRedirect(reverse('curation:dashboard'))
 
 
