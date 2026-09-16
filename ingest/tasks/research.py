@@ -125,19 +125,6 @@ def research_topic(self, topic: str, topic_type: str = 'company'):
         code_version='sonar-v1',
     )
 
-    _WEB_SEARCH_TOOL = [{
-        'type': 'function',
-        'function': {
-            'name': 'openrouter:web_search',
-            'description': 'Search the web for current information',
-            'parameters': {
-                'type': 'object',
-                'properties': {'query': {'type': 'string'}},
-                'required': ['query'],
-            },
-        },
-    }]
-
     try:
         t0 = time.monotonic()
         resp = get_client().chat.completions.create(
@@ -146,7 +133,6 @@ def research_topic(self, topic: str, topic_type: str = 'company'):
                 {'role': 'system', 'content': _SYSTEM},
                 {'role': 'user', 'content': user_msg},
             ],
-            tools=_WEB_SEARCH_TOOL,
             max_tokens=3000,
             temperature=0,
         )
