@@ -61,7 +61,23 @@ def _parse_json(text: str) -> dict:
     match = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', text)
     if match:
         text = match.group(1)
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Response was truncated — salvage every complete claim object
+        candidates = re.findall(r'\{(?:[^{}]|\{[^{}]*\})*\}', text)
+        claims = []
+        for c in candidates:
+            try:
+                obj = json.loads(c)
+                if isinstance(obj, dict) and 'attribute_key' in obj:
+                    claims.append(obj)
+            except json.JSONDecodeError:
+                pass
+        if claims:
+            logger.warning('Truncated JSON: recovered %d claims', len(claims))
+            return {'claims': claims}
+        raise
 
 
 def _map_value(value, unit, datatype: str) -> dict:
@@ -133,7 +149,7 @@ def research_topic(self, topic: str, topic_type: str = 'company'):
                 {'role': 'system', 'content': _SYSTEM},
                 {'role': 'user', 'content': user_msg},
             ],
-            max_tokens=3000,
+            max_tokens=30000,
             temperature=0,
         )
         log_call(f'research_{topic_type}', model, resp,
