@@ -8,7 +8,7 @@ import json
 import logging
 import re
 import time
-from datetime import datetime, timezone as tz
+from datetime import datetime, timedelta, timezone as tz
 
 from celery import shared_task
 from django.conf import settings
@@ -96,6 +96,19 @@ def _map_value(value, unit, datatype: str) -> dict:
     return {'value_text': str(value) if value is not None else ''}
 
 
+def _seen_urls(days: int = 30, limit: int = 100) -> str:
+    """Return a newline-separated list of URLs already ingested, to pass as exclusions."""
+    cutoff = datetime.now(tz=tz.utc) - timedelta(days=days)
+    urls = (
+        Document.objects
+        .filter(url__isnull=False, fetched_at__gte=cutoff)
+        .exclude(url='')
+        .values_list('url', flat=True)
+        .order_by('-fetched_at')[:limit]
+    )
+    return '\n'.join(urls)
+
+
 def _sonar_source() -> Source:
     source, _ = Source.objects.get_or_create(
         name=_SONAR_SOURCE_NAME,
@@ -115,23 +128,29 @@ def research_topic(self, topic: str, topic_type: str = 'company'):
         logger.error('research_topic: AttributeDef is empty — migration 0008 may not have run')
         return
 
+    seen = _seen_urls(days=30, limit=100)
+    seen_block = f'\n\nAlready ingested sources — do NOT use these, find alternative URLs:\n{seen}' if seen else ''
+
     if topic_type == 'company':
         user_msg = (
             f'Research the space-industry company or organisation "{topic}". '
             f'Find current facts from recent web sources and extract as many structured claims as possible.\n\n'
             f'Allowed attribute keys:\n{vocab}'
+            f'{seen_block}'
         )
     elif topic_type == 'news':
         user_msg = (
             f'What are the most significant space-industry developments from the past 7 days? '
             f'For each event identify the organisations involved and extract structured facts.\n\n'
             f'Allowed attribute keys:\n{vocab}'
+            f'{seen_block}'
         )
     else:  # question
         user_msg = (
             f'Research the following question about the space industry: "{topic}"\n'
             f'Find and extract all relevant factual claims from recent web sources.\n\n'
             f'Allowed attribute keys:\n{vocab}'
+            f'{seen_block}'
         )
 
     model = settings.AI_MODEL_SONAR
