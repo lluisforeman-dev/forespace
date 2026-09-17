@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Taxonomy Proposals — ForeSpace{% endblock %}
+{% block content %}
+
+<div class="card" style="display:flex;justify-content:space-between;align-items:center">
+  <div>
+    <h2>Taxonomy Proposals</h2>
+    <p style="color:#888;font-size:13px;margin-top:4px">
+      LLM-proposed nodes waiting for review. Approve to make them available to the classifier; reject to discard.
+    </p>
+  </div>
+  <form method="post" action="{% url 'curation:run_evolve_taxonomy' %}">
+    {% csrf_token %}
+    <button type="submit" class="btn">Run Evolution Now</button>
+  </form>
+</div>
+
+{% if messages %}
+  {% for m in messages %}
+  <div class="card" style="border-left:3px solid #a6e3a1;padding:8px 16px;color:#a6e3a1">{{ m }}</div>
+  {% endfor %}
+{% endif %}
+
+{% if proposals %}
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>Facet</th>
+        <th>Path</th>
+        <th>Label</th>
+        <th>Definition</th>
+        <th>Examples</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for node in proposals %}
+      <tr>
+        <td style="color:#cba6f7;font-size:12px">{{ node.taxonomy.key }}</td>
+        <td style="font-family:monospace;font-size:12px;color:#f9e2af">{{ node.path }}</td>
+        <td style="font-weight:500">{{ node.label }}</td>
+        <td style="font-size:12px;color:#888;max-width:280px">{{ node.definition }}</td>
+        <td style="font-size:11px;color:#6c7086">{{ node.examples|join:", " }}</td>
+        <td style="white-space:nowrap">
+          <form method="post" style="display:inline">
+            {% csrf_token %}
+            <input type="hidden" name="node_id" value="{{ node.pk }}">
+            <input type="hidden" name="action" value="approve">
+            <button type="submit" class="btn" style="background:#a6e3a1;color:#1e1e2e;padding:3px 10px;font-size:12px">Approve</button>
+          </form>
+          <form method="post" style="display:inline;margin-left:4px">
+            {% csrf_token %}
+            <input type="hidden" name="node_id" value="{{ node.pk }}">
+            <input type="hidden" name="action" value="reject">
+            <button type="submit" class="btn" style="background:#f38ba8;color:#1e1e2e;padding:3px 10px;font-size:12px">Reject</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card" style="color:#888;text-align:center;padding:40px">
+  No proposals pending. Click "Run Evolution Now" to analyse recent entities and suggest new nodes.
+</div>
+{% endif %}
+
+{% endblock %}

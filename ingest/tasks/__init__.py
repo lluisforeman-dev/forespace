@@ -12,6 +12,7 @@ from ingest.tasks.classify import classify_entity
 from ingest.tasks.relate import extract_relations
 from ingest.tasks.analytics import build_analytics_snapshot
 from ingest.tasks.research import research_topic
+from ingest.tasks.evolve import evolve_taxonomy
 
 __all__ = [
     'crawl_url', 'parse_document', 'triage_document',
@@ -19,5 +20,5 @@ __all__ = [
     'adjudicate_assertions', 'refresh_entity_current', 'refresh_relation_current',
     'ingest_rss_feed', 'dispatch_scheduled_sources',
     'classify_entity', 'extract_relations', 'build_analytics_snapshot',
-    'research_topic',
+    'research_topic', 'evolve_taxonomy',
 ]

@@ -52,7 +52,7 @@ def _build_taxonomy_vocab() -> str:
     lines = []
     for taxonomy in Taxonomy.objects.filter(status='active').prefetch_related('nodes'):
         lines.append(f'\nFacet: {taxonomy.key} ({taxonomy.key})')
-        for node in taxonomy.nodes.all().order_by('path'):
+        for node in taxonomy.nodes.filter(status='active').order_by('path'):
             lines.append(f'  {node.path}: {node.label} — {node.definition[:120]}')
     return '\n'.join(lines) or '(run seed_taxonomy first)'
 
@@ -94,7 +94,7 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
 
     # Build lookup of valid nodes
     valid_nodes: dict[tuple[str, str], TaxonomyNode] = {}
-    for node in TaxonomyNode.objects.select_related('taxonomy'):
+    for node in TaxonomyNode.objects.filter(status='active').select_related('taxonomy'):
         valid_nodes[(node.taxonomy.key, node.path)] = node
 
     from core.models import ExtractionRun

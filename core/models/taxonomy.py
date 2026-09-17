@@ -38,12 +38,19 @@ class TaxonomyNode(models.Model):
         CREATE INDEX taxonomy_node_path_gist ON taxonomy_node USING gist(path);
     Until then, path works as a plain text field with LIKE prefix queries.
     """
+    STATUS_CHOICES = [
+        ('proposed', 'Proposed'),
+        ('active', 'Active'),
+        ('deprecated', 'Deprecated'),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     taxonomy = models.ForeignKey(Taxonomy, on_delete=models.CASCADE, related_name='nodes')
     path = models.CharField(max_length=500)  # e.g. 'upstream.launch.small_lift.reusable'
     label = models.CharField(max_length=255)
     definition = models.TextField()   # the classifier prompt reads this directly
     examples = models.JSONField(default=list, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
 
     class Meta:
         db_table = 'taxonomy_node'

@@ -13,7 +13,7 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 
-from core.models import Assertion, Classification, Conflict, Entity, Relation, Source, ScheduledSource
+from core.models import Assertion, Classification, Conflict, Entity, Relation, Source, ScheduledSource, Taxonomy, TaxonomyNode
 from ingest.tasks.analytics import get_snapshot
 
 
@@ -356,3 +356,42 @@ def entity_profile(request, entity_id):
         'classifications': classifications,
         'title': entity.canonical_name,
     })
+
+
+@staff_member_required
+def taxonomy_proposals(request):
+    """Review LLM-proposed taxonomy nodes — approve or reject."""
+    if request.method == 'POST':
+        node_id = request.POST.get('node_id')
+        action = request.POST.get('action')
+        node = get_object_or_404(TaxonomyNode, pk=node_id, status='proposed')
+        if action == 'approve':
+            node.status = 'active'
+            node.save()
+            messages.success(request, f'Approved: {node.taxonomy.key}/{node.path}')
+        elif action == 'reject':
+            node.status = 'deprecated'
+            node.save()
+            messages.info(request, f'Rejected: {node.path}')
+        return HttpResponseRedirect(request.path)
+
+    proposals = (
+        TaxonomyNode.objects
+        .filter(status='proposed')
+        .select_related('taxonomy')
+        .order_by('taxonomy__key', 'path')
+    )
+    return render(request, 'curation/taxonomy_proposals.html', {
+        'proposals': proposals,
+        'title': 'Taxonomy Proposals',
+    })
+
+
+@staff_member_required
+def run_evolve_taxonomy(request):
+    """Trigger a taxonomy evolution run."""
+    if request.method == 'POST':
+        from ingest.tasks.evolve import evolve_taxonomy
+        evolve_taxonomy.delay()
+        messages.success(request, 'Taxonomy evolution task queued.')
+    return HttpResponseRedirect(reverse('curation:taxonomy_proposals'))
