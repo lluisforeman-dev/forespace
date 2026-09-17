@@ -96,8 +96,32 @@ def _map_value(value, unit, datatype: str) -> dict:
     return {'value_text': str(value) if value is not None else ''}
 
 
-def _seen_urls(days: int = 30, limit: int = 100) -> str:
-    """Return a newline-separated list of URLs already ingested, to pass as exclusions."""
+def _seen_urls_for_company(topic: str) -> str:
+    """URLs already used for assertions about this specific company."""
+    from django.db.models import Q
+    from core.models import Entity
+    from core.normalize import normalize_name
+    norm = normalize_name(topic)
+    entity = (
+        Entity.objects
+        .filter(status__in=('active', 'stub'))
+        .filter(Q(canonical_name__iexact=topic) | Q(aliases__alias_norm=norm))
+        .first()
+    )
+    if not entity:
+        return ''
+    urls = (
+        Document.objects
+        .filter(assertions__entity=entity, url__isnull=False)
+        .exclude(url='')
+        .values_list('url', flat=True)
+        .distinct()
+    )
+    return '\n'.join(urls)
+
+
+def _seen_urls_recent(days: int, limit: int = 50) -> str:
+    """URLs ingested within the past N days — for news/question modes."""
     cutoff = datetime.now(tz=tz.utc) - timedelta(days=days)
     urls = (
         Document.objects
@@ -128,29 +152,32 @@ def research_topic(self, topic: str, topic_type: str = 'company'):
         logger.error('research_topic: AttributeDef is empty — migration 0008 may not have run')
         return
 
-    seen = _seen_urls(days=30, limit=100)
-    seen_block = f'\n\nAlready ingested sources — do NOT use these, find alternative URLs:\n{seen}' if seen else ''
+    def _seen_block(urls: str) -> str:
+        return f'\n\nAlready ingested sources — do NOT use these, find alternative URLs:\n{urls}' if urls else ''
 
     if topic_type == 'company':
+        seen = _seen_urls_for_company(topic)
         user_msg = (
             f'Research the space-industry company or organisation "{topic}". '
             f'Find current facts from recent web sources and extract as many structured claims as possible.\n\n'
             f'Allowed attribute keys:\n{vocab}'
-            f'{seen_block}'
+            f'{_seen_block(seen)}'
         )
     elif topic_type == 'news':
+        seen = _seen_urls_recent(days=7, limit=50)
         user_msg = (
             f'What are the most significant space-industry developments from the past 7 days? '
             f'For each event identify the organisations involved and extract structured facts.\n\n'
             f'Allowed attribute keys:\n{vocab}'
-            f'{seen_block}'
+            f'{_seen_block(seen)}'
         )
     else:  # question
+        seen = _seen_urls_recent(days=14, limit=50)
         user_msg = (
             f'Research the following question about the space industry: "{topic}"\n'
             f'Find and extract all relevant factual claims from recent web sources.\n\n'
             f'Allowed attribute keys:\n{vocab}'
-            f'{seen_block}'
+            f'{_seen_block(seen)}'
         )
 
     model = settings.AI_MODEL_SONAR
