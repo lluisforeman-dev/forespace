@@ -2,12 +2,23 @@
 {% block title %}{{ entity.canonical_name }} — ForeSpace{% endblock %}
 {% block content %}
 
+<style>
+.conf-bar { display:inline-block; width:80px; height:8px; border-radius:4px; background:#313244; vertical-align:middle; position:relative; }
+.conf-fill { height:100%; border-radius:4px; }
+.conf-high  { background:#a6e3a1; }
+.conf-mid   { background:#89b4fa; }
+.conf-low   { background:#f9e2af; }
+.conf-poor  { background:#f38ba8; }
+.sources-pill { display:inline-block; background:#45475a; border-radius:10px; padding:1px 7px; font-size:11px; color:#bac2de; margin-left:6px; }
+details > summary { cursor:pointer; color:#89b4fa; font-size:13px; margin-top:4px; }
+</style>
+
+<!-- Header + edit form -->
 <div class="card">
   <h2>{{ entity.canonical_name }}
     <span class="badge badge-{{ entity.status }}" style="font-size:13px;vertical-align:middle;margin-left:8px">{{ entity.status }}</span>
   </h2>
   <p style="color:#888;font-size:13px;margin-top:4px">{{ entity.get_entity_type_display }} · created {{ entity.created_at|date:"Y-m-d" }}</p>
-
   <form method="post" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
     {% csrf_token %}
     <input name="canonical_name" value="{{ entity.canonical_name }}" style="padding:4px 8px;background:#1e1e2e;border:1px solid #444;color:#cdd6f4;border-radius:4px;min-width:200px">
@@ -31,27 +42,72 @@
   </form>
 </div>
 
-{% if assertions %}
+<!-- ── What we know ── -->
+{% if facts %}
 <div class="card">
-  <h2>Assertions</h2>
+  <h2>What we know</h2>
   <table>
-    <thead><tr><th>Attribute</th><th>Value</th><th>Confidence</th><th>Status</th><th>Source</th><th>Quote</th></tr></thead>
-    <tbody>
-      {% for a in assertions %}
+    <thead>
       <tr>
-        <td>{{ a.attribute_id }}</td>
-        <td>{{ a.value_text|default:a.value_num|default:a.value_bool|default:"—" }}</td>
-        <td>{{ a.confidence }}</td>
-        <td><span class="badge badge-{{ a.status }}">{{ a.status }}</span></td>
-        <td>
-          {{ a.document.source.name|default:"—" }}
-          {% if a.document.url %}<br><a href="{{ a.document.url }}" target="_blank" rel="noopener" style="font-size:11px;color:#89b4fa;word-break:break-all">{{ a.document.url|truncatechars:60 }}</a>{% endif %}
-        </td>
-        <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#666" title="{{ a.quote }}">{{ a.quote|default:"" }}</td>
+        <th>Fact</th>
+        <th>Value</th>
+        <th style="width:130px">Confidence</th>
+        <th>Sources</th>
       </tr>
+    </thead>
+    <tbody>
+      {% for f in facts %}
+      {% with val=f.value_text|default:f.value_num|default:f.value_date|default:f.value_bool %}
+      {% if val %}
+      <tr>
+        <td style="color:#cba6f7;font-size:13px">{{ f.attribute.label }}</td>
+        <td style="font-weight:500">{{ val }}{% if f.unit %} <span style="color:#888;font-size:12px">{{ f.unit }}</span>{% endif %}</td>
+        <td>
+          {% if f.confidence >= 85 %}{% with cls="conf-high" %}
+          {% elif f.confidence >= 70 %}{% with cls="conf-mid" %}
+          {% elif f.confidence >= 50 %}{% with cls="conf-low" %}
+          {% else %}{% with cls="conf-poor" %}
+          {% endif %}
+          <span class="conf-bar"><span class="conf-fill {{ cls }}" style="width:{{ f.confidence }}%"></span></span>
+          <span style="font-size:12px;color:#888;margin-left:4px">{{ f.confidence }}%</span>
+          {% endwith %}{% endwith %}{% endwith %}{% endwith %}
+        </td>
+        <td>
+          <span class="sources-pill">{{ f._source_count }} source{{ f._source_count|pluralize }}</span>
+        </td>
+      </tr>
+      {% endif %}
+      {% endwith %}
       {% endfor %}
     </tbody>
   </table>
+</div>
+{% endif %}
+
+<!-- ── Evidence (collapsed) ── -->
+{% if assertions %}
+<div class="card">
+  <details>
+    <summary>Evidence — {{ assertions|length }} assertion{{ assertions|length|pluralize }}</summary>
+    <table style="margin-top:10px">
+      <thead><tr><th>Attribute</th><th>Value</th><th>Conf</th><th>Status</th><th>Source</th><th>Quote</th></tr></thead>
+      <tbody>
+        {% for a in assertions %}
+        <tr>
+          <td style="font-size:12px;color:#888">{{ a.attribute_id }}</td>
+          <td style="font-size:12px">{{ a.value_text|default:a.value_num|default:a.value_bool|default:"—" }}</td>
+          <td style="font-size:12px">{{ a.confidence }}</td>
+          <td><span class="badge badge-{{ a.status }}" style="font-size:10px">{{ a.status }}</span></td>
+          <td style="font-size:11px">
+            {{ a.document.source.name|default:"—" }}
+            {% if a.document.url %}<br><a href="{{ a.document.url }}" target="_blank" rel="noopener" style="color:#89b4fa;word-break:break-all">{{ a.document.url|truncatechars:55 }}</a>{% endif %}
+          </td>
+          <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#666" title="{{ a.quote }}">{{ a.quote|default:"" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
 </div>
 {% endif %}
 

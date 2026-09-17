@@ -301,12 +301,31 @@ def entity_profile(request, entity_id):
         entity.save()
         return redirect('curation:entity_profile', entity_id=entity_id)
 
-    assertions = (
+    all_assertions = (
         Assertion.objects
         .filter(entity=entity, superseded_at__isnull=True)
         .select_related('attribute', 'document__source')
         .order_by('attribute_id', '-confidence')
     )
+
+    # ── Aggregate facts: best assertion per attribute + source count ──────
+    from django.db.models import Count
+    source_counts = {
+        row['attribute_id']: row['n']
+        for row in (
+            Assertion.objects
+            .filter(entity=entity, superseded_at__isnull=True)
+            .values('attribute_id')
+            .annotate(n=Count('document_id', distinct=True))
+        )
+    }
+    best_per_attr = {}
+    for a in all_assertions.filter(status='accepted'):
+        if a.attribute_id not in best_per_attr:
+            best_per_attr[a.attribute_id] = a
+    facts = sorted(best_per_attr.values(), key=lambda a: -a.confidence)
+    for f in facts:
+        f._source_count = source_counts.get(f.attribute_id, 1)
 
     relations_out = (
         Relation.objects
@@ -330,7 +349,8 @@ def entity_profile(request, entity_id):
 
     return render(request, 'curation/entity_profile.html', {
         'entity': entity,
-        'assertions': assertions,
+        'facts': facts,
+        'assertions': all_assertions,
         'relations_out': relations_out,
         'relations_in': relations_in,
         'classifications': classifications,

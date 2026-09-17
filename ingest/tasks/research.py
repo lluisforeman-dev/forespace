@@ -19,7 +19,7 @@ from psycopg2.extras import DateTimeTZRange
 
 from core.models import Assertion, AttributeDef, Document, ExtractionRun, Source
 from ingest.ai import get_client
-from ingest.confidence import score as compute_score
+from ingest.confidence import domain_trust, score as compute_score
 from ingest.cost import log_call
 from ingest.tasks.resolve import resolve_mention
 
@@ -33,6 +33,7 @@ Search the web for current, verifiable facts and return them as JSON.
 
 For EACH claim provide:
   subject_mention  - exact company or entity name
+  subject_type     - one of: organization, asset, person, facility, event, program
   attribute_key    - one of the allowed keys below (no others)
   value            - the extracted value as string or number, or null
   unit             - unit of measurement (e.g. "USD", "kg") or null
@@ -238,6 +239,7 @@ def research_topic(self, topic: str, topic_type: str = 'company'):
 
         attr = valid_attrs[attr_key]
         mention = claim.get('subject_mention') or topic
+        entity_type_hint = claim.get('subject_type', 'organization')
         quote = claim.get('quote') or mention
         value = claim.get('value')
         unit = claim.get('unit')
@@ -245,6 +247,7 @@ def research_topic(self, topic: str, topic_type: str = 'company'):
         source_url = claim.get('source_url') or None
 
         # Use a per-URL document if the LLM provided a source link
+        src_trust = domain_trust(source_url)
         if source_url:
             url_sha = hashlib.sha256(source_url.encode()).hexdigest()
             claim_doc, _ = Document.objects.get_or_create(
@@ -255,6 +258,7 @@ def research_topic(self, topic: str, topic_type: str = 'company'):
                     'storage_key': 'sonar-url',
                     'title': source_url[:200],
                     'pipeline_status': 'done',
+                    'trust_override': src_trust,
                 },
             )
         else:
@@ -262,8 +266,8 @@ def research_topic(self, topic: str, topic_type: str = 'company'):
 
         confidence = compute_score(
             extractor_confidence=extractor_conf,
-            source_base_trust=65,
-            source_kind='llm',
+            source_base_trust=src_trust,
+            source_kind='trade_press' if src_trust >= 70 else 'aggregator',
             document_published_at=None,
             volatility_days=attr.volatility_days,
         )
@@ -277,7 +281,11 @@ def research_topic(self, topic: str, topic_type: str = 'company'):
 
         try:
             with transaction.atomic():
-                entity_id = resolve_mention(mention, document_id=str(doc.id))
+                entity_id = resolve_mention(
+                    mention,
+                    document_id=str(doc.id),
+                    entity_type=entity_type_hint,
+                )
                 a = Assertion.objects.create(
                     entity_id=entity_id,
                     attribute_id=attr_key,

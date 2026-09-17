@@ -33,8 +33,20 @@ Consider abbreviations, trading names, and common misspellings.
 Reply: {{"same": true, "confidence": "high"|"medium"|"low"}} or {{"same": false}}"""
 
 
-def resolve_mention(mention: str, document_id: str | None = None) -> str:
+_VALID_ENTITY_TYPES = {
+    'organization', 'facility', 'asset', 'person',
+    'document_node', 'event', 'program',
+}
+
+
+def resolve_mention(
+    mention: str,
+    document_id: str | None = None,
+    entity_type: str = 'organization',
+) -> str:
     """Resolve a surface-form mention to an entity UUID. Creates a stub if needed."""
+    if entity_type not in _VALID_ENTITY_TYPES:
+        entity_type = 'organization'
     norm = normalize_name(mention)
 
     # Level 2a — exact canonical name (case-insensitive)
@@ -83,7 +95,7 @@ def resolve_mention(mention: str, document_id: str | None = None) -> str:
             return resolved
 
     # Fallback — stub entity queued for human review
-    return _create_stub(mention, norm, document_id)
+    return _create_stub(mention, norm, document_id, entity_type)
 
 
 def _llm_disambiguate(mention: str, candidates: list) -> str | None:
@@ -115,7 +127,12 @@ def _llm_disambiguate(mention: str, candidates: list) -> str | None:
     return None
 
 
-def _create_stub(mention: str, norm: str, document_id: str | None) -> str:
+def _create_stub(
+    mention: str,
+    norm: str,
+    document_id: str | None,
+    entity_type: str = 'organization',
+) -> str:
     """Create a stub entity for an unresolved mention."""
     slug_base = slugify(mention)[:200] or 'entity'
     slug = slug_base
@@ -126,7 +143,7 @@ def _create_stub(mention: str, norm: str, document_id: str | None) -> str:
 
     with transaction.atomic():
         entity = Entity.objects.create(
-            entity_type='organization',
+            entity_type=entity_type,
             canonical_name=mention,
             slug=slug,
             status='stub',

@@ -73,8 +73,10 @@ def _adjudicate_one(new_a: Assertion) -> None:
             # Same document repeated — no new evidence, just reject silently
             Assertion.objects.filter(pk=new_a.pk).update(status='rejected')
             return
-        # Independent source corroborates — bump proportionally to its confidence
-        bump = min(100, best.confidence + max(3, new_a.confidence // 10))
+        # Independent source corroborates — asymptotic approach to 100
+        # Each corroboration closes a fraction of the remaining gap, weighted by source strength
+        gap = 100 - best.confidence
+        bump = min(99, best.confidence + max(3, int(gap * new_a.confidence / 300)))
         with transaction.atomic():
             Assertion.objects.filter(pk=best.pk).update(confidence=bump)
             Assertion.objects.filter(pk=new_a.pk).update(status='rejected')
