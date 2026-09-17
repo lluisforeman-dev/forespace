@@ -320,9 +320,13 @@ def research_topic(self, topic: str, topic_type: str = 'company'):
         Assertion.objects.filter(pk__in=new_ids)
         .values_list('entity_id', flat=True).distinct()
     )
+    entity_id_strs = [str(eid) for eid in entity_ids]
     if entity_ids:
         from ingest.tasks.classify import classify_entity
-        for eid in entity_ids:
-            classify_entity.apply_async(args=[str(eid), str(run.pk)], countdown=10)
+        for eid in entity_id_strs:
+            classify_entity.apply_async(args=[eid, str(run.pk)], countdown=10)
+        # Evolve taxonomy based on what just came in — runs after classification settles
+        from ingest.tasks.evolve import evolve_taxonomy
+        evolve_taxonomy.apply_async(args=[entity_id_strs], countdown=60)
 
     return {'accepted': accepted, 'rejected': rejected}
