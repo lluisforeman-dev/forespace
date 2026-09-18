@@ -25,7 +25,7 @@ from core.models import Assertion, AttributeDef, Document, Event, ExtractionRun,
 from ingest.ai import get_client
 from ingest.confidence import domain_trust, score as compute_score
 from ingest.cost import log_call
-from ingest.tasks.resolve import resolve_mention
+from ingest.tasks.resolve import resolve_mention, _VALID_ENTITY_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,7 @@ Structured key-value facts. For EACH claim:
 ━━ SECTION 2: events ━━
 Discrete events in an entity's history. For EACH event:
   subject_mention  - exact entity name (primary subject)
+  subject_type     - organization | asset | person | facility | program
   event_type       - funding_round | launch | contract_award | partnership |
                      acquisition | failure | pivot | regulatory | milestone | leadership
   title            - short descriptive title (e.g. "Series B — £40M led by Airbus Ventures")
@@ -57,13 +58,14 @@ Discrete events in an entity's history. For EACH event:
   description      - 2-3 sentences: what happened and why it matters
   amount_usd       - numeric amount in USD if applicable, else null
   significance     - "high" | "medium" | "low"
-  participants     - list of other entity names directly involved
+  participants     - list of {"name": "...", "type": "organization|person|asset|program"} objects
   source_url       - URL, or null
   confidence       - "high" | "medium" | "low"
 
 ━━ SECTION 3: fragments ━━
 Rich narrative paragraphs about entities. For EACH meaningful piece of intelligence:
   subject_mention       - exact entity name
+  subject_type          - organization | asset | person | facility | program
   category              - technical | financial | competitive | regulatory |
                           strategic | operational | people | challenge
   text                  - verbatim or close paraphrase of a full paragraph of intelligence
@@ -75,8 +77,10 @@ Explicit relationships between named entities. This is the MOST IMPORTANT sectio
 it builds the knowledge graph connecting organisations, assets, and people.
 For EACH relationship:
   subject_mention  - entity name (who initiates / performs the relationship)
+  subject_type     - organization | asset | person | facility | program
   predicate        - one of the ALLOWED PREDICATE KEYS listed below (no others)
   object_mention   - entity name (who receives the relationship)
+  object_type      - organization | asset | person | facility | program
   qualifiers       - extra attributes as JSON object, e.g. {"amount_usd": 5000000, "date": "2024-03"}
                      or {} if none. Common qualifier keys: amount_usd, date, stake_pct, round_series,
                      vehicle, orbit, payload_kg, contract_value_usd, role, scope, product, service_type,
@@ -317,10 +321,14 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
         if not mention or not description or not title:
             continue
 
+        subject_type = ev.get('subject_type', 'organization')
+        if subject_type not in _VALID_ENTITY_TYPES:
+            subject_type = 'organization'
+
         entity_id = name_to_id.get(mention)
         if not entity_id:
             try:
-                entity_id = resolve_mention(mention, document_id=str(fallback_doc.id), entity_type='organization')
+                entity_id = resolve_mention(mention, document_id=str(fallback_doc.id), entity_type=subject_type)
             except Exception:
                 continue
 
@@ -360,14 +368,22 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
                 confidence=confidence,
                 source=ev_doc,
             )
-            for pname in (ev.get('participants') or [])[:8]:
-                pname = str(pname).strip()
+            for p in (ev.get('participants') or [])[:8]:
+                # Support both old ["name"] and new [{"name": ..., "type": ...}] formats
+                if isinstance(p, dict):
+                    pname = str(p.get('name') or '').strip()
+                    ptype = p.get('type', 'organization')
+                    if ptype not in _VALID_ENTITY_TYPES:
+                        ptype = 'organization'
+                else:
+                    pname = str(p).strip()
+                    ptype = 'organization'
                 if not pname:
                     continue
                 pid = name_to_id.get(pname)
                 if not pid:
                     try:
-                        pid = resolve_mention(pname, document_id=str(fallback_doc.id), entity_type='organization')
+                        pid = resolve_mention(pname, document_id=str(fallback_doc.id), entity_type=ptype)
                     except Exception:
                         continue
                 if pid != entity_id:
@@ -390,10 +406,14 @@ def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, 
         if not mention or len(text) < 40:
             continue
 
+        subject_type = frag.get('subject_type', 'organization')
+        if subject_type not in _VALID_ENTITY_TYPES:
+            subject_type = 'organization'
+
         entity_id = name_to_id.get(mention)
         if not entity_id:
             try:
-                entity_id = resolve_mention(mention, document_id=str(fallback_doc.id), entity_type='organization')
+                entity_id = resolve_mention(mention, document_id=str(fallback_doc.id), entity_type=subject_type)
             except Exception:
                 continue
 
@@ -444,6 +464,13 @@ def _store_relations(relations: list, fallback_doc: Document, sonar_source: Sour
             logger.debug('_store_relations: unknown predicate "%s"', predicate)
             continue
 
+        subject_type = rel.get('subject_type', 'organization')
+        if subject_type not in _VALID_ENTITY_TYPES:
+            subject_type = 'organization'
+        object_type = rel.get('object_type', 'organization')
+        if object_type not in _VALID_ENTITY_TYPES:
+            object_type = 'organization'
+
         confidence = conf_map.get(rel.get('confidence', 'medium'), 62)
         qualifiers = rel.get('qualifiers') or {}
         description = (rel.get('description') or '').strip()[:500]
@@ -454,10 +481,10 @@ def _store_relations(relations: list, fallback_doc: Document, sonar_source: Sour
         try:
             with transaction.atomic():
                 subject_id = resolve_mention(
-                    subject_mention, document_id=str(fallback_doc.id), entity_type='organization'
+                    subject_mention, document_id=str(fallback_doc.id), entity_type=subject_type
                 )
                 object_id = resolve_mention(
-                    object_mention, document_id=str(fallback_doc.id), entity_type='organization'
+                    object_mention, document_id=str(fallback_doc.id), entity_type=object_type
                 )
 
                 existing = Relation.objects.filter(
