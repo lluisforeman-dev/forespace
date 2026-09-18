@@ -114,7 +114,13 @@
           <div style="color:#6c7086;margin-top:1px">
             {{ run.started_at|date:"H:i:s" }}
             {% if run.stats.accepted is not None %}
-              · <span style="color:#a6e3a1">{{ run.stats.accepted }} accepted</span>
+              · <span style="color:#a6e3a1">{{ run.stats.accepted }} claims</span>
+            {% endif %}
+            {% if run.stats.events %}
+              · <span style="color:#89dceb">{{ run.stats.events }} events</span>
+            {% endif %}
+            {% if run.stats.fragments %}
+              · <span style="color:#cba6f7">{{ run.stats.fragments }} fragments</span>
             {% endif %}
             {% if run.stats.rejected %}
               · <span style="color:#f38ba8">{{ run.stats.rejected }} rejected</span>

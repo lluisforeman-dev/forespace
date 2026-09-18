@@ -13,7 +13,7 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 
-from core.models import Assertion, Classification, Entity, Relation, Source, ScheduledSource, TaxonomyNode
+from core.models import Assertion, Classification, Entity, EntitySummary, Event, KnowledgeFragment, Relation, Source, ScheduledSource, TaxonomyNode
 from ingest.tasks.analytics import get_snapshot
 
 
@@ -307,14 +307,41 @@ def entity_profile(request, entity_id):
         .order_by('node__taxonomy__key', '-weight')
     )
 
+    try:
+        summary = entity.summary
+    except EntitySummary.DoesNotExist:
+        summary = None
+
+    events = (
+        Event.objects
+        .filter(entity=entity)
+        .prefetch_related('participants')
+        .order_by('date', 'created_at')[:60]
+    )
+
+    # Group fragments by category
+    from itertools import groupby
+    raw_fragments = list(
+        KnowledgeFragment.objects
+        .filter(entity=entity)
+        .select_related('source')
+        .order_by('category', '-date_of_information', '-created_at')[:80]
+    )
+    fragments_by_category = {}
+    for frag in raw_fragments:
+        fragments_by_category.setdefault(frag.category, []).append(frag)
+
     return render(request, 'curation/entity_profile.html', {
-        'entity': entity,
-        'facts': facts,
-        'assertions': all_assertions,
-        'relations_out': relations_out,
-        'relations_in': relations_in,
-        'classifications': classifications,
-        'title': entity.canonical_name,
+        'entity':               entity,
+        'summary':              summary,
+        'events':               events,
+        'fragments_by_category': fragments_by_category,
+        'facts':                facts,
+        'assertions':           all_assertions,
+        'relations_out':        relations_out,
+        'relations_in':         relations_in,
+        'classifications':      classifications,
+        'title':                entity.canonical_name,
     })
 
 

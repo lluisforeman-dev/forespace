@@ -3,46 +3,145 @@
 {% block content %}
 
 <style>
-.conf-bar { display:inline-block; width:80px; height:8px; border-radius:4px; background:#313244; vertical-align:middle; position:relative; }
-.conf-fill { height:100%; border-radius:4px; }
-.conf-high  { background:#a6e3a1; }
-.conf-mid   { background:#89b4fa; }
-.conf-low   { background:#f9e2af; }
-.conf-poor  { background:#f38ba8; }
-.sources-pill { display:inline-block; background:#45475a; border-radius:10px; padding:1px 7px; font-size:11px; color:#bac2de; margin-left:6px; }
-details > summary { cursor:pointer; color:#89b4fa; font-size:13px; margin-top:4px; }
+/* Confidence bars */
+.conf-bar  { display:inline-block;width:80px;height:8px;border-radius:4px;background:#e9ecef;vertical-align:middle;position:relative; }
+.conf-fill { height:100%;border-radius:4px; }
+.conf-high { background:#28a745; }
+.conf-mid  { background:#007bff; }
+.conf-low  { background:#ffc107; }
+.conf-poor { background:#dc3545; }
+.sources-pill { display:inline-block;background:#e9ecef;border-radius:10px;padding:1px 7px;font-size:11px;color:#555;margin-left:6px; }
+
+/* Timeline */
+.timeline { position:relative;padding-left:24px; }
+.timeline::before { content:'';position:absolute;left:7px;top:0;bottom:0;width:2px;background:#dee2e6; }
+.tl-item { position:relative;margin-bottom:16px; }
+.tl-dot  { position:absolute;left:-21px;top:4px;width:10px;height:10px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 2px #adb5bd; }
+.tl-dot-high   { background:#28a745;box-shadow:0 0 0 2px #28a745; }
+.tl-dot-medium { background:#007bff;box-shadow:0 0 0 2px #007bff; }
+.tl-dot-low    { background:#adb5bd;box-shadow:0 0 0 2px #adb5bd; }
+.tl-date  { font-size:11px;color:#888;font-weight:600;margin-bottom:2px; }
+.tl-title { font-size:13px;font-weight:600;color:#333; }
+.tl-desc  { font-size:12px;color:#555;margin-top:3px;line-height:1.5; }
+.tl-meta  { font-size:11px;color:#aaa;margin-top:3px; }
+
+/* Fragment pills */
+.frag-cat { display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-right:6px; }
+.frag-technical   { background:#cce5ff;color:#004085; }
+.frag-financial   { background:#d4edda;color:#155724; }
+.frag-competitive { background:#fff3cd;color:#856404; }
+.frag-regulatory  { background:#f8d7da;color:#721c24; }
+.frag-strategic   { background:#e2d9f3;color:#4a1f8c; }
+.frag-operational { background:#d1ecf1;color:#0c5460; }
+.frag-people      { background:#fde8d8;color:#7a3a00; }
+.frag-challenge   { background:#f8d7da;color:#721c24; }
+
+.frag-item { padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#444;line-height:1.6; }
+.frag-item:last-child { border-bottom:none; }
+
+/* Summary tags */
+.tag { display:inline-block;background:#f0f4ff;border:1px solid #c5d0f7;border-radius:4px;padding:3px 10px;font-size:12px;color:#3452b0;margin:3px 3px 3px 0; }
+.tag-challenge { background:#fff0f0;border-color:#f7c5c5;color:#b03434; }
 </style>
 
-<!-- Header + edit form -->
+<!-- ── Header + Edit form ── -->
 <div class="card">
-  <h2>{{ entity.canonical_name }}
-    <span class="badge badge-{{ entity.status }}" style="font-size:13px;vertical-align:middle;margin-left:8px">{{ entity.status }}</span>
-  </h2>
-  <p style="color:#888;font-size:13px;margin-top:4px">{{ entity.get_entity_type_display }} · created {{ entity.created_at|date:"Y-m-d" }}</p>
-  <form method="post" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-    {% csrf_token %}
-    <input name="canonical_name" value="{{ entity.canonical_name }}" style="padding:4px 8px;background:#1e1e2e;border:1px solid #444;color:#cdd6f4;border-radius:4px;min-width:200px">
-    <select name="entity_type" style="padding:4px 8px;background:#1e1e2e;border:1px solid #444;color:#cdd6f4;border-radius:4px">
-      <option value="organization" {% if entity.entity_type == "organization" %}selected{% endif %}>Organization</option>
-      <option value="facility"     {% if entity.entity_type == "facility"     %}selected{% endif %}>Facility</option>
-      <option value="asset"        {% if entity.entity_type == "asset"        %}selected{% endif %}>Asset</option>
-      <option value="person"       {% if entity.entity_type == "person"       %}selected{% endif %}>Person</option>
-      <option value="event"        {% if entity.entity_type == "event"        %}selected{% endif %}>Event</option>
-      <option value="program"      {% if entity.entity_type == "program"      %}selected{% endif %}>Program</option>
-      <option value="document_node"{% if entity.entity_type == "document_node"%}selected{% endif %}>Document</option>
-    </select>
-    <select name="status" style="padding:4px 8px;background:#1e1e2e;border:1px solid #444;color:#cdd6f4;border-radius:4px">
-      <option value="active"   {% if entity.status == "active"   %}selected{% endif %}>Active</option>
-      <option value="stub"     {% if entity.status == "stub"     %}selected{% endif %}>Stub</option>
-      <option value="merged"   {% if entity.status == "merged"   %}selected{% endif %}>Merged</option>
-      <option value="disputed" {% if entity.status == "disputed" %}selected{% endif %}>Disputed</option>
-      <option value="dormant"  {% if entity.status == "dormant"  %}selected{% endif %}>Dormant</option>
-    </select>
-    <button type="submit" class="btn">Save</button>
-  </form>
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+    <div>
+      <h2 style="font-size:20px;margin-bottom:4px">
+        {{ entity.canonical_name }}
+        <span class="badge badge-{{ entity.status }}" style="font-size:12px;vertical-align:middle;margin-left:8px">{{ entity.status }}</span>
+      </h2>
+      <p style="color:#888;font-size:13px">{{ entity.get_entity_type_display }} · created {{ entity.created_at|date:"Y-m-d" }}</p>
+    </div>
+    <form method="post" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      {% csrf_token %}
+      <input name="canonical_name" value="{{ entity.canonical_name }}" style="padding:4px 8px;border:1px solid #ccc;border-radius:4px;min-width:180px;font-size:13px">
+      <select name="entity_type" style="padding:4px 8px;border:1px solid #ccc;border-radius:4px;font-size:13px">
+        <option value="organization"  {% if entity.entity_type == "organization"  %}selected{% endif %}>Organization</option>
+        <option value="facility"      {% if entity.entity_type == "facility"      %}selected{% endif %}>Facility</option>
+        <option value="asset"         {% if entity.entity_type == "asset"         %}selected{% endif %}>Asset</option>
+        <option value="person"        {% if entity.entity_type == "person"        %}selected{% endif %}>Person</option>
+        <option value="event"         {% if entity.entity_type == "event"         %}selected{% endif %}>Event</option>
+        <option value="program"       {% if entity.entity_type == "program"       %}selected{% endif %}>Program</option>
+        <option value="document_node" {% if entity.entity_type == "document_node" %}selected{% endif %}>Document</option>
+      </select>
+      <select name="status" style="padding:4px 8px;border:1px solid #ccc;border-radius:4px;font-size:13px">
+        <option value="active"   {% if entity.status == "active"   %}selected{% endif %}>Active</option>
+        <option value="stub"     {% if entity.status == "stub"     %}selected{% endif %}>Stub</option>
+        <option value="merged"   {% if entity.status == "merged"   %}selected{% endif %}>Merged</option>
+        <option value="disputed" {% if entity.status == "disputed" %}selected{% endif %}>Disputed</option>
+        <option value="dormant"  {% if entity.status == "dormant"  %}selected{% endif %}>Dormant</option>
+      </select>
+      <button type="submit" class="btn btn-primary btn-sm">Save</button>
+    </form>
+  </div>
 </div>
 
-<!-- ── What we know ── -->
+<!-- ── Synthesised Summary ── -->
+{% if summary %}
+<div class="card">
+  <h2>Overview
+    <span style="font-size:11px;font-weight:400;color:#aaa;margin-left:8px">synthesised from {{ summary.source_count }} source{{ summary.source_count|pluralize }} · {{ summary.last_synthesised|date:"Y-m-d" }}</span>
+  </h2>
+  <p style="font-size:14px;line-height:1.7;color:#333;margin-bottom:14px">{{ summary.overview }}</p>
+
+  {% if summary.challenges %}
+  <div style="margin-bottom:10px">
+    <span style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px">Challenges</span><br>
+    <div style="margin-top:5px">
+      {% for c in summary.challenges %}<span class="tag tag-challenge">{{ c }}</span>{% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if summary.strategic_bets %}
+  <div style="margin-bottom:10px">
+    <span style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px">Strategic bets</span><br>
+    <div style="margin-top:5px">
+      {% for b in summary.strategic_bets %}<span class="tag">{{ b }}</span>{% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if summary.competitive_position %}
+  <p style="font-size:13px;color:#555;margin-top:8px;font-style:italic">{{ summary.competitive_position }}</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- ── Event Timeline ── -->
+{% if events %}
+<div class="card">
+  <h2>Timeline <span style="font-size:12px;font-weight:400;color:#aaa">({{ events|length }} event{{ events|length|pluralize }})</span></h2>
+  <div class="timeline">
+    {% for ev in events %}
+    <div class="tl-item">
+      <div class="tl-dot tl-dot-{{ ev.significance }}"></div>
+      <div class="tl-date">
+        {% if ev.date %}{{ ev.date|date:"Y" }}{% if ev.date_precision == "month" or ev.date_precision == "day" %}-{{ ev.date|date:"m" }}{% endif %}{% if ev.date_precision == "day" %}-{{ ev.date|date:"d" }}{% endif %}{% else %}date unknown{% endif %}
+        &nbsp;·&nbsp;<span style="color:#aaa;font-size:10px;text-transform:uppercase">{{ ev.event_type|title }}</span>
+      </div>
+      <div class="tl-title">{{ ev.title }}{% if ev.amount_usd %} <span style="color:#28a745;font-size:12px">${{ ev.amount_usd|floatformat:0 }}</span>{% endif %}</div>
+      <div class="tl-desc">{{ ev.description }}</div>
+      {% if ev.participants.all %}
+      <div class="tl-meta">
+        With:
+        {% for p in ev.participants.all %}
+          <a href="{% url 'curation:entity_profile' p.id %}" style="color:#0066cc">{{ p.canonical_name }}</a>{% if not forloop.last %}, {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if ev.source and ev.source.url %}
+      <div class="tl-meta"><a href="{{ ev.source.url }}" target="_blank" rel="noopener" style="color:#aaa;font-size:10px">{{ ev.source.url|truncatechars:60 }}</a></div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ── What we know (accepted facts) ── -->
 {% if facts %}
 <div class="card">
   <h2>What we know</h2>
@@ -51,7 +150,7 @@ details > summary { cursor:pointer; color:#89b4fa; font-size:13px; margin-top:4p
       <tr>
         <th>Fact</th>
         <th>Value</th>
-        <th style="width:130px">Confidence</th>
+        <th style="width:140px">Confidence</th>
         <th>Sources</th>
       </tr>
     </thead>
@@ -60,17 +159,13 @@ details > summary { cursor:pointer; color:#89b4fa; font-size:13px; margin-top:4p
       {% with val=f.value_text|default:f.value_num|default:f.value_date|default:f.value_bool %}
       {% if val %}
       <tr>
-        <td style="color:#cba6f7;font-size:13px">{{ f.attribute.label }}</td>
-        <td style="font-weight:500">{{ val }}{% if f.unit %} <span style="color:#888;font-size:12px">{{ f.unit }}</span>{% endif %}</td>
+        <td style="color:#6f42c1;font-size:13px">{{ f.attribute.label }}</td>
+        <td style="font-weight:500">{{ val }}{% if f.unit %} <span style="color:#888;font-size:11px">{{ f.unit }}</span>{% endif %}</td>
         <td>
-          <span class="conf-bar"><span class="conf-fill
-            {% if f.confidence >= 85 %}conf-high{% elif f.confidence >= 70 %}conf-mid{% elif f.confidence >= 50 %}conf-low{% else %}conf-poor{% endif %}"
-            style="width:{{ f.confidence }}%"></span></span>
-          <span style="font-size:12px;color:#888;margin-left:4px">{{ f.confidence }}%</span>
+          <span class="conf-bar"><span class="conf-fill {% if f.confidence >= 85 %}conf-high{% elif f.confidence >= 70 %}conf-mid{% elif f.confidence >= 50 %}conf-low{% else %}conf-poor{% endif %}" style="width:{{ f.confidence }}%"></span></span>
+          <span style="font-size:11px;color:#888;margin-left:4px">{{ f.confidence }}%</span>
         </td>
-        <td>
-          <span class="sources-pill">{{ f.source_count }} source{{ f.source_count|pluralize }}</span>
-        </td>
+        <td><span class="sources-pill">{{ f.source_count }} source{{ f.source_count|pluralize }}</span></td>
       </tr>
       {% endif %}
       {% endwith %}
@@ -80,33 +175,31 @@ details > summary { cursor:pointer; color:#89b4fa; font-size:13px; margin-top:4p
 </div>
 {% endif %}
 
-<!-- ── Evidence (collapsed) ── -->
-{% if assertions %}
+<!-- ── Knowledge Fragments ── -->
+{% if fragments_by_category %}
 <div class="card">
-  <details>
-    <summary>Evidence — {{ assertions|length }} assertion{{ assertions|length|pluralize }}</summary>
-    <table style="margin-top:10px">
-      <thead><tr><th>Attribute</th><th>Value</th><th>Conf</th><th>Status</th><th>Source</th><th>Quote</th></tr></thead>
-      <tbody>
-        {% for a in assertions %}
-        <tr>
-          <td style="font-size:12px;color:#888">{{ a.attribute_id }}</td>
-          <td style="font-size:12px">{{ a.value_text|default:a.value_num|default:a.value_bool|default:"—" }}</td>
-          <td style="font-size:12px">{{ a.confidence }}</td>
-          <td><span class="badge badge-{{ a.status }}" style="font-size:10px">{{ a.status }}</span></td>
-          <td style="font-size:11px">
-            {{ a.document.source.name|default:"—" }}
-            {% if a.document.url %}<br><a href="{{ a.document.url }}" target="_blank" rel="noopener" style="color:#89b4fa;word-break:break-all">{{ a.document.url|truncatechars:55 }}</a>{% endif %}
-          </td>
-          <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#666" title="{{ a.quote }}">{{ a.quote|default:"" }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <h2>Intelligence</h2>
+  {% for category, frags in fragments_by_category.items %}
+  <details style="margin-bottom:10px" {% if forloop.first %}open{% endif %}>
+    <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#333;padding:6px 0">
+      <span class="frag-cat frag-{{ category }}">{{ category }}</span>
+      <span style="color:#888;font-size:12px">{{ frags|length }} fragment{{ frags|length|pluralize }}</span>
+    </summary>
+    <div style="margin-top:8px;padding-left:8px">
+      {% for frag in frags %}
+      <div class="frag-item">
+        {{ frag.text }}
+        {% if frag.date_of_information %}<span style="font-size:11px;color:#bbb;margin-left:8px">{{ frag.date_of_information|date:"Y-m" }}</span>{% endif %}
+        {% if frag.source and frag.source.url %}<br><a href="{{ frag.source.url }}" target="_blank" rel="noopener" style="font-size:11px;color:#aaa">{{ frag.source.url|truncatechars:70 }}</a>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
   </details>
+  {% endfor %}
 </div>
 {% endif %}
 
+<!-- ── Relations ── -->
 {% if relations_out %}
 <div class="card">
   <h2>Relations (outgoing)</h2>
@@ -115,9 +208,9 @@ details > summary { cursor:pointer; color:#89b4fa; font-size:13px; margin-top:4p
     <tbody>
       {% for r in relations_out %}
       <tr>
-        <td>{{ r.predicate_id }}</td>
+        <td style="color:#6f42c1;font-size:12px">{{ r.predicate_id }}</td>
         <td><a href="{% url 'curation:entity_profile' r.object.id %}">{{ r.object }}</a></td>
-        <td>{{ r.confidence }}</td>
+        <td style="font-size:12px;color:#888">{{ r.confidence }}%</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -134,8 +227,8 @@ details > summary { cursor:pointer; color:#89b4fa; font-size:13px; margin-top:4p
       {% for r in relations_in %}
       <tr>
         <td><a href="{% url 'curation:entity_profile' r.subject.id %}">{{ r.subject }}</a></td>
-        <td>{{ r.predicate_id }}</td>
-        <td>{{ r.confidence }}</td>
+        <td style="color:#6f42c1;font-size:12px">{{ r.predicate_id }}</td>
+        <td style="font-size:12px;color:#888">{{ r.confidence }}%</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -143,6 +236,7 @@ details > summary { cursor:pointer; color:#89b4fa; font-size:13px; margin-top:4p
 </div>
 {% endif %}
 
+<!-- ── Classifications ── -->
 {% if classifications %}
 <div class="card">
   <h2>Classifications</h2>
@@ -151,14 +245,41 @@ details > summary { cursor:pointer; color:#89b4fa; font-size:13px; margin-top:4p
     <tbody>
       {% for c in classifications %}
       <tr>
-        <td>{{ c.node.taxonomy.key }}</td>
-        <td>{{ c.node.path }}</td>
-        <td>{{ c.weight }}</td>
-        <td>{% if c.is_primary %}Yes{% endif %}</td>
+        <td style="font-size:12px;color:#888">{{ c.node.taxonomy.key }}</td>
+        <td style="font-size:13px">{{ c.node.path }}</td>
+        <td style="font-size:12px;color:#888">{{ c.weight }}</td>
+        <td>{% if c.is_primary %}<span style="color:#28a745;font-weight:600">✓</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+</div>
+{% endif %}
+
+<!-- ── Raw Evidence (collapsed) ── -->
+{% if assertions %}
+<div class="card">
+  <details>
+    <summary style="cursor:pointer;font-size:13px;color:#888">Raw evidence — {{ assertions|length }} assertion{{ assertions|length|pluralize }}</summary>
+    <table style="margin-top:10px">
+      <thead><tr><th>Attribute</th><th>Value</th><th>Conf</th><th>Status</th><th>Source</th><th>Quote</th></tr></thead>
+      <tbody>
+        {% for a in assertions %}
+        <tr>
+          <td style="font-size:11px;color:#888">{{ a.attribute_id }}</td>
+          <td style="font-size:12px">{{ a.value_text|default:a.value_num|default:a.value_bool|default:"—" }}</td>
+          <td style="font-size:12px">{{ a.confidence }}</td>
+          <td><span class="badge badge-{{ a.status }}" style="font-size:10px">{{ a.status }}</span></td>
+          <td style="font-size:11px">
+            {{ a.document.source.name|default:"—" }}
+            {% if a.document.url %}<br><a href="{{ a.document.url }}" target="_blank" rel="noopener" style="color:#0066cc;word-break:break-all">{{ a.document.url|truncatechars:50 }}</a>{% endif %}
+          </td>
+          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#666" title="{{ a.quote }}">{{ a.quote|default:"" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
 </div>
 {% endif %}
 

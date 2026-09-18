@@ -14,6 +14,7 @@ from ingest.tasks.analytics import build_analytics_snapshot
 from ingest.tasks.research import research_topic
 from ingest.tasks.evolve import evolve_taxonomy
 from ingest.tasks.synthesize import synthesize_conflict
+from ingest.tasks.summarise import synthesise_entity_summary
 
 __all__ = [
     'crawl_url', 'parse_document', 'triage_document',
@@ -22,5 +23,5 @@ __all__ = [
     'ingest_rss_feed', 'dispatch_scheduled_sources',
     'classify_entity', 'extract_relations', 'extract_relations_sonar',
     'build_analytics_snapshot', 'research_topic', 'evolve_taxonomy',
-    'synthesize_conflict',
+    'synthesize_conflict', 'synthesise_entity_summary',
 ]
