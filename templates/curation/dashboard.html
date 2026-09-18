@@ -105,27 +105,57 @@
   {% if recent_runs %}
   <div style="font-size:12px">
     {% for run in recent_runs %}
-    <div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid #313244">
-      <div style="width:8px;height:8px;border-radius:50%;margin-top:4px;flex-shrink:0;
-        background:{% if run.status == 'completed' %}#a6e3a1{% elif run.status == 'running' %}#89b4fa{% elif run.status == 'failed' %}#f38ba8{% else %}#6c7086{% endif %}">
-      </div>
-      <div style="flex:1;min-width:0">
-        <div style="color:#cdd6f4;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-          {{ run.task }}
-          {% if run.stats.topic %}<span style="color:#cba6f7"> → {{ run.stats.topic|truncatechars:40 }}</span>{% endif %}
+    <div style="padding:6px 0;border-bottom:1px solid #313244">
+      <div style="display:flex;align-items:flex-start;gap:8px">
+        <div style="width:8px;height:8px;border-radius:50%;margin-top:4px;flex-shrink:0;
+          background:{% if run.status == 'completed' %}#a6e3a1{% elif run.status == 'running' %}#89b4fa{% elif run.status == 'failed' %}#f38ba8{% else %}#6c7086{% endif %}">
         </div>
-        <div style="color:#6c7086;margin-top:1px">
-          {{ run.started_at|date:"H:i:s" }}
-          {% if run.stats.accepted is not None %}
-            · <span style="color:#a6e3a1">{{ run.stats.accepted }} accepted</span>
-          {% endif %}
-          {% if run.stats.rejected %}
-            · <span style="color:#6c7086">{{ run.stats.rejected }} rejected</span>
-          {% endif %}
-          {% if run.status == 'failed' %}<span style="color:#f38ba8"> · failed</span>{% endif %}
+        <div style="flex:1;min-width:0">
+          <div style="color:#cdd6f4;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            {{ run.task }}
+            {% if run.stats.topic %}<span style="color:#cba6f7"> → {{ run.stats.topic|truncatechars:40 }}</span>{% endif %}
+          </div>
+          <div style="color:#6c7086;margin-top:1px">
+            {{ run.started_at|date:"H:i:s" }}
+            {% if run.stats.accepted is not None %}
+              · <span style="color:#a6e3a1">{{ run.stats.accepted }} accepted</span>
+            {% endif %}
+            {% if run.stats.rejected %}
+              · <span style="color:#f38ba8">{{ run.stats.rejected }} rejected</span>
+            {% endif %}
+            {% if run.status == 'failed' %}<span style="color:#f38ba8"> · failed</span>{% endif %}
+          </div>
         </div>
       </div>
-      <div style="color:#45475a;white-space:nowrap">{{ run.model|truncatechars:20 }}</div>
+      {% if run.stats.rejections %}
+      <details style="margin-left:16px;margin-top:4px">
+        <summary style="color:#6c7086;font-size:11px;cursor:pointer">Why were {{ run.stats.rejected }} claim{{ run.stats.rejected|pluralize }} rejected?</summary>
+        <div style="margin-top:4px;padding:6px 8px;background:#181825;border-radius:4px;font-size:11px">
+          {% regroup run.stats.rejections by reason as grouped %}
+          {% for group in grouped %}
+            <div style="margin-bottom:4px">
+              {% if group.grouper == 'unknown_attribute' %}
+                <span style="color:#f9e2af">Unknown attribute keys</span>
+                — the LLM used attribute keys not in the vocabulary:
+                <span style="color:#cba6f7">{{ group.list|length }} claim{{ group.list|length|pluralize }}</span>
+                <div style="color:#585b70;margin-top:2px">
+                  {% for r in group.list %}{{ r.attribute_key }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                </div>
+                <div style="color:#45475a;margin-top:2px;font-style:italic">
+                  Fix: seed more AttributeDef rows or check if the taxonomy covers these concepts.
+                </div>
+              {% elif group.grouper == 'db_error' %}
+                <span style="color:#f38ba8">Database errors</span>
+                — {{ group.list|length }} claim{{ group.list|length|pluralize }} hit a constraint:
+                <div style="color:#585b70;margin-top:2px">
+                  {% for r in group.list %}{{ r.subject }}.{{ r.attribute_key }}: {{ r.detail }}{% if not forloop.last %} · {% endif %}{% endfor %}
+                </div>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
     </div>
     {% endfor %}
   </div>

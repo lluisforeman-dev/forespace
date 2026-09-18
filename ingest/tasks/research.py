@@ -239,11 +239,16 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
     valid_attrs = {a.key: a for a in AttributeDef.objects.all()}
     accepted = rejected = 0
     new_ids: list[int] = []
+    rejection_log: list[dict] = []   # stored in run.stats for visibility
 
     for claim in claims:
         attr_key = claim.get('attribute_key')
         if attr_key not in valid_attrs:
-            logger.debug('Unknown attribute_key "%s", skipping', attr_key)
+            rejection_log.append({
+                'reason': 'unknown_attribute',
+                'attribute_key': attr_key,
+                'subject': claim.get('subject_mention', '?'),
+            })
             rejected += 1
             continue
 
@@ -311,12 +316,22 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             new_ids.append(a.pk)
             accepted += 1
         except Exception as e:
-            logger.debug('Skipping duplicate claim %s.%s: %s', mention, attr_key, e)
+            rejection_log.append({
+                'reason': 'db_error',
+                'attribute_key': attr_key,
+                'subject': mention,
+                'detail': str(e)[:120],
+            })
             rejected += 1
 
     run.status = 'completed'
     run.finished_at = timezone.now()
-    run.stats = {'accepted': accepted, 'rejected': rejected, 'topic': topic}
+    run.stats = {
+        'accepted': accepted,
+        'rejected': rejected,
+        'topic': topic,
+        'rejections': rejection_log,
+    }
     run.save(update_fields=['status', 'finished_at', 'stats'])
     logger.info('research_topic "%s": %d accepted, %d rejected', topic, accepted, rejected)
 
