@@ -755,10 +755,12 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         adjudicate_assertions.delay(new_ids)
         refresh_entity_current.apply_async(countdown=5)
 
-    # Collect all touched entities (from claims + events + fragments)
+    # Collect ALL touched entities: claims + event subjects + event participants + fragments
     all_entity_ids = set(entity_ids)
-    for ev in Event.objects.filter(source=doc).values_list('entity_id', flat=True):
-        all_entity_ids.add(str(ev))
+    for ev_obj in Event.objects.filter(source=doc).prefetch_related('participants'):
+        all_entity_ids.add(str(ev_obj.entity_id))
+        for p in ev_obj.participants.all():
+            all_entity_ids.add(str(p.id))
     for frag in KnowledgeFragment.objects.filter(source=doc).values_list('entity_id', flat=True):
         all_entity_ids.add(str(frag))
     entity_id_strs = list(all_entity_ids)
@@ -778,35 +780,47 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
 
         evolve_taxonomy.apply_async(args=[entity_id_strs], countdown=60)
 
-        # Cascade: research newly discovered stubs
+        # Cascade: auto-research every stub entity discovered in this run
+        # Depth 0 (user-triggered): research all new stubs
+        # Depth 1 (first cascade): research stubs found by depth-0, but cap at 8 to avoid runaway
+        # Depth 2+: stop
         if cascade_depth < 2:
+            stub_cap = None if cascade_depth == 0 else 8
             stubs_to_research = []
-            for name in entity_name_map.values():
-                stub_entity = _Entity.objects.filter(canonical_name=name, status='stub').first()
-                if not stub_entity:
+            all_stub_entities = (
+                _Entity.objects
+                .filter(id__in=entity_id_strs, status='stub')
+                .only('id', 'canonical_name', 'entity_type')
+            )
+            for stub_entity in all_stub_entities:
+                stub_name = stub_entity.canonical_name
+                # Skip if already has accepted data
+                if Assertion.objects.filter(entity=stub_entity, status='accepted').exists():
                     continue
-                if Assertion.objects.filter(entity__canonical_name=name, status='accepted').exists():
-                    continue
+                # Skip if researched in the last 7 days
                 if ExtractionRun.objects.filter(
-                    stats__topic=name,
+                    stats__topic=stub_name,
                     started_at__gte=timezone.now() - timedelta(days=7),
                 ).exists():
                     continue
-                stubs_to_research.append(name)
+                stubs_to_research.append(stub_entity)
 
-            for stub_name in stubs_to_research[:4]:
-                stub_entity = _Entity.objects.filter(canonical_name=stub_name, status='stub').first()
-                # Non-primary-space entities get researched with a space-angle prompt
-                is_primary = _is_space_relevant(stub_name, stub_entity.entity_type if stub_entity else 'organization')
-                t_type = _TYPE_TO_TOPIC.get(stub_entity.entity_type, 'company') if stub_entity else 'company'
-                # For adjacent entities (e.g. Telefonica), use space_angle topic type
+            if stub_cap:
+                stubs_to_research = stubs_to_research[:stub_cap]
+
+            for i, stub_entity in enumerate(stubs_to_research):
+                stub_name = stub_entity.canonical_name
+                is_primary = _is_space_relevant(stub_name, stub_entity.entity_type)
+                t_type = _TYPE_TO_TOPIC.get(stub_entity.entity_type, 'company')
                 if not is_primary and t_type == 'company':
                     t_type = 'space_angle'
+                # Stagger: 2 min base + 30s per slot so queue doesn't flood
+                countdown = 120 + i * 30 + cascade_depth * 60
                 research_topic.apply_async(
                     args=[stub_name, t_type],
                     kwargs={'cascade_depth': cascade_depth + 1},
-                    countdown=90 + cascade_depth * 60,
+                    countdown=countdown,
                 )
-                logger.info('research_topic: cascade depth=%d queued for "%s"', cascade_depth + 1, stub_name)
+                logger.info('research_topic: cascade depth=%d queued "%s" (in %ds)', cascade_depth + 1, stub_name, countdown)
 
     return {'accepted': accepted, 'rejected': rejected, 'events': events_stored, 'fragments': fragments_stored, 'relations': relations_stored}
