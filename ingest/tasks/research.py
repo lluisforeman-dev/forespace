@@ -289,6 +289,43 @@ def _entity_context_block(topic: str) -> str:
     return '\n'.join(lines)
 
 
+_ANGLES_SYSTEM = """\
+You are a research strategist for a space-industry knowledge graph.
+Given an entity name and type, generate 3 targeted search angles that would uncover
+different facets of that entity's activities, relationships, and history.
+
+Each angle should be a short search-focused description (not a question).
+Think about: funding & investors, technology & products, key people & leadership,
+contracts & customers, partnerships & competition, regulatory & licensing history.
+
+Return JSON only: {"angles": ["...", "...", "..."]}
+Include the entity name or a clear disambiguator in each angle so Sonar doesn't confuse
+it with unrelated entities (e.g. if the entity could be mistaken for something else,
+add a clarifying term like "space", "aerospace", "satellite", etc.)."""
+
+
+def _generate_search_angles(topic: str, entity_type: str) -> list[str]:
+    """Use AI_MODEL_FAST to generate 3 diverse search angles for a company/entity."""
+    try:
+        resp = get_client().chat.completions.create(
+            model=settings.AI_MODEL_FAST,
+            messages=[
+                {'role': 'system', 'content': _ANGLES_SYSTEM},
+                {'role': 'user', 'content': f'Entity: {topic}\nType: {entity_type}'},
+            ],
+            response_format={'type': 'json_object'},
+            max_tokens=200,
+            temperature=0.3,
+        )
+        log_call('search_angles', settings.AI_MODEL_FAST, resp)
+        data = json.loads(resp.choices[0].message.content)
+        angles = [str(a).strip() for a in data.get('angles', []) if a]
+        return angles[:3]
+    except Exception as exc:
+        logger.warning('_generate_search_angles "%s": %s', topic, exc)
+        return []
+
+
 def _seen_urls_for_company(topic: str) -> str:
     from django.db.models import Q
     from core.models import Entity
@@ -608,7 +645,7 @@ def _store_relations(relations: list, fallback_doc: Document, sonar_source: Sour
 
 
 @shared_task(bind=True, queue='extract', max_retries=2, default_retry_delay=30)
-def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth: int = 0):
+def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth: int = 0, search_angle: str = None):
     """
     Use Perplexity Sonar to research a topic and write structured knowledge to the DB.
     topic_type: 'company' | 'question' | 'news'
@@ -632,12 +669,14 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
     if topic_type == 'company':
         seen = _seen_urls_for_company(topic)
         ctx = _entity_context_block(topic)
+        angle_str = f'\nSearch focus for this run: {search_angle}' if search_angle else ''
         user_msg = (
             f'Research the space-industry company or organisation "{topic}". '
             f'Find current facts, events, intelligence, and relationships from recent web sources. '
             f'Extract as much as possible: funding history, launches, contracts, challenges, '
             f'technology choices, competitive position, key people, strategic pivots, '
-            f'and all relationships with other companies, agencies, and assets.\n\n'
+            f'and all relationships with other companies, agencies, and assets.'
+            f'{angle_str}\n\n'
             f'{_vocab_block()}'
             f'{ctx}'
             f'{_seen_block(seen)}'
@@ -654,13 +693,15 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
     elif topic_type == 'space_angle':
         seen = _seen_urls_for_company(topic)
         ctx = _entity_context_block(topic)
+        angle_str = f'\nSearch focus for this run: {search_angle}' if search_angle else ''
         user_msg = (
             f'Research "{topic}" specifically for its involvement in the space industry. '
             f'What satellite services does it operate or use? What space investments, '
             f'partnerships, or contracts does it have? What launch customers, ground '
             f'infrastructure, or spectrum assets are relevant? '
             f'Extract all relationships to space companies, agencies, and assets. '
-            f'Ignore all non-space activities entirely.\n\n'
+            f'Ignore all non-space activities entirely.'
+            f'{angle_str}\n\n'
             f'{_vocab_block()}'
             f'{ctx}'
             f'{_seen_block(seen)}'
@@ -917,5 +958,18 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
                 'research_topic: cascade queued "%s" (depth=%d, assertions=%d, in %ds)',
                 name, cascade_depth + 1, discovered.assertion_count, countdown,
             )
+
+    # ── Search angle follow-ups (primary company runs only) ───────────────
+    # Generate 3 targeted search angles and queue one Sonar call each.
+    # Only on user-triggered company runs (not cascades, not angle runs).
+    if topic_type in ('company', 'space_angle') and cascade_depth == 0 and search_angle is None:
+        angles = _generate_search_angles(topic, topic_type)
+        for i, angle in enumerate(angles):
+            research_topic.apply_async(
+                args=[topic, topic_type],
+                kwargs={'cascade_depth': 0, 'search_angle': angle},
+                countdown=180 + i * 90,  # stagger: 3min, 4.5min, 6min after primary
+            )
+            logger.info('research_topic: angle run queued "%s" → %s', topic, angle)
 
     return {'accepted': accepted, 'rejected': rejected, 'events': events_stored, 'fragments': fragments_stored, 'relations': relations_stored}
