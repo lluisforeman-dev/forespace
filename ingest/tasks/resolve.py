@@ -106,6 +106,7 @@ _VALID_ENTITY_TYPES = {
     'company', 'investor', 'entity', 'university',
     'facility', 'asset', 'person',
     'document_node', 'event', 'program',
+    'geography',  # countries, regions, cities — relation targets only, never researched
 }
 
 
@@ -119,10 +120,12 @@ def resolve_mention(
         entity_type = 'company'
     norm = normalize_name(mention)
 
-    # Geographic blocklist — countries, regions, and cities are values, not entities
+    # Geographic blocklist — countries, regions, and cities get entity_type='geography'
+    # so they can be relation targets (has_office_in → London) but are filtered from
+    # company-focused views. They are never researched as companies.
     if norm in _GEOGRAPHIC_BLOCKLIST:
-        logger.debug('resolve: skipping geographic mention "%s"', mention)
-        return _geographic_placeholder()
+        logger.debug('resolve: geographic mention "%s" — finding/creating geography entity', mention)
+        return _find_or_create_geography(mention, norm)
 
     # Level 2a — exact canonical name (case-insensitive)
     ent = (
@@ -286,16 +289,43 @@ def _llm_disambiguate(mention: str, mention_type: str, candidates: list) -> str 
     return None
 
 
-def _geographic_placeholder() -> str:
-    """Return the ID of the shared __geographic__ sink entity, creating it if needed."""
-    ent, _ = Entity.objects.get_or_create(
-        slug='__geographic__',
-        defaults={
-            'entity_type': 'entity',
-            'canonical_name': '__geographic__',
-            'status': 'dormant',
-        },
+def _find_or_create_geography(mention: str, norm: str) -> str:
+    """Find or create a geography entity (country, region, city).
+
+    These are valid relation targets (has_office_in → London) but carry
+    entity_type='geography' so they are excluded from company-focused views
+    and never auto-researched as companies.
+    """
+    alias = (
+        EntityAlias.objects
+        .select_related('entity')
+        .filter(alias_norm=norm, entity__entity_type='geography')
+        .first()
     )
+    if alias:
+        return str(alias.entity_id)
+
+    slug_base = slugify(mention)[:200] or 'geo'
+    slug = slug_base
+    n = 1
+    while Entity.objects.filter(slug=slug).exists():
+        slug = f'{slug_base}-{n}'
+        n += 1
+
+    with transaction.atomic():
+        ent = Entity.objects.create(
+            entity_type='geography',
+            canonical_name=mention,
+            slug=slug,
+            status='active',
+        )
+        EntityAlias.objects.create(
+            entity=ent,
+            alias=mention,
+            alias_norm=norm,
+            alias_kind='trading',
+        )
+    logger.info('Geography entity created: "%s" → %s', mention, ent.id)
     return str(ent.id)
 
 

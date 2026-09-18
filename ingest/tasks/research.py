@@ -435,6 +435,8 @@ def _is_space_relevant(name: str, entity_type: str = 'company') -> bool:
     Organizations and persons are checked against keyword lists.
     Returns True if relevant (or uncertain — we prefer false negatives over false positives).
     """
+    if entity_type == 'geography':
+        return False  # never auto-research geographic entities
     if entity_type in ('asset', 'facility', 'event', 'program'):
         return True
     name_lower = name.lower()
