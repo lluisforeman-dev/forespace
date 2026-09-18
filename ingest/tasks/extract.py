@@ -30,7 +30,10 @@ You are a structured data extractor for a space-industry knowledge graph.
 Extract factual claims from the document text below.
 
 For EACH claim provide:
-  subject_mention  – exact company/entity name as it appears in the text
+  subject_mention       – exact company/entity name as it appears in the text
+  subject_mention_full  – if subject_mention is an acronym or abbreviation, provide the full
+                          expanded name (e.g. "ICGC" → "Institut Cartogràfic i Geològic de Catalunya",
+                          "ESA" → "European Space Agency"). Omit (null) if already a full name.
   attribute_key    – one of the allowed keys listed below (no others)
   value            – extracted value as string or number, or null
   unit             – unit of measurement (e.g. "USD", "kg") or null
@@ -86,6 +89,22 @@ def _map_value(claim: ExtractedClaim, datatype: str) -> dict:
     if datatype == 'bool' and v is not None:
         return {'value_bool': bool(v)}
     return {'value_text': str(v) if v is not None else None}
+
+
+def _ensure_alias(entity_id: str, surface_form: str, document_id: str | None) -> None:
+    """Add surface_form as an alias for entity_id if not already present."""
+    from core.models import EntityAlias
+    from core.normalize import normalize_name
+    norm = normalize_name(surface_form)
+    EntityAlias.objects.get_or_create(
+        entity_id=entity_id,
+        alias_norm=norm,
+        defaults={
+            'alias': surface_form,
+            'alias_kind': 'abbrev',
+            'document_id': document_id,
+        },
+    )
 
 
 @shared_task(bind=True, queue='extract', max_retries=2)
@@ -171,7 +190,16 @@ def extract_document(self, document_id: str):
         valid_range = DateTimeTZRange(range_start, None)
 
         with transaction.atomic():
-            entity_id = resolve_mention(claim.subject_mention, document_id=document_id)
+            # Resolve by full name when available so trigram matching works on the
+            # expanded form; then register the acronym as an alias so future
+            # mentions of the short form hit Level-2 exact match.
+            lookup_name = claim.subject_mention_full or claim.subject_mention
+            entity_id = resolve_mention(lookup_name, document_id=document_id)
+            if (
+                claim.subject_mention_full
+                and claim.subject_mention != claim.subject_mention_full
+            ):
+                _ensure_alias(entity_id, claim.subject_mention, document_id)
             assertion = Assertion.objects.create(
                 entity_id=entity_id,
                 attribute_id=claim.attribute_key,

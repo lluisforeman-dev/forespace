@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 class ExtractedClaim(BaseModel):
     subject_mention: str          # exact surface form from the text
+    subject_mention_full: str | None = None  # expanded full name if subject_mention is an acronym
     attribute_key: str            # must exist in attribute_def
     value: str | float | None
     unit: str | None = None
