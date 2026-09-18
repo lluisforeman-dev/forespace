@@ -107,7 +107,7 @@ def _llm_disambiguate(mention: str, candidates: list) -> str | None:
 
         for entity_id, alias_norm, sim in candidates:
             resp = client.chat.completions.create(
-                model=settings.AI_MODEL,  # cheap model for this binary question
+                model=settings.AI_MODEL_FAST,  # binary yes/no question
                 messages=[
                     {'role': 'system', 'content': _LLM_RESOLVE_SYSTEM},
                     {'role': 'user', 'content': _LLM_RESOLVE_USER.format(
@@ -118,7 +118,7 @@ def _llm_disambiguate(mention: str, candidates: list) -> str | None:
                 max_tokens=60,
                 temperature=0,
             )
-            log_call('resolve', settings.AI_MODEL, resp)
+            log_call('resolve', settings.AI_MODEL_FAST, resp)
             result = json.loads(resp.choices[0].message.content)
             if result.get('same') and result.get('confidence') in ('high', 'medium'):
                 return str(entity_id)
