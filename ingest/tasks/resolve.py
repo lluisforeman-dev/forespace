@@ -82,6 +82,26 @@ are strong evidence of being the same entity.
 Reply: {{"same": true, "confidence": "high"|"medium"|"low"}} or {{"same": false}}"""
 
 
+# Normalized geographic terms that should never become stub entities.
+# Countries, regions, and continents appear as claim *values*, not subjects.
+_GEOGRAPHIC_BLOCKLIST = {
+    # Continents
+    'europe', 'north america', 'south america', 'asia', 'africa', 'oceania', 'antarctica',
+    # Common countries (normalized — no suffixes)
+    'united', 'united kingdom', 'united arab', 'united arab emirates', 'uae',
+    'france', 'germany', 'spain', 'italy', 'japan', 'china', 'india', 'canada',
+    'australia', 'brazil', 'russia', 'south korea', 'israel', 'norway', 'sweden',
+    'netherlands', 'belgium', 'switzerland', 'austria', 'portugal', 'poland',
+    'ukraine', 'turkey', 'saudi arabia', 'new zealand', 'singapore', 'luxembourg',
+    # Regions / autonomous communities
+    'catalonia', 'cataluna', 'scotland', 'wales', 'flanders', 'brittany',
+    'bavaria', 'ile de france', 'lombardy', 'andalusia',
+    # Common cities that slip through
+    'london', 'paris', 'berlin', 'madrid', 'rome', 'tokyo', 'beijing', 'washington',
+    'brussels', 'geneva', 'amsterdam', 'stockholm', 'oslo', 'helsinki',
+    'toulouse', 'munich', 'barcelona', 'milan', 'cape canaveral', 'houston',
+}
+
 _VALID_ENTITY_TYPES = {
     'company', 'investor', 'entity', 'university',
     'facility', 'asset', 'person',
@@ -98,6 +118,11 @@ def resolve_mention(
     if entity_type not in _VALID_ENTITY_TYPES:
         entity_type = 'company'
     norm = normalize_name(mention)
+
+    # Geographic blocklist — countries, regions, and cities are values, not entities
+    if norm in _GEOGRAPHIC_BLOCKLIST:
+        logger.debug('resolve: skipping geographic mention "%s"', mention)
+        return _geographic_placeholder()
 
     # Level 2a — exact canonical name (case-insensitive)
     ent = (
@@ -259,6 +284,19 @@ def _llm_disambiguate(mention: str, mention_type: str, candidates: list) -> str 
     except Exception as exc:
         logger.warning('L4 LLM resolve failed for "%s": %s', mention, exc)
     return None
+
+
+def _geographic_placeholder() -> str:
+    """Return the ID of the shared __geographic__ sink entity, creating it if needed."""
+    ent, _ = Entity.objects.get_or_create(
+        slug='__geographic__',
+        defaults={
+            'entity_type': 'entity',
+            'canonical_name': '__geographic__',
+            'status': 'dormant',
+        },
+    )
+    return str(ent.id)
 
 
 def _add_alias(entity_id: str, surface_form: str, norm: str, document_id: str | None) -> None:

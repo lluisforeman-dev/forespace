@@ -124,6 +124,10 @@ RULES:
   spectrum holdings, or space partnerships.
   Example: extract Telefonica's satellite backhaul contracts and LEO investments,
   but ignore their 5G rollout, subscriber counts, or rivalry with Vodafone.
+- subject_mention in ALL sections MUST be an organisation, company, institution, person,
+  or named asset. NEVER use a country, region, city, or continent as subject_mention —
+  these are values (e.g. headquarters_country = "United Kingdom"), not subjects.
+  Geographic areas may appear as object_mention in relations (e.g. operates_in → "United Kingdom").
 - In claims, only use attribute_key values from the allowed list below.
 - Extract as many events, fragments, and relations as you find — do not summarise.
 - Fragments must be substantive (> 2 sentences). Capture challenges, pivots, tech choices,

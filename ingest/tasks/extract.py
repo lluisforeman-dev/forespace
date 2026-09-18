@@ -49,6 +49,9 @@ CRITICAL RULES:
 - Never invent values. If unsure, use low confidence.
 - Only use attribute keys from the allowed list — no others.
 - Do not pass graph state into claims (extraction sees only this document).
+- subject_mention MUST be an organisation, company, institution, person, or named asset.
+  NEVER use a country, region, city, continent, or any geographic area as subject_mention —
+  these are values (e.g. headquarters_country = "United Kingdom"), not subjects.
 - Return JSON: {"claims": [...]}"""
 
 
