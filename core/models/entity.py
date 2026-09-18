@@ -8,6 +8,7 @@ class Entity(models.Model):
         ('company', 'Company'),
         ('investor', 'Investor'),
         ('entity', 'Entity'),
+        ('university', 'University'),
         ('facility', 'Facility'),
         ('asset', 'Asset'),
         ('person', 'Person'),

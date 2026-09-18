@@ -34,7 +34,7 @@ Reply: {{"same": true, "confidence": "high"|"medium"|"low"}} or {{"same": false}
 
 
 _VALID_ENTITY_TYPES = {
-    'company', 'investor', 'entity',
+    'company', 'investor', 'entity', 'university',
     'facility', 'asset', 'person',
     'document_node', 'event', 'program',
 }

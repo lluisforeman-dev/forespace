@@ -38,7 +38,7 @@ Search the web for current, verifiable information and return JSON with THREE se
 ━━ SECTION 1: claims ━━
 Structured key-value facts. For EACH claim:
   subject_mention        - exact entity name
-  subject_type           - company | investor | entity | asset | person | facility | event | program
+  subject_type           - company | investor | entity | university | asset | person | facility | event | program
   attribute_key          - one of the ALLOWED KEYS listed below (no others)
   value                  - extracted value as string or number, or null
   unit                   - unit of measurement or null
@@ -50,7 +50,7 @@ Structured key-value facts. For EACH claim:
 ━━ SECTION 2: events ━━
 Discrete events in an entity's history. For EACH event:
   subject_mention  - exact entity name (primary subject)
-  subject_type     - company | investor | entity | asset | person | facility | program
+  subject_type     - company | investor | entity | university | asset | person | facility | program
   event_type       - funding_round | launch | contract_award | partnership |
                      acquisition | failure | pivot | regulatory | milestone | leadership
   title            - short descriptive title (e.g. "Series B — £40M led by Airbus Ventures")
@@ -58,7 +58,7 @@ Discrete events in an entity's history. For EACH event:
   description      - 2-3 sentences: what happened and why it matters
   amount_usd       - numeric amount in USD if applicable, else null
   significance     - "high" | "medium" | "low"
-  participants     - list of {"name": "...", "type": "company|investor|entity|person|asset|program"} objects
+  participants     - list of {"name": "...", "type": "company|investor|entity|university|person|asset|program"} objects
   source_url       - URL, or null
   confidence       - "high" | "medium" | "low"
 
@@ -77,10 +77,10 @@ Explicit relationships between named entities. This is the MOST IMPORTANT sectio
 it builds the knowledge graph connecting organisations, assets, and people.
 For EACH relationship:
   subject_mention  - entity name (who initiates / performs the relationship)
-  subject_type     - company | investor | entity | asset | person | facility | program
+  subject_type     - company | investor | entity | university | asset | person | facility | program
   predicate        - one of the ALLOWED PREDICATE KEYS listed below (no others)
   object_mention   - entity name (who receives the relationship)
-  object_type      - company | investor | entity | asset | person | facility | program
+  object_type      - company | investor | entity | university | asset | person | facility | program
   qualifiers       - extra attributes as JSON object, e.g. {"amount_usd": 5000000, "date": "2024-03"}
                      or {} if none. Common qualifier keys: amount_usd, date, stake_pct, round_series,
                      vehicle, orbit, payload_kg, contract_value_usd, role, scope, product, service_type,
@@ -431,6 +431,7 @@ _TYPE_TO_TOPIC = {
     'company': 'company',
     'investor': 'company',
     'entity': 'company',
+    'university': 'company',
     'asset': 'company',
     'program': 'question',
     'facility': 'question',
