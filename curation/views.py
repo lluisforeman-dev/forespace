@@ -81,6 +81,7 @@ def dashboard(request):
     ctx = {
         'stub_count': Entity.objects.filter(status='stub').count(),
         'candidate_count': Assertion.objects.filter(status='candidate').count(),
+        'relation_count': Relation.objects.filter(superseded_at__isnull=True).count(),
         'analytics': snapshot,
         'recent_entities': recent_entities,
         'recent_runs': recent_runs,

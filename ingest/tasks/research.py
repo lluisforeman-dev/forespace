@@ -1,10 +1,11 @@
 """Sonar-powered research task.
 
 Calls Perplexity Sonar (via OpenRouter) which searches the web in real time,
-then writes three types of structured knowledge directly to the DB:
+then writes four types of structured knowledge directly to the DB:
   1. Assertions  — key-value facts with confidence
   2. Events      — discrete moments in history (funding, launches, pivots, failures)
   3. Fragments   — rich narrative paragraphs (tech, strategy, challenges, competition)
+  4. Relations   — typed graph edges between entities (supplies, invested_in, etc.)
 """
 import hashlib
 import json
@@ -20,7 +21,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from psycopg2.extras import DateTimeTZRange
 
-from core.models import Assertion, AttributeDef, Document, Event, ExtractionRun, KnowledgeFragment, Source
+from core.models import Assertion, AttributeDef, Document, Event, ExtractionRun, KnowledgeFragment, PredicateDef, Relation, Source
 from ingest.ai import get_client
 from ingest.confidence import domain_trust, score as compute_score
 from ingest.cost import log_call
@@ -69,19 +70,50 @@ Rich narrative paragraphs about entities. For EACH meaningful piece of intellige
   date_of_information   - approximate date the info was current, YYYY-MM or YYYY, or null
   source_url            - URL, or null
 
+━━ SECTION 4: relations ━━
+Explicit relationships between named entities. This is the MOST IMPORTANT section —
+it builds the knowledge graph connecting organisations, assets, and people.
+For EACH relationship:
+  subject_mention  - entity name (who initiates / performs the relationship)
+  predicate        - one of the ALLOWED PREDICATE KEYS listed below (no others)
+  object_mention   - entity name (who receives the relationship)
+  qualifiers       - extra attributes as JSON object, e.g. {"amount_usd": 5000000, "date": "2024-03"}
+                     or {} if none. Common qualifier keys: amount_usd, date, stake_pct, round_series,
+                     vehicle, orbit, payload_kg, contract_value_usd, role, scope, product, service_type,
+                     technology, programme, since, location.
+  description      - 1 sentence explaining the relationship and its context
+  source_url       - URL of source, or null
+  confidence       - "high" | "medium" | "low"
+
+EXTRACTION RULES FOR RELATIONS:
+- Be thorough — every event involving two entities likely implies a relation.
+  A funding round → invested_in. A launch → launches_for or launched_payload.
+  A contract → contracted_by or supplies. A joint programme → co_develops or partnered_with.
+- Extract relations for ALL entities mentioned, not just the primary research topic.
+- Prefer specific predicates over generic ones (contracted_by over partnered_with when it was a contract).
+- Only use predicate keys from the allowed list below.
+
 RULES:
-- SPACE FOCUS: Only extract entities whose primary activity is in or directly enables
-  the space industry (launch, satellites, spacecraft, propulsion, ground systems, earth
-  observation, space tourism, in-space services, space infrastructure, defence space, etc.).
-  Do NOT extract entities whose main business is unrelated to space — e.g. general telecom
-  carriers, mainstream banks, generic IT firms, automotive OEMs — even if mentioned as
-  customers or investors. If an entity is purely a customer with no space operations, omit it.
+- SPACE FOCUS: Only extract information that has a direct connection to space.
+  For companies whose primary business is not space, ignore their non-space activities
+  entirely — only extract facts, events, and fragments about their space operations,
+  satellite services, space investments, launch customers, ground infrastructure,
+  spectrum holdings, or space partnerships.
+  Example: extract Telefonica's satellite backhaul contracts and LEO investments,
+  but ignore their 5G rollout, subscriber counts, or rivalry with Vodafone.
 - In claims, only use attribute_key values from the allowed list below.
-- Extract as many events and fragments as you find — do not summarise, capture everything.
+- Extract as many events, fragments, and relations as you find — do not summarise.
 - Fragments must be substantive (> 2 sentences). Capture challenges, pivots, tech choices,
   competitive dynamics, strategic rationale, key people decisions.
 - Return valid JSON only, no markdown fences:
-  {"claims": [...], "events": [...], "fragments": [...]}"""
+  {"claims": [...], "events": [...], "fragments": [...], "relations": [...]}"""
+
+
+def _predicate_vocab() -> str:
+    rows = PredicateDef.objects.values('key', 'label', 'description')
+    if not rows:
+        return ''
+    return '\n'.join(f"- {r['key']}: {r['label']}. {r['description']}" for r in rows)
 
 
 def _attr_vocab() -> str:
@@ -268,6 +300,9 @@ _TYPE_TO_TOPIC = {
     'event': 'question',
 }
 
+# topic_types that are valid for ExtractionRun.task naming
+_VALID_TOPIC_TYPES = {'company', 'news', 'question', 'space_angle'}
+
 
 def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source) -> int:
     """Persist extracted events, resolving participant entity names."""
@@ -387,6 +422,79 @@ def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, 
     return stored
 
 
+def _store_relations(relations: list, fallback_doc: Document, sonar_source: Source) -> int:
+    """Persist inline-extracted relations from Sonar output."""
+    valid_predicates = {p.key for p in PredicateDef.objects.all()}
+    if not valid_predicates:
+        logger.warning('_store_relations: no predicates — run seed_predicates first')
+        return 0
+
+    conf_map = {'high': 78, 'medium': 62, 'low': 45}
+    stored = 0
+
+    for rel in relations:
+        predicate = (rel.get('predicate') or '').strip()
+        subject_mention = (rel.get('subject_mention') or '').strip()
+        object_mention = (rel.get('object_mention') or '').strip()
+        if not predicate or not subject_mention or not object_mention:
+            continue
+        if subject_mention == object_mention:
+            continue
+        if predicate not in valid_predicates:
+            logger.debug('_store_relations: unknown predicate "%s"', predicate)
+            continue
+
+        confidence = conf_map.get(rel.get('confidence', 'medium'), 62)
+        qualifiers = rel.get('qualifiers') or {}
+        description = (rel.get('description') or '').strip()[:500]
+
+        source_url = rel.get('source_url')
+        rel_doc = _get_or_create_url_doc(source_url, sonar_source) if source_url else fallback_doc
+
+        try:
+            with transaction.atomic():
+                subject_id = resolve_mention(
+                    subject_mention, document_id=str(fallback_doc.id), entity_type='organization'
+                )
+                object_id = resolve_mention(
+                    object_mention, document_id=str(fallback_doc.id), entity_type='organization'
+                )
+
+                existing = Relation.objects.filter(
+                    subject_id=subject_id,
+                    predicate_id=predicate,
+                    object_id=object_id,
+                    superseded_at__isnull=True,
+                ).first()
+
+                if existing and existing.document_id != rel_doc.id:
+                    # Corroboration — compound confidence
+                    gap = 100 - existing.confidence
+                    bumped = min(99, existing.confidence + max(3, int(gap * confidence / 300)))
+                    existing.confidence = bumped
+                    existing.status = 'accepted' if bumped >= 65 else existing.status
+                    existing.save(update_fields=['confidence', 'status'])
+                else:
+                    Relation.objects.update_or_create(
+                        subject_id=subject_id,
+                        predicate_id=predicate,
+                        object_id=object_id,
+                        document=rel_doc,
+                        defaults={
+                            'qualifiers': qualifiers,
+                            'quote': description,
+                            'confidence': confidence,
+                            'method': 'extracted',
+                            'status': 'accepted' if confidence >= 65 else 'candidate',
+                        },
+                    )
+            stored += 1
+        except Exception as e:
+            logger.debug('_store_relations: %s →%s→ %s: %s', subject_mention, predicate, object_mention, e)
+
+    return stored
+
+
 @shared_task(bind=True, queue='extract', max_retries=2, default_retry_delay=30)
 def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth: int = 0):
     """
@@ -398,17 +506,26 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         logger.error('research_topic: AttributeDef is empty — migration 0008 may not have run')
         return
 
+    pred_vocab = _predicate_vocab()
+
     def _seen_block(urls: str) -> str:
         return f'\n\nAlready ingested sources — do NOT use these, find alternative URLs:\n{urls}' if urls else ''
+
+    def _vocab_block() -> str:
+        base = f'Allowed attribute keys:\n{vocab}'
+        if pred_vocab:
+            base += f'\n\nAllowed predicate keys:\n{pred_vocab}'
+        return base
 
     if topic_type == 'company':
         seen = _seen_urls_for_company(topic)
         user_msg = (
             f'Research the space-industry company or organisation "{topic}". '
-            f'Find current facts, events, and intelligence from recent web sources. '
+            f'Find current facts, events, intelligence, and relationships from recent web sources. '
             f'Extract as much as possible: funding history, launches, contracts, challenges, '
-            f'technology choices, competitive position, key people, strategic pivots.\n\n'
-            f'Allowed attribute keys:\n{vocab}'
+            f'technology choices, competitive position, key people, strategic pivots, '
+            f'and all relationships with other companies, agencies, and assets.\n\n'
+            f'{_vocab_block()}'
             f'{_seen_block(seen)}'
         )
     elif topic_type == 'news':
@@ -416,16 +533,29 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         user_msg = (
             f'What are the most significant space-industry developments from the past 7 days? '
             f'For each event identify the organisations involved and extract structured facts, '
-            f'events, and intelligence fragments.\n\n'
-            f'Allowed attribute keys:\n{vocab}'
+            f'events, intelligence fragments, and relationships between entities.\n\n'
+            f'{_vocab_block()}'
+            f'{_seen_block(seen)}'
+        )
+    elif topic_type == 'space_angle':
+        seen = _seen_urls_for_company(topic)
+        user_msg = (
+            f'Research "{topic}" specifically for its involvement in the space industry. '
+            f'What satellite services does it operate or use? What space investments, '
+            f'partnerships, or contracts does it have? What launch customers, ground '
+            f'infrastructure, or spectrum assets are relevant? '
+            f'Extract all relationships to space companies, agencies, and assets. '
+            f'Ignore all non-space activities entirely.\n\n'
+            f'{_vocab_block()}'
             f'{_seen_block(seen)}'
         )
     else:  # question
         seen = _seen_urls_recent(days=14, limit=50)
         user_msg = (
             f'Research the following question about the space industry: "{topic}"\n'
-            f'Find and extract all relevant factual claims, events, and intelligence from recent web sources.\n\n'
-            f'Allowed attribute keys:\n{vocab}'
+            f'Find and extract all relevant factual claims, events, intelligence, '
+            f'and relationships between entities from recent web sources.\n\n'
+            f'{_vocab_block()}'
             f'{_seen_block(seen)}'
         )
 
@@ -462,6 +592,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
     claims    = data.get('claims', [])
     events    = data.get('events', [])
     fragments = data.get('fragments', [])
+    relations = data.get('relations', [])
 
     # Synthetic Document for the Sonar response
     source = _sonar_source()
@@ -569,6 +700,9 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
     # ── Store fragments ───────────────────────────────────────────────────
     fragments_stored = _store_fragments(fragments, name_to_id, doc, source)
 
+    # ── Store relations (inline — Sonar had full web context) ─────────────
+    relations_stored = _store_relations(relations, doc, source)
+
     # ── Finalise run ──────────────────────────────────────────────────────
     run.status = 'completed'
     run.finished_at = timezone.now()
@@ -577,13 +711,14 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         'rejected':   rejected,
         'events':     events_stored,
         'fragments':  fragments_stored,
+        'relations':  relations_stored,
         'topic':      topic,
         'rejections': rejection_log,
     }
     run.save(update_fields=['status', 'finished_at', 'stats'])
     logger.info(
-        'research_topic "%s": %d claims, %d events, %d fragments',
-        topic, accepted, events_stored, fragments_stored,
+        'research_topic "%s": %d claims, %d events, %d fragments, %d relations',
+        topic, accepted, events_stored, fragments_stored, relations_stored,
     )
 
     # ── Downstream tasks ─────────────────────────────────────────────────
@@ -603,7 +738,6 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
 
     if entity_id_strs:
         from ingest.tasks.classify import classify_entity
-        from ingest.tasks.relate import extract_relations_sonar
         from ingest.tasks.evolve import evolve_taxonomy
         from ingest.tasks.summarise import synthesise_entity_summary
 
@@ -611,21 +745,18 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             classify_entity.apply_async(args=[eid, str(run.pk)], countdown=10)
             synthesise_entity_summary.apply_async(args=[eid], countdown=30)
 
-        extract_relations_sonar.apply_async(
-            args=[str(doc.id), list(entity_name_map.values())],
-            countdown=20,
-        )
+        if relations_stored:
+            from ingest.tasks.project import refresh_relation_current
+            refresh_relation_current.apply_async(countdown=5)
+
         evolve_taxonomy.apply_async(args=[entity_id_strs], countdown=60)
 
-        # Cascade: research newly discovered stubs — space-relevant only
+        # Cascade: research newly discovered stubs
         if cascade_depth < 2:
             stubs_to_research = []
             for name in entity_name_map.values():
                 stub_entity = _Entity.objects.filter(canonical_name=name, status='stub').first()
                 if not stub_entity:
-                    continue
-                if not _is_space_relevant(name, stub_entity.entity_type):
-                    logger.info('research_topic: skipping non-space stub "%s"', name)
                     continue
                 if Assertion.objects.filter(entity__canonical_name=name, status='accepted').exists():
                     continue
@@ -638,7 +769,12 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
 
             for stub_name in stubs_to_research[:4]:
                 stub_entity = _Entity.objects.filter(canonical_name=stub_name, status='stub').first()
+                # Non-primary-space entities get researched with a space-angle prompt
+                is_primary = _is_space_relevant(stub_name, stub_entity.entity_type if stub_entity else 'organization')
                 t_type = _TYPE_TO_TOPIC.get(stub_entity.entity_type, 'company') if stub_entity else 'company'
+                # For adjacent entities (e.g. Telefonica), use space_angle topic type
+                if not is_primary and t_type == 'company':
+                    t_type = 'space_angle'
                 research_topic.apply_async(
                     args=[stub_name, t_type],
                     kwargs={'cascade_depth': cascade_depth + 1},
@@ -646,4 +782,4 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
                 )
                 logger.info('research_topic: cascade depth=%d queued for "%s"', cascade_depth + 1, stub_name)
 
-    return {'accepted': accepted, 'rejected': rejected, 'events': events_stored, 'fragments': fragments_stored}
+    return {'accepted': accepted, 'rejected': rejected, 'events': events_stored, 'fragments': fragments_stored, 'relations': relations_stored}

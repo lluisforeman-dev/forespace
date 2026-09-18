@@ -80,6 +80,10 @@
     <div class="num"><a href="{% url 'curation:stubs' %}">{{ stub_count }}</a></div>
     <div class="lbl">Stubs</div>
   </div>
+  <div class="stat">
+    <div class="num">{{ relation_count }}</div>
+    <div class="lbl">Relations</div>
+  </div>
   {% if analytics.last_24h %}
   <div class="stat">
     <div class="num">${{ analytics.last_24h.cost_usd|floatformat:3 }}</div>
@@ -121,6 +125,9 @@
             {% endif %}
             {% if run.stats.fragments %}
               · <span style="color:#cba6f7">{{ run.stats.fragments }} fragments</span>
+            {% endif %}
+            {% if run.stats.relations %}
+              · <span style="color:#fab387">{{ run.stats.relations }} relations</span>
             {% endif %}
             {% if run.stats.rejected %}
               · <span style="color:#f38ba8">{{ run.stats.rejected }} rejected</span>
