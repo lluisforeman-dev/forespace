@@ -130,6 +130,12 @@ RULES:
   or named asset. NEVER use a country, region, city, or continent as subject_mention —
   these are values (e.g. headquarters_country = "United Kingdom"), not subjects.
   Geographic areas may appear as object_mention in relations (e.g. operates_in → "United Kingdom").
+- Always use the full institutional name for government bodies and funding agencies —
+  "Government of Catalonia" or "Generalitat de Catalunya" not "Catalonia",
+  "European Commission" not "EU", "NASA" not "United States government".
+- Distinguish the INSTITUTION from its FUNDING PROGRAMME:
+  the Generalitat administers "Préstecs ICF" (a program entity);
+  a company receives funding FROM the programme, not from the geographic region.
 - In claims, only use attribute_key values from the allowed list below.
 - Extract as many events, fragments, and relations as you find — do not summarise.
 - Fragments must be substantive (> 2 sentences). Capture challenges, pivots, tech choices,
@@ -799,6 +805,15 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             f'Use event_type=debt_financing or event_type=convertible.\n\n'
             f'5. INVESTOR ACTIVITY — which VCs, corporate VCs, government funds, and angels '
             f'are most active in space. Extract relations: invested_in, co_invested_with, received_grant_from.\n\n'
+            f'CRITICAL — always distinguish the INSTITUTION from its FUNDING TOOL:\n'
+            f'  Institution (entity_type=entity|investor): European Commission, ESA, Generalitat de Catalunya, EIB, Innovate UK\n'
+            f'  Funding programme (entity_type=program): Horizon Europe, ESA ARTES, Préstecs ICF, EIC Accelerator, Smart Grant\n'
+            f'  Always use the full institutional name — never shorten to a geographic area.\n'
+            f'  Extract the chain as TWO relations:\n'
+            f'    1. institution → administers → programme\n'
+            f'    2. company → received_grant_from → programme (NOT the institution directly)\n'
+            f'  This lets users navigate "what programmes does ESA offer?" and '
+            f'"who received Horizon Europe funding?" independently.\n\n'
             f'Be exhaustive — extract every funding event, grant, and investor relation you find.\n\n'
             f'{_vocab_block()}'
             f'{_seen_block(seen)}'

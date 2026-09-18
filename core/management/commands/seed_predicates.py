@@ -45,6 +45,17 @@ PREDICATES = [
         ),
     },
     {
+        'key': 'administers',
+        'label': 'Administers',
+        'description': (
+            'Subject (government body, agency, or institution) administers or operates Object (funding programme or instrument). '
+            'Use this to link the institution to its specific funding tools. '
+            'Examples: European Commission administers Horizon Europe; '
+            'Generalitat de Catalunya administers Préstecs ICF; ESA administers ARTES. '
+            'Qualifiers: since, budget_eur, scope.'
+        ),
+    },
+    {
         'key': 'co_invested_with',
         'label': 'Co-Invested With',
         'description': (
