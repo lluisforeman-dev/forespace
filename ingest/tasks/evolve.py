@@ -1,13 +1,11 @@
 """Taxonomy evolution — triggered automatically after research runs.
 
-Analyses newly ingested entities against the current taxonomy and proposes
-additive changes:
+Analyses newly ingested entities against the current taxonomy and makes
+additive changes directly (no human approval):
   - Extends existing branches when a concept fits under a known parent
   - Creates new root nodes only when nothing in the tree fits
-  - Rejects proposals that are too similar to nodes already present
+  - Skips nodes too similar to existing ones (SequenceMatcher >= 0.72)
   - Never modifies or removes what is already there
-
-Proposals land as status='proposed' for a single human approval step.
 """
 from __future__ import annotations
 
@@ -198,17 +196,17 @@ def evolve_taxonomy(self, entity_ids: list[str] | None = None):
                 'label': label,
                 'definition': definition,
                 'examples': p.get('examples', []),
-                'status': 'proposed',
+                'status': 'active',
             },
         )
         if node_created:
-            logger.info('evolve_taxonomy: proposed %s/%s — "%s"', facet_key, path, label)
+            logger.info('evolve_taxonomy: added %s/%s — "%s"', facet_key, path, label)
             created += 1
         else:
             duplicate += 1
 
     logger.info(
-        'evolve_taxonomy: %d proposed, %d duplicates skipped, %d invalid',
+        'evolve_taxonomy: %d added, %d duplicates skipped, %d invalid',
         created, duplicate, skipped,
     )
-    return {'proposals': created, 'duplicates': duplicate, 'skipped': skipped}
+    return {'added': created, 'duplicates': duplicate, 'skipped': skipped}
