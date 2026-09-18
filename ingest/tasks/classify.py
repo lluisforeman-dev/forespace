@@ -86,7 +86,9 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
             temperature=0,
         )
         log_call('extract', model, resp, entity=entity)
-        raw = json.loads(resp.choices[0].message.content)
+        text = resp.choices[0].message.content.strip()
+        text = text.replace('True', 'true').replace('False', 'false').replace('None', 'null')
+        raw = json.loads(text)
         classifications = raw.get('classifications', [])
     except Exception as exc:
         logger.error('classify_entity %s error: %s', entity_id, exc)
