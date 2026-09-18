@@ -84,7 +84,7 @@ def synthesise_entity_summary(self, entity_id: str):
                 {'role': 'system', 'content': _SYSTEM},
                 {'role': 'user', 'content': user_msg},
             ],
-            max_tokens=600,
+            max_tokens=6000,
             temperature=0,
         )
         log_call('synthesise_entity_summary', model, resp,
