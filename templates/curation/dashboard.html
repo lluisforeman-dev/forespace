@@ -199,22 +199,23 @@
 
 </div>
 
-<!-- Discovered relations -->
-{% if recent_relations %}
+<!-- Connections -->
+<div class="grid2">
+
+{% if event_connections %}
 <div class="card">
-  <h2>Discovered connections</h2>
+  <h2>Connections from events</h2>
   <table>
-    <thead><tr><th>From</th><th>Relation</th><th>To</th><th>Confidence</th></tr></thead>
+    <thead><tr><th>Entity</th><th>Event</th><th>Connected with</th></tr></thead>
     <tbody>
-      {% for r in recent_relations %}
+      {% for ev in event_connections %}
       <tr>
-        <td><a href="{% url 'curation:entity_profile' r.subject.id %}">{{ r.subject.canonical_name }}</a></td>
-        <td style="color:#cba6f7;font-size:12px">{{ r.predicate_id }}</td>
-        <td><a href="{% url 'curation:entity_profile' r.object.id %}">{{ r.object.canonical_name }}</a></td>
-        <td>
-          <span style="font-size:12px;color:{% if r.confidence >= 75 %}#a6e3a1{% elif r.confidence >= 55 %}#89b4fa{% else %}#f9e2af{% endif %}">
-            {{ r.confidence }}%
-          </span>
+        <td style="white-space:nowrap"><a href="{% url 'curation:entity_profile' ev.entity.id %}">{{ ev.entity.canonical_name|truncatechars:30 }}</a></td>
+        <td style="font-size:11px;color:#888">{{ ev.title|truncatechars:40 }}</td>
+        <td style="font-size:12px">
+          {% for p in ev.participants.all %}
+            <a href="{% url 'curation:entity_profile' p.id %}">{{ p.canonical_name|truncatechars:25 }}</a>{% if not forloop.last %}, {% endif %}
+          {% endfor %}
         </td>
       </tr>
       {% endfor %}
@@ -222,5 +223,31 @@
   </table>
 </div>
 {% endif %}
+
+{% if recent_relations %}
+<div class="card">
+  <h2>Typed relations <span style="font-size:11px;font-weight:400;color:#888">({{ relation_count }} total)</span></h2>
+  <table>
+    <thead><tr><th>From</th><th>Relation</th><th>To</th><th>Conf</th></tr></thead>
+    <tbody>
+      {% for r in recent_relations %}
+      <tr>
+        <td><a href="{% url 'curation:entity_profile' r.subject.id %}">{{ r.subject.canonical_name|truncatechars:25 }}</a></td>
+        <td style="color:#cba6f7;font-size:11px">{{ r.predicate_id }}</td>
+        <td><a href="{% url 'curation:entity_profile' r.object.id %}">{{ r.object.canonical_name|truncatechars:25 }}</a></td>
+        <td style="font-size:11px;color:{% if r.confidence >= 75 %}#a6e3a1{% elif r.confidence >= 55 %}#89b4fa{% else %}#f9e2af{% endif %}">{{ r.confidence }}%</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <h2>Typed relations</h2>
+  <p style="color:#888;font-size:13px;">None yet — will populate as research runs complete.</p>
+</div>
+{% endif %}
+
+</div>
 
 {% endblock %}

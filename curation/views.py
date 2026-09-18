@@ -61,7 +61,7 @@ def _get_or_create_scheduled_source(source_name, feed_url, kind='trade_press', t
 
 @staff_member_required
 def dashboard(request):
-    from core.models import ExtractionRun, Relation
+    from core.models import Event, ExtractionRun, Relation
     snapshot = get_snapshot()
     recent_entities = (
         Entity.objects
@@ -75,8 +75,17 @@ def dashboard(request):
     recent_relations = (
         Relation.objects
         .filter(superseded_at__isnull=True)
-        .select_related('subject', 'object')
-        .order_by('-id')[:20]
+        .select_related('subject', 'object', 'predicate')
+        .order_by('-id')[:30]
+    )
+    # Event-derived connections: events that link multiple entities
+    event_connections = (
+        Event.objects
+        .filter(participants__isnull=False)
+        .select_related('entity')
+        .prefetch_related('participants')
+        .order_by('-id')
+        .distinct()[:30]
     )
     ctx = {
         'stub_count': Entity.objects.filter(status='stub').count(),
@@ -86,6 +95,7 @@ def dashboard(request):
         'recent_entities': recent_entities,
         'recent_runs': recent_runs,
         'recent_relations': recent_relations,
+        'event_connections': event_connections,
         'queued_tasks': _queue_lengths(),
         'num_feeds': len(SPACE_NEWS_FEEDS),
         'title': 'ForeSpace',
