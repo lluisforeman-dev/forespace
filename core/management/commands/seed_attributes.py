@@ -28,7 +28,7 @@ ATTRIBUTES = [
         'is_projected': True,
         'is_promoted': True,
         'volatility_days': 730,
-        'description': 'City where the organization has its primary headquarters.',
+        'description': 'City where the organization has its primary headquarters. Extract for companies, investors, and entities alike.',
     },
     {
         'key': 'headquarters_country',
@@ -40,7 +40,8 @@ ATTRIBUTES = [
         'is_promoted': True,
         'volatility_days': 1825,
         'description': (
-            'Country of headquarters. Use ISO 3166-1 alpha-2 codes where possible (e.g. "US", "GB", "FR").'
+            'Country of headquarters. Use ISO 3166-1 alpha-2 codes where possible (e.g. "US", "GB", "FR"). '
+            'Extract for companies, investors, and entities alike.'
         ),
     },
     {

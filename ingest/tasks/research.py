@@ -98,6 +98,10 @@ EXTRACTION RULES FOR RELATIONS:
 - Only use predicate keys from the allowed list below.
 
 RULES:
+- ★ MAP-CRITICAL: For any company, investor, or entity, ALWAYS extract if findable:
+  headquarters_city, headquarters_country, employee_count, total_funding_usd, founding_year.
+  These fields power geographic maps and funding charts — search every source for them.
+  Do not skip these even if the document is primarily about something else.
 - SPACE FOCUS: Only extract information that has a direct connection to space.
   For companies whose primary business is not space, ignore their non-space activities
   entirely — only extract facts, events, and fragments about their space operations,
@@ -291,14 +295,14 @@ def _entity_context_block(topic: str) -> str:
 
 _ANGLES_SYSTEM = """\
 You are a research strategist for a space-industry knowledge graph.
-Given an entity name and type, generate 3 targeted search angles that would uncover
+Given an entity name and type, generate 2 targeted search angles that would uncover
 different facets of that entity's activities, relationships, and history.
 
 Each angle should be a short search-focused description (not a question).
-Think about: funding & investors, technology & products, key people & leadership,
+Think about: technology & products, key people & leadership,
 contracts & customers, partnerships & competition, regulatory & licensing history.
 
-Return JSON only: {"angles": ["...", "...", "..."]}
+Return JSON only: {"angles": ["...", "..."]}
 Include the entity name or a clear disambiguator in each angle so Sonar doesn't confuse
 it with unrelated entities (e.g. if the entity could be mistaken for something else,
 add a clarifying term like "space", "aerospace", "satellite", etc.)."""
@@ -322,11 +326,14 @@ def _generate_search_angles(topic: str, entity_type: str) -> list[str]:
         if not content:
             return []
         data = json.loads(content)
-        angles = [str(a).strip() for a in data.get('angles', []) if a]
-        return angles[:3]
+        llm_angles = [str(a).strip() for a in data.get('angles', []) if a]
     except Exception as exc:
         logger.warning('_generate_search_angles "%s": %s', topic, exc)
-        return []
+        llm_angles = []
+
+    # Always lead with a guaranteed baseline angle for map-critical fields
+    baseline = f'{topic} headquarters location employees headcount funding raised'
+    return [baseline] + llm_angles[:2]
 
 
 def _seen_urls_for_company(topic: str) -> str:
