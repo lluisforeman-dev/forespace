@@ -119,7 +119,10 @@ def _llm_disambiguate(mention: str, candidates: list) -> str | None:
                 temperature=0,
             )
             log_call('resolve', settings.AI_MODEL_FAST, resp)
-            result = json.loads(resp.choices[0].message.content)
+            raw = resp.choices[0].message.content.strip()
+            # Some models return Python literals instead of JSON
+            raw = raw.replace('True', 'true').replace('False', 'false').replace('None', 'null')
+            result = json.loads(raw)
             if result.get('same') and result.get('confidence') in ('high', 'medium'):
                 return str(entity_id)
     except Exception as exc:
