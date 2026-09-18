@@ -844,7 +844,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         adjudicate_assertions.delay(new_ids)
         refresh_entity_current.apply_async(countdown=5)
 
-    # Collect ALL touched entities: claims + event subjects + event participants + fragments
+    # Collect ALL touched entities: claims + event subjects + event participants + fragments + relations
     all_entity_ids = set(entity_ids)
     for ev_obj in Event.objects.filter(source=doc).prefetch_related('participants'):
         all_entity_ids.add(str(ev_obj.entity_id))
@@ -852,6 +852,9 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             all_entity_ids.add(str(p.id))
     for frag in KnowledgeFragment.objects.filter(source=doc).values_list('entity_id', flat=True):
         all_entity_ids.add(str(frag))
+    for rel in Relation.objects.filter(document=doc).values_list('subject_id', 'object_id'):
+        all_entity_ids.add(str(rel[0]))
+        all_entity_ids.add(str(rel[1]))
     entity_id_strs = list(all_entity_ids)
 
     if entity_id_strs:
@@ -869,47 +872,50 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
 
         evolve_taxonomy.apply_async(args=[entity_id_strs], countdown=60)
 
-        # Cascade: auto-research every stub entity discovered in this run
-        # Depth 0 (user-triggered): research all new stubs
-        # Depth 1 (first cascade): research stubs found by depth-0, but cap at 8 to avoid runaway
-        # Depth 2+: stop
-        if cascade_depth < 2:
-            stub_cap = None if cascade_depth == 0 else 8
-            stubs_to_research = []
-            all_stub_entities = (
-                _Entity.objects
-                .filter(id__in=entity_id_strs, status='stub')
-                .only('id', 'canonical_name', 'entity_type')
+        # Cascade: queue every discovered entity not recently researched,
+        # sorted by accepted assertion count ascending — entities with the least
+        # known information go first, naturally balancing coverage across the graph.
+        from django.db.models import Count
+        cutoff = timezone.now() - timedelta(days=7)
+        recently_researched = set(
+            ExtractionRun.objects
+            .filter(started_at__gte=cutoff)
+            .exclude(stats__topic=None)
+            .values_list('stats__topic', flat=True)
+        )
+
+        # Annotate each entity with how many accepted assertions it has
+        from django.db.models import Q as _Q
+        all_discovered = (
+            _Entity.objects
+            .filter(id__in=entity_id_strs)
+            .exclude(status='merged')
+            .annotate(assertion_count=Count(
+                'assertions',
+                filter=_Q(assertions__status='accepted'),
+            ))
+            .order_by('assertion_count')  # least known first
+            .only('id', 'canonical_name', 'entity_type', 'status')
+        )
+
+        for i, discovered in enumerate(all_discovered):
+            name = discovered.canonical_name
+            if name in recently_researched:
+                continue
+            is_primary = _is_space_relevant(name, discovered.entity_type)
+            t_type = _TYPE_TO_TOPIC.get(discovered.entity_type, 'company')
+            if not is_primary and t_type == 'company':
+                t_type = 'space_angle'
+            # Stagger: 2 min base + 45s per slot so queue fills gradually
+            countdown = 120 + i * 45
+            research_topic.apply_async(
+                args=[name, t_type],
+                kwargs={'cascade_depth': cascade_depth + 1},
+                countdown=countdown,
             )
-            for stub_entity in all_stub_entities:
-                stub_name = stub_entity.canonical_name
-                # Skip if already has accepted data
-                if Assertion.objects.filter(entity=stub_entity, status='accepted').exists():
-                    continue
-                # Skip if researched in the last 7 days
-                if ExtractionRun.objects.filter(
-                    stats__topic=stub_name,
-                    started_at__gte=timezone.now() - timedelta(days=7),
-                ).exists():
-                    continue
-                stubs_to_research.append(stub_entity)
-
-            if stub_cap:
-                stubs_to_research = stubs_to_research[:stub_cap]
-
-            for i, stub_entity in enumerate(stubs_to_research):
-                stub_name = stub_entity.canonical_name
-                is_primary = _is_space_relevant(stub_name, stub_entity.entity_type)
-                t_type = _TYPE_TO_TOPIC.get(stub_entity.entity_type, 'company')
-                if not is_primary and t_type == 'company':
-                    t_type = 'space_angle'
-                # Stagger: 2 min base + 30s per slot so queue doesn't flood
-                countdown = 120 + i * 30 + cascade_depth * 60
-                research_topic.apply_async(
-                    args=[stub_name, t_type],
-                    kwargs={'cascade_depth': cascade_depth + 1},
-                    countdown=countdown,
-                )
-                logger.info('research_topic: cascade depth=%d queued "%s" (in %ds)', cascade_depth + 1, stub_name, countdown)
+            logger.info(
+                'research_topic: cascade queued "%s" (depth=%d, assertions=%d, in %ds)',
+                name, cascade_depth + 1, discovered.assertion_count, countdown,
+            )
 
     return {'accepted': accepted, 'rejected': rejected, 'events': events_stored, 'fragments': fragments_stored, 'relations': relations_stored}
