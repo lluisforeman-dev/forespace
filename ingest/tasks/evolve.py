@@ -27,32 +27,49 @@ _SYSTEM = """\
 You are an expert space-industry ontologist maintaining a living taxonomy.
 
 Given the current taxonomy tree and a batch of recently ingested entities,
-identify concepts that are genuinely missing — activities, technologies, or
-market segments that real entities represent but that no existing node captures.
+identify (a) genuine gaps where new nodes are needed, and (b) existing nodes
+whose label or definition no longer accurately reflects the entities using them.
 
-STRICT RULES:
-1. NEVER propose a node whose concept is already covered by an existing node,
-   even if the wording differs.
-2. PREFER extending existing branches: if a concept fits under an existing
-   parent path, make it a child (e.g. 'upstream.launch.reusable_heavy'
-   under existing 'upstream.launch').
-3. Create a new root branch only if the concept is orthogonal to everything.
-4. Only propose a node if at least 2 of the listed entities clearly need it.
-5. Paths must use lowercase letters, digits, and underscores only, dot-separated.
-6. Limit to the 6 most important gaps — quality over quantity.
-7. If the taxonomy is adequate for the given entities, return {"proposals": []}.
+OPERATIONS — each proposal must have an "op" field:
+  "add"   — add a new node (path must not already exist)
+  "alter" — update the label and/or definition of an existing node
+             (path must already exist; you cannot change the path itself)
+
+RULES FOR "add":
+1. NEVER propose if the concept is already covered by an existing node.
+2. PREFER extending existing branches (child paths) over new root branches.
+3. Only propose if at least 2 of the listed entities clearly need it.
+4. Paths use lowercase letters, digits, and underscores only, dot-separated.
+
+RULES FOR "alter":
+1. Only propose when the current label or definition is genuinely misleading,
+   too narrow, or outdated given the real entities now classified there.
+2. The change must meaningfully improve accuracy — not just rephrase.
+3. Keep the spirit of the original node; do not repurpose it entirely.
+
+GENERAL:
+- Limit to 6 proposals total (adds + alters combined).
+- If the taxonomy is fine, return {"proposals": []}.
 
 Return ONLY valid JSON (no markdown fences):
 {
   "proposals": [
     {
+      "op": "add",
       "facet_key": "value_chain",
       "path": "upstream.launch.reusable_heavy",
       "label": "Reusable Heavy Lift",
-      "definition": "Heavy-lift launch vehicles designed for booster recovery and re-flight, enabling lower per-kg cost at scale.",
+      "definition": "Heavy-lift launch vehicles designed for booster recovery and re-flight.",
       "examples": ["SpaceX Falcon Heavy", "Starship"],
-      "parent_path": "upstream.launch",
-      "reasoning": "Reusability is now a distinct market differentiator not captured by upstream.launch.heavy_lift."
+      "reasoning": "Reusability is a distinct differentiator not captured by upstream.launch.heavy_lift."
+    },
+    {
+      "op": "alter",
+      "facet_key": "value_chain",
+      "path": "upstream.propulsion",
+      "label": "Propulsion & Power Systems",
+      "definition": "Manufacturers of rocket engines, spacecraft propulsion units, and in-space power systems.",
+      "reasoning": "Power systems companies (solar arrays, batteries) are classified here but the definition excluded them."
     }
   ]
 }"""
@@ -156,8 +173,9 @@ def evolve_taxonomy(self, entity_ids: list[str] | None = None):
         logger.error('evolve_taxonomy error: %s', exc)
         raise self.retry(exc=exc)
 
-    created = duplicate = skipped = 0
+    created = altered = duplicate = skipped = 0
     for p in proposals:
+        op = p.get('op', 'add').strip().lower()
         facet_key = p.get('facet_key', '').strip()
         path = p.get('path', '').strip().lower().replace(' ', '_')
         label = p.get('label', '').strip()
@@ -173,13 +191,24 @@ def evolve_taxonomy(self, entity_ids: list[str] | None = None):
             skipped += 1
             continue
 
-        # Exact path already exists?
+        if op == 'alter':
+            updated = TaxonomyNode.objects.filter(
+                taxonomy=taxonomy, path=path, status='active',
+            ).update(label=label, definition=definition)
+            if updated:
+                logger.info('evolve_taxonomy: altered %s/%s — "%s"', facet_key, path, label)
+                altered += 1
+            else:
+                logger.warning('evolve_taxonomy: alter target not found %s/%s', facet_key, path)
+                skipped += 1
+            continue
+
+        # op == 'add'
         if TaxonomyNode.objects.filter(taxonomy=taxonomy, path=path).exists():
             logger.debug('evolve_taxonomy: path %s/%s already exists', facet_key, path)
             duplicate += 1
             continue
 
-        # Semantically too close to an existing node?
         similar = _is_too_similar(label, definition, facet_key)
         if similar:
             logger.info(
@@ -206,7 +235,7 @@ def evolve_taxonomy(self, entity_ids: list[str] | None = None):
             duplicate += 1
 
     logger.info(
-        'evolve_taxonomy: %d added, %d duplicates skipped, %d invalid',
-        created, duplicate, skipped,
+        'evolve_taxonomy: %d added, %d altered, %d duplicates skipped, %d invalid',
+        created, altered, duplicate, skipped,
     )
-    return {'added': created, 'duplicates': duplicate, 'skipped': skipped}
+    return {'added': created, 'altered': altered, 'duplicates': duplicate, 'skipped': skipped}
