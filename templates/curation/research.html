@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Research Progress — ForeSpace{% endblock %}
+{% block content %}
+<style>
+  .status-completed { background:#d1fae5; color:#065f46; }
+  .status-failed    { background:#fee2e2; color:#991b1b; }
+  .status-running   { background:#dbeafe; color:#1e40af; }
+  .status-partial   { background:#fef9c3; color:#854d0e; }
+  .badge-status { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+  .run-row td { vertical-align:middle; font-size:13px; padding:7px 10px; border-bottom:1px solid #f0f0f0; }
+  .run-row:hover td { background:#fafafa; }
+  .num-cell { text-align:right; color:#555; font-variant-numeric:tabular-nums; }
+  .topic-cell { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#1a1a2e; font-weight:500; }
+  .filters { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:20px; }
+  .filters input[type=text] { width:260px; margin-bottom:0; }
+  .filters select { padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:13px; background:#fff; }
+  .stat-row { display:flex; gap:16px; margin-bottom:20px; flex-wrap:wrap; }
+  .mini-stat { background:#fff; border:1px solid #ddd; border-radius:6px; padding:12px 20px; text-align:center; min-width:100px; }
+  .mini-stat .n { font-size:22px; font-weight:700; color:#1a1a2e; }
+  .mini-stat .l { font-size:11px; color:#888; margin-top:2px; }
+</style>
+
+<div style="display:flex;align-items:baseline;gap:16px;margin-bottom:16px;">
+  <h1 style="font-size:20px;font-weight:700;color:#1a1a2e">Research Progress</h1>
+</div>
+
+<!-- Summary -->
+<div class="stat-row">
+  <div class="mini-stat">
+    <div class="n">{{ totals.total }}</div>
+    <div class="l">Total runs</div>
+  </div>
+  <div class="mini-stat">
+    <div class="n" style="color:#065f46">{{ totals.completed }}</div>
+    <div class="l">Completed</div>
+  </div>
+  <div class="mini-stat">
+    <div class="n" style="color:#1e40af">{{ totals.running }}</div>
+    <div class="l">Running</div>
+  </div>
+  <div class="mini-stat">
+    <div class="n" style="color:#991b1b">{{ totals.failed }}</div>
+    <div class="l">Failed</div>
+  </div>
+</div>
+
+<!-- Filters -->
+<form method="get" class="filters">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search topic…">
+  <select name="status">
+    <option value="">All statuses</option>
+    <option value="completed" {% if status_filter == "completed" %}selected{% endif %}>Completed</option>
+    <option value="running"   {% if status_filter == "running"   %}selected{% endif %}>Running</option>
+    <option value="failed"    {% if status_filter == "failed"    %}selected{% endif %}>Failed</option>
+    <option value="partial"   {% if status_filter == "partial"   %}selected{% endif %}>Partial</option>
+  </select>
+  <button class="btn btn-primary">Filter</button>
+  {% if q or status_filter %}
+  <a href="{% url 'curation:research' %}" class="btn" style="background:#eee;color:#333">Clear</a>
+  {% endif %}
+</form>
+
+<div class="card" style="padding:0;overflow:hidden;">
+  <table style="width:100%;border-collapse:collapse;">
+    <thead>
+      <tr style="background:#f8f9fa;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px;">
+        <th style="padding:10px 10px;text-align:left;font-weight:600">Topic</th>
+        <th style="padding:10px 6px;text-align:left;font-weight:600">Type</th>
+        <th style="padding:10px 6px;text-align:left;font-weight:600">Status</th>
+        <th style="padding:10px 6px;text-align:right;font-weight:600">Claims</th>
+        <th style="padding:10px 6px;text-align:right;font-weight:600">Events</th>
+        <th style="padding:10px 6px;text-align:right;font-weight:600">Fragments</th>
+        <th style="padding:10px 6px;text-align:right;font-weight:600">Relations</th>
+        <th style="padding:10px 10px;text-align:left;font-weight:600">Started</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr class="run-row">
+        <td class="topic-cell" title="{{ run.stats.topic|default:run.task }}">
+          {{ run.stats.topic|default:run.task|truncatechars:60 }}
+        </td>
+        <td style="font-size:12px;color:#666">{{ run.task }}</td>
+        <td>
+          <span class="badge-status status-{{ run.status }}">{{ run.status }}</span>
+        </td>
+        <td class="num-cell">{{ run.stats.accepted|default:"—" }}</td>
+        <td class="num-cell">{{ run.stats.events|default:"—" }}</td>
+        <td class="num-cell">{{ run.stats.fragments|default:"—" }}</td>
+        <td class="num-cell">{{ run.stats.relations|default:"—" }}</td>
+        <td style="font-size:12px;color:#888;white-space:nowrap">{{ run.started_at|date:"M d H:i" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8" style="padding:20px;text-align:center;color:#aaa">No runs found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

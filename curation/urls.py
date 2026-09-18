@@ -16,6 +16,8 @@ urlpatterns = [
     path('candidates/<int:assertion_id>/review/', views.review_assertion, name='review_assertion'),
     path('entity/<uuid:entity_id>/', views.entity_profile, name='entity_profile'),
     path('connections/', views.connections, name='connections'),
+    path('research/', views.research, name='research'),
+    path('taxonomy/', views.taxonomy, name='taxonomy'),
     path('taxonomy/proposals/', views.taxonomy_proposals, name='taxonomy_proposals'),
     path('taxonomy/evolve/', views.run_evolve_taxonomy, name='run_evolve_taxonomy'),
 ]

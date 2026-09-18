@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Taxonomy — ForeSpace{% endblock %}
+{% block content %}
+<style>
+  .facet-card { margin-bottom:24px; }
+  .facet-header { display:flex; align-items:baseline; gap:12px; margin-bottom:12px; }
+  .facet-key { font-size:16px; font-weight:700; color:#1a1a2e; }
+  .facet-meta { font-size:12px; color:#888; }
+  .node-row { display:flex; align-items:baseline; gap:10px; padding:7px 0; border-bottom:1px solid #f0f0f0; }
+  .node-row:last-child { border-bottom:none; }
+  .node-path { font-family:monospace; font-size:12px; color:#6366f1; flex-shrink:0; }
+  .node-label { font-size:13px; font-weight:600; color:#1a1a2e; flex-shrink:0; }
+  .node-def { font-size:12px; color:#666; flex:1; line-height:1.4; }
+  .node-count { font-size:11px; background:#f0f4ff; color:#3730a3; border-radius:10px; padding:1px 7px; flex-shrink:0; white-space:nowrap; }
+  .node-proposed { opacity:.6; font-style:italic; }
+  .depth-0 { padding-left:0; }
+  .depth-1 { padding-left:16px; }
+  .depth-2 { padding-left:32px; }
+  .depth-3 { padding-left:48px; }
+  .status-proposed { background:#fef9c3; color:#854d0e; display:inline-block; padding:1px 6px; border-radius:3px; font-size:10px; font-weight:600; margin-left:4px; }
+</style>
+
+<div style="display:flex;align-items:baseline;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
+  <h1 style="font-size:20px;font-weight:700;color:#1a1a2e">Taxonomy</h1>
+  {% if proposal_count %}
+  <a href="{% url 'curation:taxonomy_proposals' %}" class="btn btn-primary btn-sm">
+    {{ proposal_count }} proposal{{ proposal_count|pluralize }} to review
+  </a>
+  {% endif %}
+</div>
+
+{% if not facets %}
+<div class="card" style="text-align:center;color:#888;padding:40px">
+  No active taxonomy facets found. Run <code>python manage.py seed_taxonomy</code> to populate.
+</div>
+{% endif %}
+
+{% for facet in facets %}
+<div class="card facet-card">
+  <div class="facet-header">
+    <span class="facet-key">{{ facet.taxonomy.key }}</span>
+    <span class="facet-meta">{{ facet.nodes|length }} node{{ facet.nodes|length|pluralize }} · v{{ facet.taxonomy.version }}</span>
+  </div>
+
+  {% for node in facet.nodes %}
+  <div class="node-row depth-{{ node.depth }}">
+    <span class="node-path">{{ node.path }}</span>
+    <span class="node-label">{{ node.label }}</span>
+    <span class="node-def">{{ node.definition|truncatechars:140 }}</span>
+    {% if node.entity_count %}
+    <span class="node-count">{{ node.entity_count }} entit{{ node.entity_count|pluralize:"y,ies" }}</span>
+    {% endif %}
+    {% if node.status == "proposed" %}
+    <span class="status-proposed">proposed</span>
+    {% endif %}
+  </div>
+  {% empty %}
+  <p style="color:#aaa;font-size:13px">No nodes in this facet.</p>
+  {% endfor %}
+</div>
+{% endfor %}
+{% endblock %}

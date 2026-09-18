@@ -398,6 +398,73 @@ def connections(request):
 
 
 @staff_member_required
+def research(request):
+    """Research progress page — recent extraction runs and pipeline stats."""
+    from core.models import ExtractionRun
+    from django.db.models import Count, Q
+
+    q = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', '').strip()
+
+    runs_qs = ExtractionRun.objects.order_by('-started_at')
+    if q:
+        runs_qs = runs_qs.filter(stats__topic__icontains=q)
+    if status_filter:
+        runs_qs = runs_qs.filter(status=status_filter)
+
+    runs = runs_qs[:150]
+
+    # Summary totals from all runs
+    totals = ExtractionRun.objects.aggregate(
+        total=Count('id'),
+        completed=Count('id', filter=Q(status='completed')),
+        failed=Count('id', filter=Q(status='failed')),
+        running=Count('id', filter=Q(status='running')),
+    )
+
+    return render(request, 'curation/research.html', {
+        'runs': runs,
+        'totals': totals,
+        'q': q,
+        'status_filter': status_filter,
+        'title': 'Research Progress',
+    })
+
+
+@staff_member_required
+def taxonomy(request):
+    """Read-only taxonomy browser — all active facets and nodes."""
+    from core.models import Taxonomy, TaxonomyNode, Classification
+    from django.db.models import Count
+
+    # Count entities classified per node
+    node_counts = {
+        row['node_id']: row['n']
+        for row in Classification.objects.values('node_id').annotate(n=Count('entity', distinct=True))
+    }
+
+    facets = []
+    for tax in Taxonomy.objects.filter(status='active').order_by('key'):
+        nodes = list(
+            TaxonomyNode.objects
+            .filter(taxonomy=tax)
+            .order_by('path')
+        )
+        for node in nodes:
+            node.depth = node.path.count('.')
+            node.entity_count = node_counts.get(node.id, 0)
+        facets.append({'taxonomy': tax, 'nodes': nodes})
+
+    proposal_count = TaxonomyNode.objects.filter(status='proposed').count()
+
+    return render(request, 'curation/taxonomy.html', {
+        'facets': facets,
+        'proposal_count': proposal_count,
+        'title': 'Taxonomy',
+    })
+
+
+@staff_member_required
 def taxonomy_proposals(request):
     """Review LLM-proposed taxonomy nodes — approve or reject."""
     if request.method == 'POST':
