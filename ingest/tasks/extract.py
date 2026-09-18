@@ -17,11 +17,12 @@ from django.utils.dateparse import parse_date
 from psycopg2.extras import DateTimeTZRange
 
 from core.models import Assertion, AttributeDef, Document, ExtractionRun
+from core.normalize import normalize_name
 from ingest.ai import get_client
 from ingest.confidence import score as compute_score
 from ingest.cost import log_call
 from ingest.schemas import ExtractedClaim, ExtractionResult
-from ingest.tasks.resolve import resolve_mention
+from ingest.tasks.resolve import resolve_mention, _add_alias
 
 logger = logging.getLogger(__name__)
 
@@ -90,21 +91,6 @@ def _map_value(claim: ExtractedClaim, datatype: str) -> dict:
         return {'value_bool': bool(v)}
     return {'value_text': str(v) if v is not None else None}
 
-
-def _ensure_alias(entity_id: str, surface_form: str, document_id: str | None) -> None:
-    """Add surface_form as an alias for entity_id if not already present."""
-    from core.models import EntityAlias
-    from core.normalize import normalize_name
-    norm = normalize_name(surface_form)
-    EntityAlias.objects.get_or_create(
-        entity_id=entity_id,
-        alias_norm=norm,
-        defaults={
-            'alias': surface_form,
-            'alias_kind': 'abbrev',
-            'document_id': document_id,
-        },
-    )
 
 
 @shared_task(bind=True, queue='extract', max_retries=2)
@@ -199,7 +185,7 @@ def extract_document(self, document_id: str):
                 claim.subject_mention_full
                 and claim.subject_mention != claim.subject_mention_full
             ):
-                _ensure_alias(entity_id, claim.subject_mention, document_id)
+                _add_alias(entity_id, claim.subject_mention, normalize_name(claim.subject_mention), document_id)
             assertion = Assertion.objects.create(
                 entity_id=entity_id,
                 attribute_id=claim.attribute_key,

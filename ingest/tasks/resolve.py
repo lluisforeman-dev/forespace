@@ -1,10 +1,12 @@
-"""Entity resolution — levels 1–4.
+"""Entity resolution — levels 1–5.
 
 Level 1: external identifier match (skipped for free-text mentions in press releases)
 Level 2: exact canonical name or alias_norm match
-Level 3: pg_trgm similarity on alias_norm (threshold 0.35)
-Level 4: LLM disambiguation for borderline trigram candidates (0.2–0.35 similarity)
-Fallback: create a stub entity for human review
+Level 3: pg_trgm similarity on alias_norm (threshold 0.82 auto-merge, 0.10 min for LLM)
+Level 4: LLM disambiguation — compares mention against trigram candidates using knowledge context
+Level 5: LLM world-knowledge canonical lookup — resolves acronyms and legal name variants
+         that share no trigrams (e.g. "SpaceX" ↔ "Space Exploration Technologies Corp.")
+Fallback: create a stub entity
 
 Always returns an entity_id string — never silently drops an unresolved mention.
 """
@@ -42,6 +44,20 @@ Rules:
 - When uncertain reply false — a missed merge is safer than a wrong merge.
 
 Reply: {{"same": true, "confidence": "high"|"medium"|"low"}} or {{"same": false}}"""
+
+# L5 prompt — world-knowledge canonical name lookup
+_LLM_CANONICAL_USER = """\
+What is the single most widely-used canonical name for the following organisation in the space industry?
+
+Mention : "{mention}"  (type: {entity_type})
+
+Rules:
+- Reply with the name people and press most commonly use (e.g. "SpaceX" not "Space Exploration Technologies Corp.").
+- If the mention IS already the canonical name, still return it.
+- Only reply with high confidence if you are certain this is a real, known organisation.
+- Do not invent organisations.
+
+Reply: {{"canonical": "<name>", "confidence": "high"|"medium"|"low"}} or {{"canonical": null}} if unknown."""
 
 # Rich prompt used when we have knowledge data for the candidate
 _LLM_RESOLVE_USER_WITH_CONTEXT = """\
@@ -128,8 +144,21 @@ def resolve_mention(
             logger.info('L4 LLM match: "%s" → %s', mention, resolved)
             return resolved
 
-    # Fallback — stub entity queued for human review
-    return _create_stub(mention, norm, document_id, entity_type)
+    # Level 5 — LLM world-knowledge canonical lookup
+    # Handles cases where string similarity is useless (acronyms, legal name variants)
+    canonical, found_id = _llm_known_entity(mention, entity_type)
+    if found_id:
+        _add_alias(found_id, mention, norm, document_id)
+        logger.info('L5 match: "%s" → %s (canonical: %s)', mention, found_id, canonical)
+        return found_id
+
+    # Use LLM-suggested canonical as the stub name when provided (cleaner than raw mention)
+    stub_mention = canonical if canonical else mention
+    stub_norm = normalize_name(stub_mention) if canonical else norm
+    entity_id = _create_stub(stub_mention, stub_norm, document_id, entity_type)
+    if canonical and canonical != mention:
+        _add_alias(entity_id, mention, norm, document_id)
+    return entity_id
 
 
 def _entity_context_for_resolution(entity_id: str) -> str:
@@ -230,6 +259,86 @@ def _llm_disambiguate(mention: str, mention_type: str, candidates: list) -> str 
     except Exception as exc:
         logger.warning('L4 LLM resolve failed for "%s": %s', mention, exc)
     return None
+
+
+def _add_alias(entity_id: str, surface_form: str, norm: str, document_id: str | None) -> None:
+    """Register surface_form as an alias for entity_id if not already present."""
+    EntityAlias.objects.get_or_create(
+        entity_id=entity_id,
+        alias_norm=norm,
+        defaults={
+            'alias': surface_form,
+            'alias_kind': 'abbrev',
+            'document_id': document_id,
+        },
+    )
+
+
+def _llm_known_entity(mention: str, entity_type: str) -> tuple[str | None, str | None]:
+    """L5 — ask the LLM for the canonical name using world knowledge.
+
+    Returns (canonical_name, entity_id):
+    - entity_id set → canonical found in DB, merge into it
+    - canonical_name set, entity_id None → use canonical as stub name
+    - both None → LLM doesn't recognise the mention
+    """
+    try:
+        from ingest.ai import get_client
+        from ingest.cost import log_call
+        client = get_client()
+
+        resp = client.chat.completions.create(
+            model=settings.AI_MODEL_FAST,
+            messages=[
+                {'role': 'system', 'content': _LLM_RESOLVE_SYSTEM},
+                {'role': 'user', 'content': _LLM_CANONICAL_USER.format(
+                    mention=mention, entity_type=entity_type,
+                )},
+            ],
+            response_format={'type': 'json_object'},
+            max_tokens=80,
+            temperature=0,
+        )
+        log_call('resolve', settings.AI_MODEL_FAST, resp)
+        raw = (resp.choices[0].message.content or '').strip()
+        if not raw:
+            return None, None
+        raw = raw.replace('True', 'true').replace('False', 'false').replace('None', 'null')
+        result = json.loads(raw)
+
+        canonical = result.get('canonical')
+        if not canonical or result.get('confidence') != 'high':
+            return None, None
+
+        # If canonical is the same as the mention, no new information
+        if normalize_name(canonical) == normalize_name(mention):
+            return None, None
+
+        # Try to find it in the DB by canonical name
+        ent = Entity.objects.filter(
+            canonical_name__iexact=canonical,
+            status__in=('active', 'stub'),
+        ).first()
+        if ent:
+            return canonical, str(ent.id)
+
+        # Try alias_norm
+        alias = (
+            EntityAlias.objects
+            .select_related('entity')
+            .filter(alias_norm=normalize_name(canonical), entity__status__in=('active', 'stub'))
+            .first()
+        )
+        if alias:
+            return canonical, str(alias.entity_id)
+
+        # Canonical not in DB yet — return name only so stub uses the better form
+        logger.info('L5 canonical "%s" not in DB for mention "%s" — will use as stub name', canonical, mention)
+        return canonical, None
+
+    except Exception as exc:
+        logger.warning('L5 world-knowledge lookup failed for "%s": %s', mention, exc)
+        return None, None
 
 
 def _create_stub(
