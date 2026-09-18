@@ -606,7 +606,7 @@ _FUNDING_TYPE_COLORS = {
 }
 
 
-@login_required
+@staff_member_required
 def funding(request):
     """Funding intelligence — grants, equity, debt, convertibles, and open calls."""
     from core.models import Entity, Event, Relation
