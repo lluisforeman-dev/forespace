@@ -152,7 +152,7 @@ def _entity_context_for_resolution(entity_id: str) -> str:
             val = a.value_text or a.value_num or a.value_date or a.value_bool
             unit = f' {a.unit}' if getattr(a, 'unit', None) else ''
             if val is not None:
-                facts.append(f'{a.attribute_key}={val}{unit}')
+                facts.append(f'{a.attribute_id}={val}{unit}')
         if facts:
             lines.append('Facts: ' + ', '.join(facts))
     frag = (
