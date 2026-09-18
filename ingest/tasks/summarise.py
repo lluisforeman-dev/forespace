@@ -89,7 +89,11 @@ def synthesise_entity_summary(self, entity_id: str):
         )
         log_call('synthesise_entity_summary', model, resp,
                  duration_ms=int((time.monotonic() - t0) * 1000))
-        raw = resp.choices[0].message.content.strip()
+        content = resp.choices[0].message.content
+        if not content:
+            logger.warning('synthesise_entity_summary entity=%s: empty response', entity_id)
+            return
+        raw = content.strip()
     except Exception as exc:
         logger.error('synthesise_entity_summary entity=%s: %s', entity_id, exc)
         raise self.retry(exc=exc)

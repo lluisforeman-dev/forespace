@@ -86,7 +86,11 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
             temperature=0,
         )
         log_call('extract', model, resp, entity=entity)
-        text = resp.choices[0].message.content.strip()
+        content = resp.choices[0].message.content
+        if not content:
+            logger.warning('classify_entity %s: empty response from model', entity_id)
+            return
+        text = content.strip()
         text = text.replace('True', 'true').replace('False', 'false').replace('None', 'null')
         raw = json.loads(text)
         classifications = raw.get('classifications', [])

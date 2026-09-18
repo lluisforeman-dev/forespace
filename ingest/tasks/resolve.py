@@ -120,7 +120,9 @@ def _llm_disambiguate(mention: str, candidates: list) -> str | None:
                 temperature=0,
             )
             log_call('resolve', settings.AI_MODEL_FAST, resp)
-            raw = resp.choices[0].message.content.strip()
+            raw = (resp.choices[0].message.content or '').strip()
+            if not raw:
+                continue
             # Some models return Python literals instead of JSON
             raw = raw.replace('True', 'true').replace('False', 'false').replace('None', 'null')
             result = json.loads(raw)

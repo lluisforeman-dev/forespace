@@ -318,7 +318,10 @@ def _generate_search_angles(topic: str, entity_type: str) -> list[str]:
             temperature=0.3,
         )
         log_call('search_angles', settings.AI_MODEL_FAST, resp)
-        data = json.loads(resp.choices[0].message.content)
+        content = resp.choices[0].message.content
+        if not content:
+            return []
+        data = json.loads(content)
         angles = [str(a).strip() for a in data.get('angles', []) if a]
         return angles[:3]
     except Exception as exc:

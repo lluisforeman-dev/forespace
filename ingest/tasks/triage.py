@@ -60,7 +60,12 @@ def triage_document(self, document_id: str):
             temperature=0,
         )
         log_call('triage', settings.AI_MODEL, resp, duration_ms=int((time.monotonic() - t0) * 1000))
-        result = json.loads(resp.choices[0].message.content)
+        content = resp.choices[0].message.content
+        if not content:
+            logger.warning('triage_document %s: empty response, marking skipped', document_id)
+            Document.objects.filter(pk=document_id).update(pipeline_status='skipped')
+            return
+        result = json.loads(content)
         relevant = bool(result.get('relevant', False))
     except Exception as exc:
         logger.warning('triage_document %s error: %s', document_id, exc)
