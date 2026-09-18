@@ -47,14 +47,16 @@ Reply: {{"same": true, "confidence": "high"|"medium"|"low"}} or {{"same": false}
 
 # L5 prompt — world-knowledge canonical name lookup
 _LLM_CANONICAL_USER = """\
-What is the single most widely-used canonical name for the following organisation in the space industry?
+What is the single most widely-used canonical name for the following ORGANISATION in the space industry?
+This must be an organisation (company, agency, institute, consortium) — not a person, country, or product.
 
 Mention : "{mention}"  (type: {entity_type})
 
 Rules:
 - Reply with the name people and press most commonly use (e.g. "SpaceX" not "Space Exploration Technologies Corp.").
 - If the mention IS already the canonical name, still return it.
-- Only reply with high confidence if you are certain this is a real, known organisation.
+- Only reply with high confidence if you are certain this is a real, known ORGANISATION.
+- If the mention is a person's name, product name, or geographic area, reply {{"canonical": null}}.
 - Do not invent organisations.
 
 Reply: {{"canonical": "<name>", "confidence": "high"|"medium"|"low"}} or {{"canonical": null}} if unknown."""
@@ -174,7 +176,8 @@ def resolve_mention(
 
     # Level 5 — LLM world-knowledge canonical lookup
     # Handles cases where string similarity is useless (acronyms, legal name variants)
-    canonical, found_id = _llm_known_entity(mention, entity_type)
+    # Skip for persons — their canonical name is their own name, not their employer
+    canonical, found_id = _llm_known_entity(mention, entity_type) if entity_type != 'person' else (None, None)
     if found_id:
         _add_alias(found_id, mention, norm, document_id)
         logger.info('L5 match: "%s" → %s (canonical: %s)', mention, found_id, canonical)
