@@ -70,6 +70,12 @@ Rich narrative paragraphs about entities. For EACH meaningful piece of intellige
   source_url            - URL, or null
 
 RULES:
+- SPACE FOCUS: Only extract entities whose primary activity is in or directly enables
+  the space industry (launch, satellites, spacecraft, propulsion, ground systems, earth
+  observation, space tourism, in-space services, space infrastructure, defence space, etc.).
+  Do NOT extract entities whose main business is unrelated to space — e.g. general telecom
+  carriers, mainstream banks, generic IT firms, automotive OEMs — even if mentioned as
+  customers or investors. If an entity is purely a customer with no space operations, omit it.
 - In claims, only use attribute_key values from the allowed list below.
 - Extract as many events and fragments as you find — do not summarise, capture everything.
 - Fragments must be substantive (> 2 sentences). Capture challenges, pivots, tech choices,
@@ -203,6 +209,52 @@ def _sonar_source() -> Source:
         defaults={'kind': 'llm', 'base_trust': 65, 'domain': 'perplexity.ai'},
     )
     return source
+
+
+# Keywords that strongly suggest space or space-adjacent activity
+_SPACE_KEYWORDS = {
+    'space', 'spacecraft', 'satellite', 'rocket', 'launch', 'orbit', 'orbital',
+    'propulsion', 'propellant', 'thruster', 'payload', 'fairing', 'booster',
+    'reusable', 'smallsat', 'cubesat', 'nanosat', 'microsat', 'constellation',
+    'spaceport', 'launchpad', 'launch site', 'launch vehicle', 'upper stage',
+    'earth observation', 'remote sensing', 'sar', 'optical imaging',
+    'ground station', 'telemetry', 'mission control', 'flight software',
+    'astronaut', 'cosmonaut', 'crewed', 'human spaceflight',
+    'nasa', 'esa', 'roscosmos', 'jaxa', 'isro', 'csa', 'cnsa', 'uksa',
+    'spacex', 'rocketlab', 'rocket lab', 'arianespace', 'ula ', 'virgin',
+    'in-orbit', 'in orbit', 'debris', 'space debris', 'sts', 'iss ',
+    'geostationary', 'geo ', 'leo ', 'meo ', 'sso ', 'vleo',
+    'interplanetary', 'lunar', 'mars', 'moon ', 'asteroid',
+    'space tourism', 'space station', 'in-space', 'space infrastructure',
+    'new space', 'newspace', 'space industry', 'space economy',
+}
+
+# Keywords that strongly suggest the entity is NOT primarily space-focused
+_NON_SPACE_KEYWORDS = {
+    'telecom carrier', 'mobile network', 'internet service provider',
+    'retail bank', 'investment bank', 'insurance company',
+    'supermarket', 'retail chain', 'fast food', 'pharmaceutical',
+    'automotive oem', 'car manufacturer', 'oil and gas', 'oil company',
+    'mining company', 'steel manufacturer',
+}
+
+
+def _is_space_relevant(name: str, entity_type: str = 'organization') -> bool:
+    """
+    Fast heuristic: is this entity space or space-adjacent?
+    Assets, facilities, events, programs are assumed relevant.
+    Organizations and persons are checked against keyword lists.
+    Returns True if relevant (or uncertain — we prefer false negatives over false positives).
+    """
+    if entity_type in ('asset', 'facility', 'event', 'program'):
+        return True
+    name_lower = name.lower()
+    if any(kw in name_lower for kw in _SPACE_KEYWORDS):
+        return True
+    if any(kw in name_lower for kw in _NON_SPACE_KEYWORDS):
+        return False
+    # Uncertain — allow it, the prompt-level filter should have already excluded junk
+    return True
 
 
 _CONF_MAP = {'high': 78, 'medium': 62, 'low': 45}
@@ -565,17 +617,25 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         )
         evolve_taxonomy.apply_async(args=[entity_id_strs], countdown=60)
 
-        # Cascade: research newly discovered stubs
+        # Cascade: research newly discovered stubs — space-relevant only
         if cascade_depth < 2:
-            stubs_to_research = [
-                name for name in entity_name_map.values()
-                if _Entity.objects.filter(canonical_name=name, status='stub').exists()
-                and not Assertion.objects.filter(entity__canonical_name=name, status='accepted').exists()
-                and not ExtractionRun.objects.filter(
+            stubs_to_research = []
+            for name in entity_name_map.values():
+                stub_entity = _Entity.objects.filter(canonical_name=name, status='stub').first()
+                if not stub_entity:
+                    continue
+                if not _is_space_relevant(name, stub_entity.entity_type):
+                    logger.info('research_topic: skipping non-space stub "%s"', name)
+                    continue
+                if Assertion.objects.filter(entity__canonical_name=name, status='accepted').exists():
+                    continue
+                if ExtractionRun.objects.filter(
                     stats__topic=name,
                     started_at__gte=timezone.now() - timedelta(days=7),
-                ).exists()
-            ]
+                ).exists():
+                    continue
+                stubs_to_research.append(name)
+
             for stub_name in stubs_to_research[:4]:
                 stub_entity = _Entity.objects.filter(canonical_name=stub_name, status='stub').first()
                 t_type = _TYPE_TO_TOPIC.get(stub_entity.entity_type, 'company') if stub_entity else 'company'
