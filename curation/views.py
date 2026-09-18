@@ -13,7 +13,7 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 
-from core.models import Assertion, Classification, Conflict, Entity, Relation, Source, ScheduledSource, Taxonomy, TaxonomyNode
+from core.models import Assertion, Classification, Entity, Relation, Source, ScheduledSource, TaxonomyNode
 from ingest.tasks.analytics import get_snapshot
 
 
@@ -80,7 +80,6 @@ def dashboard(request):
     )
     ctx = {
         'stub_count': Entity.objects.filter(status='stub').count(),
-        'conflict_count': Conflict.objects.filter(resolution='pending').count(),
         'candidate_count': Assertion.objects.filter(status='candidate').count(),
         'analytics': snapshot,
         'recent_entities': recent_entities,
@@ -205,58 +204,6 @@ def promote_stub(request, entity_id):
         ).update(status='accepted')
     return HttpResponseRedirect(reverse('curation:stubs'))
 
-
-@staff_member_required
-def conflicts(request):
-    conflict_list = (
-        Conflict.objects
-        .filter(resolution='pending')
-        .select_related('entity')
-        .order_by('-detected_at')[:100]
-    )
-    return render(request, 'curation/conflicts.html', {
-        'conflicts': conflict_list,
-        'title': 'Open Conflicts',
-    })
-
-
-@staff_member_required
-def resolve_conflict(request, conflict_id):
-    """Pick a winner, mark range, or declare both wrong."""
-    if request.method != 'POST':
-        return HttpResponseRedirect(reverse('curation:conflicts'))
-
-    conflict = get_object_or_404(Conflict, pk=conflict_id)
-    action = request.POST.get('action')  # 'pick_first' | 'pick_second' | 'both_wrong' | 'range'
-    notes = request.POST.get('notes', '')
-
-    resolution_map = {
-        'pick_first': 'picked',
-        'pick_second': 'picked',
-        'both_wrong': 'both_wrong',
-        'range': 'range',
-    }
-    resolution = resolution_map.get(action, 'pending')
-
-    with transaction.atomic():
-        ids = conflict.assertion_ids or []
-        if action == 'pick_first' and len(ids) >= 1:
-            Assertion.objects.filter(pk=ids[0]).update(status='accepted')
-            if len(ids) >= 2:
-                Assertion.objects.filter(pk=ids[1]).update(status='rejected')
-        elif action == 'pick_second' and len(ids) >= 2:
-            Assertion.objects.filter(pk=ids[1]).update(status='accepted')
-            Assertion.objects.filter(pk=ids[0]).update(status='rejected')
-        elif action == 'both_wrong':
-            Assertion.objects.filter(pk__in=ids).update(status='rejected')
-
-        conflict.resolution = resolution
-        conflict.resolved_by = request.user.username
-        conflict.resolved_at = timezone.now()
-        conflict.notes = notes
-        conflict.save(update_fields=['resolution', 'resolved_by', 'resolved_at', 'notes'])
-
-    return HttpResponseRedirect(reverse('curation:conflicts'))
 
 
 @staff_member_required

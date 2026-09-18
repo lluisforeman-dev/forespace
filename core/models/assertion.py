@@ -75,12 +75,13 @@ class Assertion(models.Model):
         ('manual', 'Manual'),
         ('derived', 'Derived'),
         ('imputed', 'Imputed'),
+        ('synthesis', 'Synthesis'),
     ]
     STATUSES = [
         ('accepted', 'Accepted'),
         ('candidate', 'Candidate'),
         ('rejected', 'Rejected'),
-        ('conflicted', 'Conflicted'),
+        ('superseded', 'Superseded'),
     ]
     REVIEW_STATES = [
         ('pending', 'Pending'),
