@@ -357,6 +357,74 @@ def entity_profile(request, entity_id):
 
 
 @staff_member_required
+def connections(request):
+    """Network connections page — typed relations and event-based links."""
+    from core.models import PredicateDef
+    from django.db.models import Q
+
+    q = request.GET.get('q', '').strip()
+    predicate_filter = request.GET.get('predicate', '').strip()
+    entity_type_filter = request.GET.get('entity_type', '').strip()
+
+    # ── Typed relations ───────────────────────────────────────────────────
+    relations_qs = (
+        Relation.objects
+        .filter(superseded_at__isnull=True)
+        .select_related('subject', 'object', 'predicate')
+    )
+    if q:
+        relations_qs = relations_qs.filter(
+            Q(subject__canonical_name__icontains=q) |
+            Q(object__canonical_name__icontains=q)
+        )
+    if predicate_filter:
+        relations_qs = relations_qs.filter(predicate_id=predicate_filter)
+    if entity_type_filter:
+        relations_qs = relations_qs.filter(
+            Q(subject__entity_type=entity_type_filter) |
+            Q(object__entity_type=entity_type_filter)
+        )
+    relations_qs = relations_qs.order_by('-confidence', '-id')[:200]
+
+    # ── Event-based connections ───────────────────────────────────────────
+    events_qs = (
+        Event.objects
+        .filter(participants__isnull=False)
+        .select_related('entity')
+        .prefetch_related('participants')
+        .distinct()
+    )
+    if q:
+        events_qs = events_qs.filter(
+            Q(entity__canonical_name__icontains=q) |
+            Q(participants__canonical_name__icontains=q) |
+            Q(title__icontains=q)
+        ).distinct()
+    if entity_type_filter:
+        events_qs = events_qs.filter(
+            Q(entity__entity_type=entity_type_filter) |
+            Q(participants__entity_type=entity_type_filter)
+        ).distinct()
+    events_qs = events_qs.order_by('-id')[:200]
+
+    predicates = PredicateDef.objects.order_by('label')
+    entity_types = Entity.objects.values_list('entity_type', flat=True).distinct().order_by('entity_type')
+
+    return render(request, 'curation/connections.html', {
+        'relations': relations_qs,
+        'event_connections': events_qs,
+        'predicates': predicates,
+        'entity_types': entity_types,
+        'q': q,
+        'predicate_filter': predicate_filter,
+        'entity_type_filter': entity_type_filter,
+        'relation_count': Relation.objects.filter(superseded_at__isnull=True).count(),
+        'event_connection_count': Event.objects.filter(participants__isnull=False).distinct().count(),
+        'title': 'Connections',
+    })
+
+
+@staff_member_required
 def taxonomy_proposals(request):
     """Review LLM-proposed taxonomy nodes — approve or reject."""
     if request.method == 'POST':
