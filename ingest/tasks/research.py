@@ -204,6 +204,91 @@ def _parse_date_flexible(date_str) -> tuple:
     return None, 'year'
 
 
+def _entity_context_block(topic: str) -> str:
+    """
+    Build a compact summary of what we already know about an entity.
+    Injected into the Sonar prompt so it searches for gaps, not duplicates.
+    Returns empty string if entity not found or has no data.
+    """
+    from django.db.models import Q
+    from core.models import Entity, Relation
+    from core.normalize import normalize_name
+
+    norm = normalize_name(topic)
+    entity = (
+        Entity.objects
+        .filter(status__in=('active', 'stub'))
+        .filter(Q(canonical_name__iexact=topic) | Q(aliases__alias_norm=norm))
+        .first()
+    )
+    if not entity:
+        return ''
+
+    lines = [f'\n\nWhat we already know about "{entity.canonical_name}" (do not re-extract these):']
+
+    # ── Known facts ───────────────────────────────────────────────────────
+    accepted = (
+        Assertion.objects
+        .filter(entity=entity, status='accepted')
+        .select_related('attribute')
+        .order_by('-confidence')[:20]
+    )
+    if accepted:
+        lines.append('Known facts:')
+        for a in accepted:
+            val = a.value_text or a.value_num or a.value_date or a.value_bool
+            unit = f' {a.unit}' if a.unit else ''
+            lines.append(f'  - {a.attribute.label}: {val}{unit}')
+
+    # ── Recent events ─────────────────────────────────────────────────────
+    recent_events = (
+        Event.objects
+        .filter(entity=entity)
+        .order_by('-date', '-id')[:8]
+    )
+    if recent_events:
+        lines.append('Recent events already captured:')
+        for ev in recent_events:
+            date_str = ev.date.strftime('%Y-%m') if ev.date else '?'
+            lines.append(f'  - {date_str}: {ev.title}')
+
+    # ── Known connections ─────────────────────────────────────────────────
+    rel_out = (
+        Relation.objects
+        .filter(subject=entity, superseded_at__isnull=True)
+        .select_related('object')[:10]
+    )
+    rel_in = (
+        Relation.objects
+        .filter(object=entity, superseded_at__isnull=True)
+        .select_related('subject')[:10]
+    )
+    connections = (
+        [f'  - {r.predicate_id} → {r.object.canonical_name}' for r in rel_out] +
+        [f'  - {r.predicate_id} ← {r.subject.canonical_name}' for r in rel_in]
+    )
+    if connections:
+        lines.append('Known relationships:')
+        lines.extend(connections[:15])
+
+    # ── Gaps: attributes with no accepted assertion ───────────────────────
+    covered_keys = {a.attribute_id for a in accepted}
+    all_keys = set(AttributeDef.objects.values_list('key', flat=True))
+    gap_keys = all_keys - covered_keys
+    gap_labels = list(
+        AttributeDef.objects
+        .filter(key__in=gap_keys)
+        .values_list('label', flat=True)
+        .order_by('label')[:15]
+    )
+    if gap_labels:
+        lines.append(f'Missing data — prioritise finding: {", ".join(gap_labels)}')
+
+    if len(lines) == 1:
+        return ''  # only the header line, nothing useful
+    return '\n'.join(lines)
+
+
 def _seen_urls_for_company(topic: str) -> str:
     from django.db.models import Q
     from core.models import Entity
@@ -546,6 +631,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
 
     if topic_type == 'company':
         seen = _seen_urls_for_company(topic)
+        ctx = _entity_context_block(topic)
         user_msg = (
             f'Research the space-industry company or organisation "{topic}". '
             f'Find current facts, events, intelligence, and relationships from recent web sources. '
@@ -553,6 +639,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             f'technology choices, competitive position, key people, strategic pivots, '
             f'and all relationships with other companies, agencies, and assets.\n\n'
             f'{_vocab_block()}'
+            f'{ctx}'
             f'{_seen_block(seen)}'
         )
     elif topic_type == 'news':
@@ -566,6 +653,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         )
     elif topic_type == 'space_angle':
         seen = _seen_urls_for_company(topic)
+        ctx = _entity_context_block(topic)
         user_msg = (
             f'Research "{topic}" specifically for its involvement in the space industry. '
             f'What satellite services does it operate or use? What space investments, '
@@ -574,6 +662,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             f'Extract all relationships to space companies, agencies, and assets. '
             f'Ignore all non-space activities entirely.\n\n'
             f'{_vocab_block()}'
+            f'{ctx}'
             f'{_seen_block(seen)}'
         )
     else:  # question
@@ -591,7 +680,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         task=f'research_{topic_type}',
         prompt_sha256=hashlib.sha256(user_msg.encode()).hexdigest(),
         model=model,
-        code_version='sonar-v2',
+        code_version='sonar-v3',
     )
 
     try:
