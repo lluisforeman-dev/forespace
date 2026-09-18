@@ -43,18 +43,19 @@ Confidence guidelines:
 
 
 def _map_value(value, unit, datatype: str) -> dict:
+    unit = str(unit)[:20] if unit else unit
     if datatype in ('int', 'decimal', 'money') and value is not None:
         try:
             return {'value_num': float(value), 'unit': unit}
         except (TypeError, ValueError):
-            return {'value_text': str(value)}
+            return {'value_text': str(value)[:500]}
     if datatype == 'date' and value is not None:
         parsed = parse_date(str(value))
         if parsed:
             return {'value_date': parsed}
     if datatype == 'bool' and value is not None:
         return {'value_bool': bool(value)}
-    return {'value_text': str(value) if value is not None else ''}
+    return {'value_text': str(value)[:500] if value is not None else ''}
 
 
 @shared_task(bind=True, queue='adjudicate', max_retries=1, default_retry_delay=60)
