@@ -6,42 +6,23 @@
   .filters input[type=text] { width:260px; margin-bottom:0; }
   .filters select { padding:8px 10px; border:1px solid #ccc; border-radius:4px; font-size:13px; background:#fff; }
   .filters select:focus { outline:none; border-color:#0066cc; }
-  .tab-bar { display:flex; gap:0; margin-bottom:0; border-bottom:2px solid #ddd; }
-  .tab { padding:10px 20px; font-size:13px; font-weight:600; color:#888; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; }
-  .tab.active { color:#1a1a2e; border-bottom-color:#1a1a2e; }
-  .tab-panel { display:none; }
-  .tab-panel.active { display:block; }
   .ent-tag { display:inline-block; padding:1px 6px; border-radius:3px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.3px; margin-left:4px; vertical-align:middle; }
   .ent-organization { background:#dbeafe; color:#1e40af; }
   .ent-person       { background:#fce7f3; color:#9d174d; }
   .ent-asset        { background:#dcfce7; color:#166534; }
   .ent-program      { background:#fef9c3; color:#854d0e; }
   .ent-facility     { background:#f3e8ff; color:#6b21a8; }
-  .pred-tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; background:#ede9fe; color:#5b21b6; white-space:nowrap; }
-  .conf-high   { color:#15803d; }
-  .conf-medium { color:#1d4ed8; }
-  .conf-low    { color:#b45309; }
   .participants { display:flex; flex-wrap:wrap; gap:4px; }
-  .ev-type { font-size:11px; color:#888; white-space:nowrap; }
   .section-meta { font-size:12px; color:#888; margin-bottom:12px; }
 </style>
 
 <div style="display:flex;align-items:baseline;gap:16px;margin-bottom:16px;">
   <h1 style="font-size:20px;font-weight:700;color:#1a1a2e">Connections</h1>
-  <span style="font-size:13px;color:#888">
-    {{ relation_count }} typed relation{{ relation_count|pluralize }} · {{ event_connection_count }} event link{{ event_connection_count|pluralize }}
-  </span>
+  <span style="font-size:13px;color:#888">{{ event_connection_count }} communicated relationship{{ event_connection_count|pluralize }}</span>
 </div>
 
-<!-- Filters -->
 <form method="get" class="filters">
   <input type="text" name="q" value="{{ q }}" placeholder="Search entity name…">
-  <select name="predicate">
-    <option value="">All predicates</option>
-    {% for p in predicates %}
-    <option value="{{ p.key }}"{% if predicate_filter == p.key %} selected{% endif %}>{{ p.label }}</option>
-    {% endfor %}
-  </select>
   <select name="entity_type">
     <option value="">All types</option>
     {% for t in entity_types %}
@@ -49,123 +30,51 @@
     {% endfor %}
   </select>
   <button class="btn btn-primary">Filter</button>
-  {% if q or predicate_filter or entity_type_filter %}
+  {% if q or entity_type_filter %}
   <a href="{% url 'curation:connections' %}" class="btn" style="background:#eee;color:#333">Clear</a>
   {% endif %}
 </form>
 
-<!-- Tabs -->
-<div class="card" style="padding:0;">
-  <div class="tab-bar" style="padding:0 20px;">
-    <div class="tab active" onclick="switchTab('relations', this)">
-      Typed relations <span style="color:#888;font-weight:400">({{ relations|length }})</span>
-    </div>
-    <div class="tab" onclick="switchTab('events', this)">
-      Event links <span style="color:#888;font-weight:400">({{ event_connections|length }})</span>
-    </div>
-  </div>
-
-  <!-- Relations panel -->
-  <div id="panel-relations" class="tab-panel active" style="padding:20px;">
-    {% if relations %}
-    <p class="section-meta">Explicit typed edges between entities — built by the LLM from web sources.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>From</th>
-          <th>Relation</th>
-          <th>To</th>
-          <th>Confidence</th>
-          <th>Context</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in relations %}
-        <tr>
-          <td>
-            <a href="{% url 'curation:entity_profile' r.subject.id %}">{{ r.subject.canonical_name }}</a>
-            <span class="ent-tag ent-{{ r.subject.entity_type }}">{{ r.subject.entity_type }}</span>
-          </td>
-          <td><span class="pred-tag">{{ r.predicate.label }}</span></td>
-          <td>
-            <a href="{% url 'curation:entity_profile' r.object.id %}">{{ r.object.canonical_name }}</a>
-            <span class="ent-tag ent-{{ r.object.entity_type }}">{{ r.object.entity_type }}</span>
-          </td>
-          <td>
-            <span class="{% if r.confidence >= 75 %}conf-high{% elif r.confidence >= 55 %}conf-medium{% else %}conf-low{% endif %}">
-              {{ r.confidence }}%
-            </span>
-          </td>
-          <td style="font-size:12px;color:#666;max-width:300px;">{{ r.quote|truncatechars:120 }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p style="color:#888;font-size:13px;">
-      No typed relations yet{% if q or predicate_filter %} matching the current filter{% endif %}.
-      {% if not q and not predicate_filter %}Relations are extracted inline during research runs.{% endif %}
-    </p>
-    {% endif %}
-  </div>
-
-  <!-- Event links panel -->
-  <div id="panel-events" class="tab-panel" style="padding:20px;">
-    {% if event_connections %}
-    <p class="section-meta">Entities co-appearing in the same event — the most immediate source of connections.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Entity</th>
-          <th>Event</th>
-          <th>Type</th>
-          <th>Date</th>
-          <th>Connected with</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for ev in event_connections %}
-        <tr>
-          <td>
-            <a href="{% url 'curation:entity_profile' ev.entity.id %}">{{ ev.entity.canonical_name }}</a>
-            <span class="ent-tag ent-{{ ev.entity.entity_type }}">{{ ev.entity.entity_type }}</span>
-          </td>
-          <td style="max-width:220px;font-size:12px;">{{ ev.title|truncatechars:60 }}</td>
-          <td><span class="ev-type">{{ ev.get_event_type_display }}</span></td>
-          <td style="font-size:12px;color:#888;white-space:nowrap;">
-            {% if ev.date %}{{ ev.date|date:"M Y" }}{% else %}—{% endif %}
-          </td>
-          <td>
-            <div class="participants">
-              {% for p in ev.participants.all %}
-              <a href="{% url 'curation:entity_profile' p.id %}"
-                 style="display:inline-block;padding:2px 8px;background:#f0f0f0;border-radius:10px;font-size:11px;color:#333;">
-                {{ p.canonical_name|truncatechars:30 }}
-                <span class="ent-tag ent-{{ p.entity_type }}">{{ p.entity_type }}</span>
-              </a>
-              {% endfor %}
-            </div>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p style="color:#888;font-size:13px;">No event connections found{% if q %} for "{{ q }}"{% endif %}.</p>
-    {% endif %}
-  </div>
+<div class="card">
+  <p class="section-meta">Entities connected through shared events — extracted from web sources.</p>
+  {% if event_connections %}
+  <table>
+    <thead>
+      <tr>
+        <th>Entity</th>
+        <th>Context</th>
+        <th>Date</th>
+        <th>Connected with</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ev in event_connections %}
+      <tr>
+        <td style="white-space:nowrap;">
+          <a href="{% url 'curation:entity_profile' ev.entity.id %}">{{ ev.entity.canonical_name }}</a>
+          <span class="ent-tag ent-{{ ev.entity.entity_type }}">{{ ev.entity.entity_type }}</span>
+        </td>
+        <td style="max-width:220px;font-size:12px;">{{ ev.title|truncatechars:60 }}</td>
+        <td style="font-size:12px;color:#888;white-space:nowrap;">
+          {% if ev.date %}{{ ev.date|date:"M Y" }}{% else %}—{% endif %}
+        </td>
+        <td>
+          <div class="participants">
+            {% for p in ev.participants.all %}
+            <a href="{% url 'curation:entity_profile' p.id %}"
+               style="display:inline-block;padding:2px 8px;background:#f0f0f0;border-radius:10px;font-size:11px;color:#333;">
+              {{ p.canonical_name|truncatechars:30 }}
+              <span class="ent-tag ent-{{ p.entity_type }}">{{ p.entity_type }}</span>
+            </a>
+            {% endfor %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:#888;font-size:13px;">No connections found{% if q %} for "{{ q }}"{% endif %}.</p>
+  {% endif %}
 </div>
-
-<script>
-function switchTab(name, el) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-  el.classList.add('active');
-  document.getElementById('panel-' + name).classList.add('active');
-}
-// Restore tab from hash
-if (location.hash === '#events') {
-  switchTab('events', document.querySelectorAll('.tab')[1]);
-}
-</script>
 {% endblock %}
