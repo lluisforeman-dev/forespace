@@ -51,7 +51,9 @@ Structured key-value facts. For EACH claim:
 Discrete events in an entity's history. For EACH event:
   subject_mention  - exact entity name (primary subject)
   subject_type     - company | investor | entity | university | asset | person | facility | program
-  event_type       - funding_round | launch | contract_award | partnership |
+  event_type       - funding_round | grant_award | grant_call | ipo | spac |
+                     debt_financing | convertible | crowdfunding |
+                     launch | contract_award | partnership |
                      acquisition | failure | pivot | regulatory | milestone | leadership |
                      publication | research_grant
   title            - short descriptive title (e.g. "Series B — £40M led by Airbus Ventures")
@@ -463,7 +465,7 @@ _TYPE_TO_TOPIC = {
 }
 
 # topic_types that are valid for ExtractionRun.task naming
-_VALID_TOPIC_TYPES = {'company', 'news', 'question', 'space_angle', 'research'}
+_VALID_TOPIC_TYPES = {'company', 'news', 'question', 'space_angle', 'research', 'funding'}
 
 
 def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source) -> int:
@@ -771,6 +773,34 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             f'  - Institutional collaborators and partners\n\n'
             f'{_vocab_block()}'
             f'{ctx}'
+            f'{_seen_block(seen)}'
+        )
+    elif topic_type == 'funding':
+        seen = _seen_urls_recent(days=30, limit=100)
+        user_msg = (
+            f'Research space industry funding activity for: "{topic}"\n\n'
+            f'Search for ALL of the following:\n'
+            f'1. ACTIVE GRANT CALLS — open calls from EU (Horizon Europe, EIC), ESA programmes '
+            f'(ARTES, GSTP, ScyLight, NAVISP, FAST, Open Space Innovation Platform), '
+            f'national agencies (UKSA, CNES, DLR, ASI, JAXA, NASA SBIR/STTR), '
+            f'and innovation bodies (Innovate UK, Bpifrance, CDTI, FFG). '
+            f'For each: call ID, deadline, budget envelope, eligible entity types, topic description.\n'
+            f'Use event_type=grant_call with date=deadline.\n\n'
+            f'2. RECENT GRANT AWARDS — which space companies or universities received grants, '
+            f'from which programme, how much, and for what purpose.\n'
+            f'Use event_type=grant_award.\n\n'
+            f'3. EQUITY ROUNDS — seed, Series A/B/C/D, growth rounds, strategic investments, '
+            f'IPOs, and SPAC mergers in the space industry. Include lead investors and co-investors.\n'
+            f'Use event_type=funding_round. Classify using funding_round_series: '
+            f'pre_seed | seed | series_a | series_b | series_c | series_d_plus | growth | '
+            f'strategic | ipo | spac.\n\n'
+            f'4. DEBT & CONVERTIBLE — venture debt, EIB loans, convertible notes and SAFEs '
+            f'raised by space companies.\n'
+            f'Use event_type=debt_financing or event_type=convertible.\n\n'
+            f'5. INVESTOR ACTIVITY — which VCs, corporate VCs, government funds, and angels '
+            f'are most active in space. Extract relations: invested_in, co_invested_with, received_grant_from.\n\n'
+            f'Be exhaustive — extract every funding event, grant, and investor relation you find.\n\n'
+            f'{_vocab_block()}'
             f'{_seen_block(seen)}'
         )
     else:  # question

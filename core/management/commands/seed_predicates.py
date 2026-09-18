@@ -28,6 +28,30 @@ PREDICATES = [
             'Qualifiers: contract_value_usd, date, scope.'
         ),
     },
+    {
+        'key': 'received_grant_from',
+        'label': 'Received Grant From',
+        'description': (
+            'Subject (company or university) received a grant or non-dilutive award from Object (programme, agency, or body). '
+            'Qualifiers: amount_usd, programme, call_id, date.'
+        ),
+    },
+    {
+        'key': 'provided_debt_to',
+        'label': 'Provided Debt To',
+        'description': (
+            'Subject (bank, EIB, or debt fund) provided a loan, bond, or credit facility to Object (company). '
+            'Qualifiers: amount_usd, instrument_type, date, maturity.'
+        ),
+    },
+    {
+        'key': 'co_invested_with',
+        'label': 'Co-Invested With',
+        'description': (
+            'Subject (investor) participated alongside Object (investor) in the same funding round. '
+            'Symmetric. Qualifiers: company, round_series, amount_usd, date.'
+        ),
+    },
     # ── Corporate structure ───────────────────────────────────────────────
     {
         'key': 'subsidiary_of',

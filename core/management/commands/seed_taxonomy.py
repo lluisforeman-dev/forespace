@@ -124,6 +124,51 @@ FACETS = {
             ('policy_economics.sustainability', 'Long-Term Space Sustainability', 'Space traffic management, frequency coordination, and sustainability guidelines.', ['UN COPUOS', 'ITU']),
         ],
     },
+    'funding_type': {
+        'label': 'Funding Type',
+        'nodes': [
+            # ── Equity ────────────────────────────────────────────────────────
+            ('equity', 'Equity Investment', 'Any investment in exchange for an ownership stake in the company.', []),
+            ('equity.pre_seed', 'Pre-Seed / Friends & Family', 'Very early capital from founders, friends, family, or angels before a formal seed round.', []),
+            ('equity.seed', 'Seed Round', 'First institutional equity round, typically from angel groups or early-stage VCs.', []),
+            ('equity.series_a', 'Series A', 'First significant venture capital round, typically $2M–$20M.', []),
+            ('equity.series_b', 'Series B', 'Scale-up round following product-market fit, typically $15M–$100M.', []),
+            ('equity.series_c', 'Series C', 'Growth round for established startups expanding into new markets.', []),
+            ('equity.series_d_plus', 'Series D+', 'Late-stage venture rounds (D, E, F…) for companies approaching IPO or at scale.', []),
+            ('equity.growth', 'Growth Equity', 'Minority equity investment in mature, profitable or near-profitable companies.', []),
+            ('equity.strategic', 'Strategic / Corporate VC', 'Investment from a corporate venture arm or strategic investor (not a traditional VC).', ['Airbus Ventures', 'In-Q-Tel', 'Boeing HorizonX']),
+            ('equity.secondary', 'Secondary Sale', 'Purchase of existing shares from early investors or employees, not new capital to the company.', []),
+            ('equity.ipo', 'IPO', 'Initial public offering — company lists shares on a stock exchange for the first time.', ['Virgin Galactic', 'Rocket Lab']),
+            ('equity.spac', 'SPAC Merger', 'Company goes public via merger with a Special Purpose Acquisition Company.', ['Astra', 'Momentus']),
+            ('equity.crowdfunding', 'Equity Crowdfunding', 'Equity investment raised from the public via regulated crowdfunding platforms.', ['Seedrs', 'Republic', 'Crowdcube']),
+            # ── Grants ────────────────────────────────────────────────────────
+            ('grant', 'Grant / Non-Dilutive Public Funding', 'Public funding awarded without equity dilution.', []),
+            ('grant.horizon_europe', 'Horizon Europe', 'EU Framework Programme for Research and Innovation (2021–2027). Calls under Cluster 4 (Space) and others.', ['ESA', 'European Commission']),
+            ('grant.esa_programme', 'ESA Programme Funding', 'Funding from ESA programmes: GSTP, ARTES, ScyLight, NAVISP, FAST, BIC, etc.', ['ESA']),
+            ('grant.national_agency', 'National Space Agency Grant', 'Grants from national space agencies: UKSA, CNES, DLR, ASI, JAXA, ISRO, KARI, etc.', []),
+            ('grant.sbir_sttr', 'SBIR / STTR (US)', 'US Small Business Innovation Research and Technology Transfer programmes from NASA, DoD, NSF.', ['NASA', 'DoD']),
+            ('grant.government', 'Government / Ministry Grant', 'Direct grants from ministries, innovation agencies (Innovate UK, Bpifrance, CDTI, etc.).', ['Innovate UK', 'Bpifrance', 'CDTI']),
+            ('grant.prize', 'Competition Prize / Award', 'Cash prize won in a technology competition (XPRIZE, ESA BIC prize, etc.).', ['XPRIZE']),
+            ('grant.innovation_voucher', 'Innovation Voucher', 'Small non-dilutive voucher for accessing research infrastructure or expertise.', []),
+            # ── Non-equity capital ────────────────────────────────────────────
+            ('non_equity', 'Non-Equity / Non-Dilutive Capital', 'Capital that is neither a grant nor traditional equity.', []),
+            ('non_equity.revenue_based', 'Revenue-Based Financing', 'Capital repaid as a percentage of future revenues, no equity dilution.', []),
+            ('non_equity.in_kind', 'In-Kind / Incubation Support', 'Non-cash support: lab access, ESA BIC incubation, co-working, computing credits.', ['ESA BIC']),
+            ('non_equity.contract_rd', 'Funded R&D Contract', 'Customer pays company to develop a technology; company retains IP or shares it.', ['ESA', 'DARPA', 'NASA']),
+            # ── Debt ─────────────────────────────────────────────────────────
+            ('debt', 'Debt Financing', 'Capital borrowed and repaid with interest, no equity dilution.', []),
+            ('debt.venture_debt', 'Venture Debt', 'Debt extended to venture-backed startups, often alongside an equity round.', ['Kreos Capital', 'Silicon Valley Bank']),
+            ('debt.bank_loan', 'Bank Loan / Credit Facility', 'Traditional commercial bank lending or revolving credit facility.', []),
+            ('debt.bond', 'Corporate Bond', 'Debt security issued to investors in public or private markets.', []),
+            ('debt.eib_eif', 'EIB / EIF Loan or Guarantee', 'Financing from the European Investment Bank or European Investment Fund.', ['EIB', 'EIF']),
+            ('debt.government_loan', 'Government-Backed Loan', 'Loan guaranteed or subsidised by a government or development bank.', []),
+            # ── Convertible instruments ───────────────────────────────────────
+            ('convertible', 'Convertible Instrument', 'Debt or right that converts into equity at a future round or event.', []),
+            ('convertible.safe', 'SAFE Note', 'Simple Agreement for Future Equity — converts at a priced round, no maturity date.', []),
+            ('convertible.note', 'Convertible Note', 'Interest-bearing debt that converts to equity at a future round, with maturity date.', []),
+            ('convertible.bond', 'Convertible Bond', 'Bond that can be converted to equity at a set price, typically issued by larger companies.', []),
+        ],
+    },
     'adjacent_sector': {
         'label': 'Adjacent Industry Sector',
         'nodes': [

@@ -140,6 +140,85 @@ ATTRIBUTES = [
             'Only extract when the document explicitly states a cumulative total.'
         ),
     },
+    {
+        'key': 'lead_investor',
+        'entity_type': 'company',
+        'label': 'Lead Investor',
+        'datatype': 'text',
+        'cardinality': 'multi',
+        'is_projected': False,
+        'is_promoted': False,
+        'volatility_days': 30,
+        'description': (
+            'Name of the lead investor in a funding round. Extract alongside the round amount and series. '
+            'Use the investor\'s most common trading name (e.g. "Andreessen Horowitz" not "a16z").'
+        ),
+    },
+    {
+        'key': 'pre_money_valuation_usd',
+        'entity_type': 'company',
+        'label': 'Pre-Money Valuation (USD)',
+        'datatype': 'money',
+        'unit': 'USD',
+        'cardinality': 'multi',
+        'is_projected': False,
+        'is_promoted': False,
+        'volatility_days': 30,
+        'description': 'Company valuation immediately before a funding round closes, in USD.',
+    },
+    {
+        'key': 'post_money_valuation_usd',
+        'entity_type': 'company',
+        'label': 'Post-Money Valuation (USD)',
+        'datatype': 'money',
+        'unit': 'USD',
+        'cardinality': 'multi',
+        'is_projected': False,
+        'is_promoted': False,
+        'volatility_days': 30,
+        'description': 'Company valuation immediately after a funding round closes, in USD.',
+    },
+    {
+        'key': 'grant_program',
+        'entity_type': 'company',
+        'label': 'Grant Programme',
+        'datatype': 'text',
+        'cardinality': 'multi',
+        'is_projected': False,
+        'is_promoted': False,
+        'volatility_days': None,
+        'description': (
+            'Name of the grant programme from which the entity received funding. '
+            'Examples: "Horizon Europe", "ESA ARTES", "UKSA National Space Innovation Programme", '
+            '"NASA SBIR Phase II", "Innovate UK Smart Grant".'
+        ),
+    },
+    {
+        'key': 'grant_call_id',
+        'entity_type': 'company',
+        'label': 'Grant Call / Topic ID',
+        'datatype': 'text',
+        'cardinality': 'multi',
+        'is_projected': False,
+        'is_promoted': False,
+        'volatility_days': None,
+        'description': (
+            'Specific call or topic identifier for a grant. '
+            'Examples: "HORIZON-CL4-2024-SPACE-01-41", "ESA AO/1-11068/23/NL/AR", "UKRI10058".'
+        ),
+    },
+    {
+        'key': 'grant_award_amount_usd',
+        'entity_type': 'company',
+        'label': 'Grant Award Amount (USD)',
+        'datatype': 'money',
+        'unit': 'USD',
+        'cardinality': 'multi',
+        'is_projected': False,
+        'is_promoted': False,
+        'volatility_days': None,
+        'description': 'Amount of a specific grant award received, converted to USD. Record alongside grant_program.',
+    },
     # ── Research & academic ──────────────────────────────────────────────────
     {
         'key': 'publication_count',

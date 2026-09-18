@@ -574,3 +574,104 @@ def insights(request):
         'kind': kind,
         'title': 'Research Insights',
     })
+
+
+_FUNDING_EVENT_TYPES = [
+    'funding_round', 'grant_award', 'grant_call', 'ipo', 'spac',
+    'debt_financing', 'convertible', 'crowdfunding', 'research_grant',
+]
+
+_FUNDING_TYPE_LABELS = {
+    'funding_round': 'Equity Round',
+    'grant_award': 'Grant Award',
+    'grant_call': 'Grant Call (Open)',
+    'research_grant': 'Research Grant',
+    'ipo': 'IPO',
+    'spac': 'SPAC',
+    'debt_financing': 'Debt',
+    'convertible': 'Convertible',
+    'crowdfunding': 'Crowdfunding',
+}
+
+_FUNDING_TYPE_COLORS = {
+    'funding_round': '#1e40af',
+    'grant_award': '#166534',
+    'grant_call': '#065f46',
+    'research_grant': '#14532d',
+    'ipo': '#7c3aed',
+    'spac': '#6d28d9',
+    'debt_financing': '#92400e',
+    'convertible': '#854d0e',
+    'crowdfunding': '#1d4ed8',
+}
+
+
+@login_required
+def funding(request):
+    """Funding intelligence — grants, equity, debt, convertibles, and open calls."""
+    from core.models import Entity, Event, Relation
+    from django.db.models import Count, Q, Sum
+
+    q = request.GET.get('q', '').strip()
+    ftype = request.GET.get('ftype', '').strip()
+
+    events_qs = (
+        Event.objects
+        .filter(event_type__in=_FUNDING_EVENT_TYPES)
+        .select_related('entity', 'source')
+        .prefetch_related('participants')
+        .order_by('-date', '-created_at')
+    )
+    if q:
+        events_qs = events_qs.filter(
+            Q(entity__canonical_name__icontains=q) |
+            Q(title__icontains=q) |
+            Q(description__icontains=q)
+        )
+    if ftype:
+        events_qs = events_qs.filter(event_type=ftype)
+
+    # Open grant calls (grant_call events with date in the future or recent)
+    open_calls = (
+        Event.objects
+        .filter(event_type='grant_call')
+        .select_related('entity', 'source')
+        .order_by('date')[:20]
+    )
+
+    # Top investors by number of investments
+    top_investors = (
+        Relation.objects
+        .filter(predicate='invested_in', superseded_at__isnull=True)
+        .values('subject_id')
+        .annotate(deals=Count('id'))
+        .order_by('-deals')[:10]
+    )
+    investor_ids = [r['subject_id'] for r in top_investors]
+    investor_entities = {
+        str(e.id): e
+        for e in Entity.objects.filter(id__in=investor_ids)
+    }
+    top_investors_list = [
+        {'entity': investor_entities.get(str(r['subject_id'])), 'deals': r['deals']}
+        for r in top_investors
+        if investor_entities.get(str(r['subject_id']))
+    ]
+
+    # Summary counts
+    counts = {
+        et: Event.objects.filter(event_type=et).count()
+        for et in _FUNDING_EVENT_TYPES
+    }
+
+    return render(request, 'curation/funding.html', {
+        'events': events_qs[:300],
+        'open_calls': open_calls,
+        'top_investors': top_investors_list,
+        'counts': counts,
+        'type_labels': _FUNDING_TYPE_LABELS,
+        'type_colors': _FUNDING_TYPE_COLORS,
+        'q': q,
+        'ftype': ftype,
+        'title': 'Funding Intelligence',
+    })

@@ -18,6 +18,7 @@ urlpatterns = [
     path('connections/', views.connections, name='connections'),
     path('research/', views.research, name='research'),
     path('insights/', views.insights, name='insights'),
+    path('funding/', views.funding, name='funding'),
     path('taxonomy/', views.taxonomy, name='taxonomy'),
     path('taxonomy/proposals/', views.taxonomy_proposals, name='taxonomy_proposals'),
     path('taxonomy/evolve/', views.run_evolve_taxonomy, name='run_evolve_taxonomy'),

@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% load curation_tags %}
+{% block title %}Funding Intelligence — ForeSpace{% endblock %}
+{% block content %}
+
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+  <h1 style="font-size:20px;font-weight:700;color:#1a1a2e;">Funding Intelligence</h1>
+  <form method="post" action="{% url 'curation:question_research' %}" style="display:flex;gap:8px;">
+    {% csrf_token %}
+    <input type="hidden" name="question" value="space industry funding rounds grants 2025 2026">
+    <button class="btn btn-primary" style="font-size:12px;padding:6px 14px;">+ Fetch funding news</button>
+  </form>
+</div>
+
+<!-- Summary stats -->
+<div class="stats" style="margin-bottom:20px;">
+  {% for et, label in type_labels.items %}
+  {% if counts|get_item:et %}
+  <div class="stat">
+    <div class="num" style="font-size:22px;">{{ counts|get_item:et }}</div>
+    <div class="lbl">{{ label }}</div>
+  </div>
+  {% endif %}
+  {% endfor %}
+</div>
+
+<div class="grid2" style="grid-template-columns:2fr 1fr;">
+
+<!-- Left: event feed -->
+<div>
+
+  <!-- Filters -->
+  <form method="get" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search company, title, or description…"
+           style="max-width:280px;margin-bottom:0;">
+    <select name="ftype" onchange="this.form.submit()"
+            style="padding:8px 10px;border:1px solid #ccc;border-radius:4px;font-size:13px;background:#fff;">
+      <option value="" {% if not ftype %}selected{% endif %}>All types</option>
+      {% for et, label in type_labels.items %}
+      <option value="{{ et }}" {% if ftype == et %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-primary">Filter</button>
+    {% if q or ftype %}<a href="{% url 'curation:funding' %}" style="font-size:12px;color:#888;">Clear</a>{% endif %}
+  </form>
+
+  <div class="card" style="padding:0;">
+    {% if events %}
+    <div>
+      {% for ev in events %}
+      {% with color=type_colors|get_item:ev.event_type %}
+      <div style="padding:14px 20px;border-bottom:1px solid #eee;{% if forloop.last %}border-bottom:none;{% endif %}">
+        <div style="display:flex;align-items:flex-start;gap:12px;">
+          <!-- Type badge -->
+          <span style="flex-shrink:0;margin-top:3px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;
+            background:{{ color }}22;color:{{ color }};">
+            {{ type_labels|get_item:ev.event_type|default:ev.event_type }}
+          </span>
+          <div style="flex:1;min-width:0;">
+            <!-- Title -->
+            <div style="font-weight:600;font-size:13px;color:#1a1a2e;margin-bottom:3px;">
+              {% if ev.source and ev.source.url and ev.source.url != 'sonar' %}
+                <a href="{{ ev.source.url }}" target="_blank" rel="noopener" style="color:#1a1a2e;">{{ ev.title }}</a>
+              {% else %}
+                {{ ev.title }}
+              {% endif %}
+            </div>
+            <!-- Entity + date + amount -->
+            <div style="font-size:12px;color:#888;margin-bottom:6px;">
+              <a href="{% url 'curation:entity_profile' ev.entity.id %}" style="color:#0066cc;">{{ ev.entity.canonical_name }}</a>
+              {% if ev.date %}&nbsp;·&nbsp;{{ ev.date|date:"M Y" }}{% endif %}
+              {% if ev.amount_usd %}
+                &nbsp;·&nbsp;<strong style="color:#155724;">${{ ev.amount_usd|floatformat:0 }}</strong>
+              {% endif %}
+              {% if ev.significance %}
+                &nbsp;·&nbsp;<span style="color:{% if ev.significance == 'high' %}#155724{% elif ev.significance == 'low' %}#888{% else %}#555{% endif %}">{{ ev.significance }}</span>
+              {% endif %}
+            </div>
+            <!-- Description -->
+            <div style="font-size:13px;color:#444;line-height:1.5;margin-bottom:5px;">
+              {{ ev.description }}
+            </div>
+            <!-- Participants (investors, co-investors) -->
+            {% with parts=ev.participants.all %}
+            {% if parts %}
+            <div style="font-size:12px;color:#666;">
+              {% if ev.event_type == 'funding_round' %}Investors:{% else %}With:{% endif %}
+              {% for p in parts %}
+                <a href="{% url 'curation:entity_profile' p.id %}" style="color:#555;">{{ p.canonical_name }}</a>{% if not forloop.last %}, {% endif %}
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% endwith %}
+          </div>
+        </div>
+      </div>
+      {% endwith %}
+      {% endfor %}
+    </div>
+    {% else %}
+    <p style="color:#888;font-size:13px;padding:20px;">No funding events yet. Use the button above or research a company to start populating.</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Right: open calls + top investors -->
+<div>
+
+  {% if open_calls %}
+  <div class="card" style="margin-bottom:16px;">
+    <h2 style="margin-bottom:12px;">Open Grant Calls</h2>
+    {% for ev in open_calls %}
+    <div style="padding:10px 0;border-bottom:1px solid #eee;{% if forloop.last %}border-bottom:none;{% endif %}">
+      <div style="font-size:13px;font-weight:600;color:#065f46;margin-bottom:3px;">
+        {% if ev.source and ev.source.url and ev.source.url != 'sonar' %}
+          <a href="{{ ev.source.url }}" target="_blank" rel="noopener" style="color:#065f46;">{{ ev.title }}</a>
+        {% else %}
+          {{ ev.title }}
+        {% endif %}
+      </div>
+      <div style="font-size:12px;color:#888;">
+        <a href="{% url 'curation:entity_profile' ev.entity.id %}" style="color:#0066cc;">{{ ev.entity.canonical_name }}</a>
+        {% if ev.date %}&nbsp;·&nbsp;Deadline: <strong>{{ ev.date|date:"d M Y" }}</strong>{% endif %}
+        {% if ev.amount_usd %}&nbsp;·&nbsp;Budget: ${{ ev.amount_usd|floatformat:0 }}{% endif %}
+      </div>
+      {% if ev.description %}
+      <div style="font-size:12px;color:#555;margin-top:4px;line-height:1.4;">{{ ev.description|truncatechars:150 }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if top_investors %}
+  <div class="card">
+    <h2 style="margin-bottom:12px;">Most Active Investors</h2>
+    <table>
+      <thead>
+        <tr><th>Investor</th><th style="text-align:right;">Deals</th></tr>
+      </thead>
+      <tbody>
+        {% for item in top_investors %}
+        <tr>
+          <td><a href="{% url 'curation:entity_profile' item.entity.id %}">{{ item.entity.canonical_name }}</a></td>
+          <td style="text-align:right;font-weight:600;color:#1a1a2e;">{{ item.deals }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card">
+    <h2>Most Active Investors</h2>
+    <p style="color:#888;font-size:13px;">Will populate as investment relations are extracted.</p>
+  </div>
+  {% endif %}
+
+</div>
+</div>
+
+{% endblock %}
