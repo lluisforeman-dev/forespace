@@ -104,12 +104,19 @@ RULES:
   These fields power geographic maps and funding charts — search every source for them.
   Do not skip these even if the document is primarily about something else.
 - ★ RESEARCH-CRITICAL: For ANY entity — companies, universities, research institutes, people,
-  government agencies — ALSO extract publication_count and research_focus when findable.
-  Use event_type=publication for individual papers, preprints, or conference presentations
-  (IAC, AIAA, ESA, IEEE symposia). Use event_type=research_grant for funding awards
-  (ESA contracts, government grants, EU Horizon, DARPA). Use category=research for fragments
-  summarising a research programme, paper series, or academic collaboration.
-  Companies like SpaceX, Airbus, and OHB publish research — do not skip them.
+  government agencies — extract publication_count and research_focus when findable.
+  For individual papers or presentations use event_type=publication with:
+    title: exact paper or presentation title (not a paraphrase)
+    conference/journal in the description: e.g. "IAC 2025 Milan", "ION GNSS+ 2026", "Acta Astronautica vol. 210"
+    specific findings: what was demonstrated, measured, or proposed — include numbers if available
+    participants: all co-authors and their organisations
+    source_url: direct URL to the paper, abstract, or conference proceedings page
+  For funding use event_type=research_grant with granting body, programme name, and amount.
+  For research programmes use category=research in fragments with specific technical details,
+  performance numbers, collaborators, and institutional partners — not generic summaries.
+  Dig into: IAC, AIAA SciTech/Aviation/Propulsion, ION GNSS+, ESA symposia (EDHPC, ESTEC),
+  IEEE Aerospace, SmallSat, Reinventing Space, arXiv, Acta Astronautica, JGCD, JSR.
+  Companies like SpaceX, Airbus, OHB, and Thales publish research — do not skip them.
 - SPACE FOCUS: Only extract information that has a direct connection to space.
   For companies whose primary business is not space, ignore their non-space activities
   entirely — only extract facts, events, and fragments about their space operations,
@@ -341,12 +348,9 @@ def _generate_search_angles(topic: str, entity_type: str) -> list[str]:
 
     # Always lead with a guaranteed baseline angle for map-critical fields
     baseline = f'{topic} headquarters location employees headcount funding raised'
-    # Universities, people (researchers), and research-type entities always get a
-    # dedicated publications angle — companies and others rely on the LLM angles
-    if entity_type in ('university', 'person', 'entity'):
-        research_angle = f'{topic} publications papers preprints space research grants IAC AIAA IEEE'
-        return [baseline, research_angle] + llm_angles[:1]
-    return [baseline] + llm_angles[:2]
+    # All entities get a dedicated publications angle — not just universities
+    research_angle = f'{topic} publications papers conference presentations space research IAC AIAA ION GNSS ESA IEEE preprint 2024 2025 2026'
+    return [baseline, research_angle] + llm_angles[:1]
 
 
 def _seen_urls_for_company(topic: str) -> str:
@@ -453,7 +457,7 @@ _TYPE_TO_TOPIC = {
 }
 
 # topic_types that are valid for ExtractionRun.task naming
-_VALID_TOPIC_TYPES = {'company', 'news', 'question', 'space_angle'}
+_VALID_TOPIC_TYPES = {'company', 'news', 'question', 'space_angle', 'research'}
 
 
 def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source) -> int:
@@ -732,6 +736,37 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             f'{ctx}'
             f'{_seen_block(seen)}'
         )
+    elif topic_type == 'research':
+        seen = _seen_urls_for_company(topic)
+        ctx = _entity_context_block(topic)
+        user_msg = (
+            f'Find ALL published research outputs, papers, and technical work by "{topic}" '
+            f'related to the space industry. Go deep — search conference proceedings, '
+            f'preprint servers, journal archives, and institutional repositories.\n\n'
+            f'Search these venues specifically:\n'
+            f'- IAC (International Astronautical Congress) proceedings\n'
+            f'- AIAA SciTech, AIAA Aviation, AIAA Propulsion & Energy\n'
+            f'- ION GNSS+, ION ITM, ION Pacific PNT\n'
+            f'- ESA symposia: EDHPC, ESTEC workshops, ESA/CNES/DLR/TU Delft events\n'
+            f'- IEEE Aerospace Conference, SmallSat Conference, Reinventing Space\n'
+            f'- arXiv (astro-ph, eess.SP, physics.space-ph), TechRxiv, NASA Technical Reports\n'
+            f'- Acta Astronautica, Journal of Spacecraft and Rockets, Advances in Space Research, JGCD\n'
+            f'- ESA ESTEC study contracts, SBIR/STTR, EU Horizon deliverables, PhD/MSc theses\n\n'
+            f'For EACH paper, presentation, technical report, or thesis found:\n'
+            f'  Use event_type=publication. Include:\n'
+            f'  - Exact title (not a paraphrase)\n'
+            f'  - In description: conference/journal name, year, specific findings with numbers if available\n'
+            f'  - participants: every co-author and their organisation\n'
+            f'  - source_url: direct link to paper, abstract, or proceedings page\n\n'
+            f'For each research grant or study contract: use event_type=research_grant.\n\n'
+            f'For the overall research programme: use category=research fragments with:\n'
+            f'  - Specific technical focus and methodology\n'
+            f'  - Key results or performance metrics achieved\n'
+            f'  - Institutional collaborators and partners\n\n'
+            f'{_vocab_block()}'
+            f'{ctx}'
+            f'{_seen_block(seen)}'
+        )
     else:  # question
         seen = _seen_urls_recent(days=14, limit=50)
         user_msg = (
@@ -985,9 +1020,17 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
                 name, cascade_depth + 1, discovered.assertion_count, countdown,
             )
 
-    # ── Search angle follow-ups (primary company runs only) ───────────────
-    # Generate 3 targeted search angles and queue one Sonar call each.
-    # Only on user-triggered company runs (not cascades, not angle runs).
+    # ── Search angle + research follow-ups (primary company runs only) ──────
+    # Generate targeted search angles and a dedicated research intelligence call.
+    # Only on user-triggered company runs (not cascades, not angle/research runs).
+    if topic_type in ('company', 'space_angle') and cascade_depth == 0 and search_angle is None:
+        # Dedicated deep-research call: hunts papers, conferences, grants
+        research_topic.apply_async(
+            args=[topic, 'research'],
+            kwargs={'cascade_depth': 0},
+            countdown=240,  # 4 min after primary
+        )
+        logger.info('research_topic: research call queued "%s"', topic)
     if topic_type in ('company', 'space_angle') and cascade_depth == 0 and search_angle is None:
         angles = _generate_search_angles(topic, topic_type)
         for i, angle in enumerate(angles):
