@@ -20,16 +20,24 @@ from core.normalize import normalize_name
 
 logger = logging.getLogger(__name__)
 
-_TRGM_THRESHOLD = 0.35
-_TRGM_LLM_MIN = 0.20   # below this, skip LLM — too dissimilar to be worth the cost
+_TRGM_THRESHOLD = 0.82  # above this: auto-merge (virtually identical names)
+_TRGM_LLM_MIN = 0.25    # below this: too dissimilar to bother — create new entity
 
 _LLM_RESOLVE_SYSTEM = (
     'You are an entity resolver for a space-industry knowledge graph. '
     'Answer only with valid JSON.'
 )
 _LLM_RESOLVE_USER = """\
-Is the mention "{mention}" referring to the same organisation as "{candidate}"?
-Consider abbreviations, trading names, and common misspellings.
+Is the mention "{mention}" the same real-world organisation as "{candidate}"?
+
+Rules — read carefully:
+- SAME if one is an informal short form of the other ("i2cat" = "Fundació i2CAT", "ESA" = "European Space Agency").
+- SAME if the only difference is a legal or organisational suffix (Foundation, Institute, Corp, Ltd, GmbH, Centre, Agency, Research Centre).
+- SAME if one is a local-language form of the other (Fundació = Foundation in Catalan, Centre = Center).
+- DIFFERENT if one has a meaningful qualifier or prefix the other lacks ("6G StarLab" ≠ "StarLab", "NASA JPL" ≠ "NASA", "Airbus Defence and Space" ≠ "Airbus").
+- DIFFERENT if they are related but legally distinct organisations ("SpaceX" ≠ "Tesla").
+- When in doubt, reply false — a missed merge is safer than a wrong merge.
+
 Reply: {{"same": true, "confidence": "high"|"medium"|"low"}} or {{"same": false}}"""
 
 

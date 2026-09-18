@@ -3,7 +3,14 @@ import re
 import unicodedata
 
 _SUFFIXES = {
+    # Legal entity types
     'inc', 'llc', 'ltd', 'corp', 'co', 'gmbh', 'sa', 'sas', 'bv', 'ag', 'plc',
+    'sl', 'slu', 'spa', 'nv', 'oy', 'ab',
+    # Org-type words that don't distinguish entities
+    'foundation', 'institute', 'institution', 'association', 'society',
+    'consortium', 'authority', 'agency', 'centre', 'center',
+    'hub', 'network', 'alliance', 'initiative', 'cluster', 'programme', 'program',
+    # Industry descriptors
     'technologies', 'technology', 'systems', 'solutions', 'group', 'holdings',
     'services', 'industries', 'international', 'enterprises', 'aerospace',
     'space', 'aviation', 'robotics', 'dynamics', 'labs', 'laboratory',
