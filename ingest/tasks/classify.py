@@ -82,7 +82,7 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
                 {'role': 'user', 'content': user_msg},
             ],
             response_format={'type': 'json_object'},
-            max_tokens=800,
+            max_tokens=3000,
             temperature=0,
         )
         log_call('extract', model, resp, entity=entity)
@@ -92,7 +92,11 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
             return
         text = content.strip()
         text = text.replace('True', 'true').replace('False', 'false').replace('None', 'null')
-        raw = json.loads(text)
+        try:
+            raw = json.loads(text)
+        except json.JSONDecodeError as exc:
+            logger.error('classify_entity %s bad JSON (likely truncated): %s', entity_id, exc)
+            return
         classifications = raw.get('classifications', [])
     except Exception as exc:
         logger.error('classify_entity %s error: %s', entity_id, exc)

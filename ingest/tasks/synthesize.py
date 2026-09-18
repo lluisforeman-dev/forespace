@@ -110,7 +110,11 @@ def synthesize_conflict(self, entity_id: str, attribute_key: str, assertion_ids:
         )
         log_call('synthesize_conflict', model, resp,
                  duration_ms=int((time.monotonic() - t0) * 1000))
-        raw = resp.choices[0].message.content.strip()
+        content = resp.choices[0].message.content
+        if not content:
+            logger.warning('synthesize_conflict entity=%s attr=%s: empty response', entity_id, attribute_key)
+            return
+        raw = content.strip()
     except Exception as exc:
         logger.error('synthesize_conflict entity=%s attr=%s: %s', entity_id, attribute_key, exc)
         raise self.retry(exc=exc)
@@ -159,10 +163,13 @@ def synthesize_conflict(self, entity_id: str, attribute_key: str, assertion_ids:
 
     now = timezone.now()
     with transaction.atomic():
-        Assertion.objects.filter(pk__in=assertion_ids).update(
-            superseded_at=now,
-            status='superseded',
-        )
+        # Supersede ALL open-ended assertions for this (entity, attribute) —
+        # not just the conflicting ones — to satisfy the no_overlapping_validity constraint.
+        Assertion.objects.filter(
+            entity_id=entity_id,
+            attribute_id=attribute_key,
+            superseded_at__isnull=True,
+        ).update(superseded_at=now, status='superseded')
         synth = Assertion.objects.create(
             entity_id=entity_id,
             attribute_id=attribute_key,
