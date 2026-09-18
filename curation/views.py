@@ -338,7 +338,7 @@ def entity_profile(request, entity_id):
             best_per_attr[a.attribute_id] = a
     facts = sorted(best_per_attr.values(), key=lambda a: -a.confidence)
     for f in facts:
-        f._source_count = source_counts.get(f.attribute_id, 1)
+        f.source_count = source_counts.get(f.attribute_id, 1)
 
     relations_out = (
         Relation.objects
