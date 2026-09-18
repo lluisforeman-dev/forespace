@@ -45,6 +45,22 @@ def _queue_lengths():
         return None
 
 
+def _worker_status():
+    """Ping Celery workers. Cached 60s so dashboard load stays fast."""
+    from django.core.cache import cache
+    cached = cache.get('forespace:worker:status')
+    if cached is not None:
+        return cached
+    try:
+        from config.celery import app as celery_app
+        result = celery_app.control.inspect(timeout=2).ping() or {}
+        status = {'online': bool(result), 'workers': list(result.keys())}
+    except Exception:
+        status = {'online': False, 'workers': []}
+    cache.set('forespace:worker:status', status, 60)
+    return status
+
+
 def _get_or_create_scheduled_source(source_name, feed_url, kind='trade_press', trust=70):
     domain = urlparse(feed_url).netloc[:255]
     source, _ = Source.objects.get_or_create(
@@ -97,6 +113,7 @@ def dashboard(request):
         'recent_relations': recent_relations,
         'event_connections': event_connections,
         'queued_tasks': _queue_lengths(),
+        'worker_status': _worker_status(),
         'num_feeds': len(SPACE_NEWS_FEEDS),
         'title': 'ForeSpace',
     }
@@ -501,3 +518,59 @@ def run_evolve_taxonomy(request):
         evolve_taxonomy.delay()
         messages.success(request, 'Taxonomy evolution task queued.')
     return HttpResponseRedirect(reverse('curation:taxonomy_proposals'))
+
+
+@staff_member_required
+def insights(request):
+    """Research intelligence browser — publications, grants, and research fragments."""
+    from core.models import Event, KnowledgeFragment
+    from django.db.models import Q
+
+    q = request.GET.get('q', '').strip()
+    kind = request.GET.get('kind', '').strip()  # 'publications' | 'grants' | 'fragments' | ''
+
+    pub_qs = (
+        Event.objects
+        .filter(event_type__in=['publication', 'research_grant'])
+        .select_related('entity', 'source')
+        .prefetch_related('participants')
+        .order_by('-date', '-created_at')
+    )
+    if q:
+        pub_qs = pub_qs.filter(
+            Q(entity__canonical_name__icontains=q) |
+            Q(title__icontains=q) |
+            Q(description__icontains=q)
+        )
+    if kind == 'publications':
+        pub_qs = pub_qs.filter(event_type='publication')
+    elif kind == 'grants':
+        pub_qs = pub_qs.filter(event_type='research_grant')
+
+    frag_qs = (
+        KnowledgeFragment.objects
+        .filter(category='research')
+        .select_related('entity', 'source')
+        .order_by('-date_of_information', '-created_at')
+    )
+    if q:
+        frag_qs = frag_qs.filter(
+            Q(entity__canonical_name__icontains=q) | Q(text__icontains=q)
+        )
+    if kind in ('publications', 'grants'):
+        frag_qs = frag_qs.none()
+
+    pub_count = Event.objects.filter(event_type='publication').count()
+    grant_count = Event.objects.filter(event_type='research_grant').count()
+    fragment_count = KnowledgeFragment.objects.filter(category='research').count()
+
+    return render(request, 'curation/insights.html', {
+        'pub_events': pub_qs[:200],
+        'fragments': frag_qs[:100],
+        'pub_count': pub_count,
+        'grant_count': grant_count,
+        'fragment_count': fragment_count,
+        'q': q,
+        'kind': kind,
+        'title': 'Research Insights',
+    })

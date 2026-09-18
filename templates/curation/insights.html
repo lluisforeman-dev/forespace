@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Research Insights — ForeSpace{% endblock %}
+{% block content %}
+
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+  <h1 style="font-size:20px;font-weight:700;color:#1a1a2e;">Research Insights</h1>
+  <div style="display:flex;gap:16px;font-size:13px;color:#555;">
+    <span><strong style="color:#1a1a2e;">{{ pub_count }}</strong> publications</span>
+    <span><strong style="color:#1a1a2e;">{{ grant_count }}</strong> grants</span>
+    <span><strong style="color:#1a1a2e;">{{ fragment_count }}</strong> research notes</span>
+  </div>
+</div>
+
+<!-- Filters -->
+<form method="get" style="display:flex;gap:10px;margin-bottom:20px;align-items:center;">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search entity, title, or topic…"
+         style="max-width:360px;margin-bottom:0;">
+  <select name="kind" onchange="this.form.submit()"
+          style="padding:8px 10px;border:1px solid #ccc;border-radius:4px;font-size:13px;background:#fff;">
+    <option value=""        {% if not kind %}selected{% endif %}>All types</option>
+    <option value="publications" {% if kind == 'publications' %}selected{% endif %}>Publications only</option>
+    <option value="grants"       {% if kind == 'grants' %}selected{% endif %}>Grants only</option>
+    <option value="fragments"    {% if kind == 'fragments' %}selected{% endif %}>Research notes only</option>
+  </select>
+  <button type="submit" class="btn btn-primary">Filter</button>
+  {% if q or kind %}<a href="{% url 'curation:insights' %}" style="font-size:12px;color:#888;">Clear</a>{% endif %}
+</form>
+
+{% if kind != 'fragments' %}
+<!-- Publications & Grants -->
+<div class="card" style="margin-bottom:20px;">
+  <h2 style="margin-bottom:16px;">
+    {% if kind == 'grants' %}Research Grants{% elif kind == 'publications' %}Publications{% else %}Publications &amp; Grants{% endif %}
+  </h2>
+  {% if pub_events %}
+  <div>
+    {% for ev in pub_events %}
+    <div style="padding:14px 0;border-bottom:1px solid #eee;{% if forloop.last %}border-bottom:none;{% endif %}">
+      <div style="display:flex;align-items:flex-start;gap:12px;">
+        <!-- Type badge -->
+        <span style="flex-shrink:0;margin-top:2px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;
+          {% if ev.event_type == 'publication' %}background:#dbeafe;color:#1e40af;{% else %}background:#fef3c7;color:#92400e;{% endif %}">
+          {% if ev.event_type == 'publication' %}paper{% else %}grant{% endif %}
+        </span>
+        <div style="flex:1;min-width:0;">
+          <!-- Title -->
+          <div style="font-weight:600;font-size:13px;color:#1a1a2e;margin-bottom:3px;">
+            {% if ev.source and ev.source.url and ev.source.url != 'sonar' %}
+              <a href="{{ ev.source.url }}" target="_blank" rel="noopener" style="color:#1a1a2e;">{{ ev.title }}</a>
+            {% else %}
+              {{ ev.title }}
+            {% endif %}
+          </div>
+          <!-- Entity + date -->
+          <div style="font-size:12px;color:#888;margin-bottom:6px;">
+            <a href="{% url 'curation:entity_profile' ev.entity.id %}" style="color:#0066cc;">{{ ev.entity.canonical_name }}</a>
+            {% if ev.date %}
+              &nbsp;·&nbsp;{{ ev.date|date:"M Y" }}
+            {% endif %}
+            {% if ev.amount_usd %}
+              &nbsp;·&nbsp;<strong style="color:#155724;">${{ ev.amount_usd|floatformat:0 }}</strong>
+            {% endif %}
+            &nbsp;·&nbsp;
+            <span style="color:{% if ev.significance == 'high' %}#155724{% elif ev.significance == 'low' %}#888{% else %}#555{% endif %}">
+              {{ ev.significance }}
+            </span>
+          </div>
+          <!-- Description -->
+          <div style="font-size:13px;color:#444;line-height:1.5;margin-bottom:6px;">
+            {{ ev.description }}
+          </div>
+          <!-- Participants / co-authors -->
+          {% with parts=ev.participants.all %}
+          {% if parts %}
+          <div style="font-size:12px;color:#666;">
+            With:
+            {% for p in parts %}
+              <a href="{% url 'curation:entity_profile' p.id %}" style="color:#555;">{{ p.canonical_name }}</a>{% if not forloop.last %}, {% endif %}
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% endwith %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p style="color:#888;font-size:13px;">No publications or grants yet. Research a company to start extracting them.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if kind != 'publications' and kind != 'grants' %}
+<!-- Research Fragments -->
+<div class="card">
+  <h2 style="margin-bottom:16px;">Research Notes</h2>
+  {% if fragments %}
+  <div>
+    {% for frag in fragments %}
+    <div style="padding:14px 0;border-bottom:1px solid #eee;{% if forloop.last %}border-bottom:none;{% endif %}">
+      <div style="display:flex;align-items:flex-start;gap:10px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;color:#888;margin-bottom:5px;">
+            <a href="{% url 'curation:entity_profile' frag.entity.id %}" style="color:#0066cc;font-weight:600;">{{ frag.entity.canonical_name }}</a>
+            {% if frag.date_of_information %}
+              &nbsp;·&nbsp;{{ frag.date_of_information|date:"M Y" }}
+            {% endif %}
+            {% if frag.source and frag.source.url and frag.source.url != 'sonar' %}
+              &nbsp;·&nbsp;<a href="{{ frag.source.url }}" target="_blank" rel="noopener" style="color:#888;">source</a>
+            {% endif %}
+          </div>
+          <div style="font-size:13px;color:#333;line-height:1.6;">
+            {{ frag.text }}
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p style="color:#888;font-size:13px;">No research notes yet.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

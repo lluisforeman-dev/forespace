@@ -3,13 +3,25 @@
 {% block content %}
 
 <!-- Task monitor bar -->
-<div style="display:flex;align-items:center;gap:16px;background:#fff;border:1px solid #ddd;border-radius:6px;padding:12px 20px;margin-bottom:20px;">
+<div style="display:flex;align-items:center;gap:24px;background:#fff;border:1px solid #ddd;border-radius:6px;padding:12px 20px;margin-bottom:20px;">
+  <div style="display:flex;align-items:center;gap:8px;">
+    <span style="width:10px;height:10px;border-radius:50%;flex-shrink:0;display:inline-block;
+      background:{% if worker_status.online %}#28a745{% else %}#dc3545{% endif %};
+      box-shadow:0 0 0 2px {% if worker_status.online %}rgba(40,167,69,.25){% else %}rgba(220,53,69,.25){% endif %}">
+    </span>
+    <span style="font-size:13px;font-weight:600;color:{% if worker_status.online %}#155724{% else %}#721c24{% endif %}">
+      Worker {% if worker_status.online %}online{% else %}offline{% endif %}
+    </span>
+    {% if worker_status.workers %}
+      <span style="font-size:11px;color:#888">({{ worker_status.workers|length }} node{{ worker_status.workers|length|pluralize }})</span>
+    {% endif %}
+  </div>
   <div style="flex:1">
     <span style="font-size:13px;color:#555;">Tasks queued: </span>
     <strong style="font-size:15px;">
       {% if queued_tasks is not None %}{{ queued_tasks }}{% else %}—{% endif %}
     </strong>
-    <span style="font-size:12px;color:#999;margin-left:8px">Refresh page to update count</span>
+    <span style="font-size:12px;color:#999;margin-left:8px">Refresh to update</span>
   </div>
   <form method="post" action="{% url 'curation:stop_all' %}" onsubmit="return confirm('Stop all queued tasks?')">
     {% csrf_token %}
