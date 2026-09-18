@@ -140,6 +140,37 @@ ATTRIBUTES = [
             'Only extract when the document explicitly states a cumulative total.'
         ),
     },
+    # ── Research & academic ──────────────────────────────────────────────────
+    {
+        'key': 'publication_count',
+        'entity_type': 'company',
+        'label': 'Space-Related Publications',
+        'datatype': 'int',
+        'cardinality': 'single',
+        'is_projected': True,
+        'is_promoted': False,
+        'volatility_days': 180,
+        'description': (
+            'Total number of peer-reviewed papers, conference proceedings (IAC, AIAA, ESA), '
+            'or preprints published by the entity on space-related topics. '
+            'Extract for companies, universities, research institutes, and individual researchers.'
+        ),
+    },
+    {
+        'key': 'research_focus',
+        'entity_type': 'company',
+        'label': 'Research Focus',
+        'datatype': 'text',
+        'cardinality': 'single',
+        'is_projected': True,
+        'is_promoted': False,
+        'volatility_days': 365,
+        'description': (
+            'Primary academic or R&D research area of the entity, in plain English. '
+            'Examples: "nuclear propulsion", "space debris removal", "SAR remote sensing". '
+            'Extract for universities, research institutes, and R&D-heavy companies.'
+        ),
+    },
     # ── Launch vehicles ──────────────────────────────────────────────────────
     {
         'key': 'launch_vehicle_name',

@@ -15,6 +15,8 @@ class Event(models.Model):
         ('regulatory',      'Regulatory'),
         ('milestone',       'Milestone'),
         ('leadership',      'Leadership Change'),
+        ('publication',     'Publication / Paper'),
+        ('research_grant',  'Research Grant'),
     ]
     SIGNIFICANCE = [
         ('high',   'High'),
@@ -64,6 +66,7 @@ class KnowledgeFragment(models.Model):
         ('operational',   'Operational'),
         ('people',        'People'),
         ('challenge',     'Challenge'),
+        ('research',      'Research & Publications'),
     ]
 
     entity              = models.ForeignKey('core.Entity', on_delete=models.CASCADE, related_name='fragments')

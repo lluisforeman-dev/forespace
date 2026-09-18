@@ -52,7 +52,8 @@ Discrete events in an entity's history. For EACH event:
   subject_mention  - exact entity name (primary subject)
   subject_type     - company | investor | entity | university | asset | person | facility | program
   event_type       - funding_round | launch | contract_award | partnership |
-                     acquisition | failure | pivot | regulatory | milestone | leadership
+                     acquisition | failure | pivot | regulatory | milestone | leadership |
+                     publication | research_grant
   title            - short descriptive title (e.g. "Series B — £40M led by Airbus Ventures")
   date             - ISO date YYYY-MM-DD, YYYY-MM, or YYYY — best precision available
   description      - 2-3 sentences: what happened and why it matters
@@ -67,7 +68,7 @@ Rich narrative paragraphs about entities. For EACH meaningful piece of intellige
   subject_mention       - exact entity name
   subject_type          - organization | asset | person | facility | program
   category              - technical | financial | competitive | regulatory |
-                          strategic | operational | people | challenge
+                          strategic | operational | people | challenge | research
   text                  - verbatim or close paraphrase of a full paragraph of intelligence
   date_of_information   - approximate date the info was current, YYYY-MM or YYYY, or null
   source_url            - URL, or null
@@ -102,6 +103,11 @@ RULES:
   headquarters_city, headquarters_country, employee_count, total_funding_usd, founding_year.
   These fields power geographic maps and funding charts — search every source for them.
   Do not skip these even if the document is primarily about something else.
+- ★ RESEARCH-CRITICAL: For universities, research institutes, and R&D-heavy entities, ALSO extract:
+  publication_count, research_focus. Use event_type=publication for individual papers or
+  conference presentations (IAC, AIAA, ESA symposia). Use event_type=research_grant for
+  funding awards (ESA contracts, government grants, EU Horizon). Use category=research for
+  fragments summarising a research programme, paper series, or academic collaboration.
 - SPACE FOCUS: Only extract information that has a direct connection to space.
   For companies whose primary business is not space, ignore their non-space activities
   entirely — only extract facts, events, and fragments about their space operations,
@@ -333,6 +339,10 @@ def _generate_search_angles(topic: str, entity_type: str) -> list[str]:
 
     # Always lead with a guaranteed baseline angle for map-critical fields
     baseline = f'{topic} headquarters location employees headcount funding raised'
+    if entity_type == 'university':
+        # Universities get a dedicated research/publications angle instead of one LLM angle
+        research_angle = f'{topic} publications papers preprints space research grants IAC AIAA'
+        return [baseline, research_angle] + llm_angles[:1]
     return [baseline] + llm_angles[:2]
 
 
