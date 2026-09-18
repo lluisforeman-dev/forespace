@@ -71,7 +71,7 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
         logger.warning('classify_entity: no taxonomy nodes found — run seed_taxonomy first')
         return
 
-    model = settings.AI_MODEL
+    model = settings.AI_MODEL_FAST
     user_msg = f'{profile}\n\nAllowed taxonomy nodes:\n{vocab}'
 
     try:
