@@ -50,7 +50,7 @@ def triage_document(self, document_id: str):
         from ingest.cost import log_call
         t0 = time.monotonic()
         resp = get_client().chat.completions.create(
-            model=settings.AI_MODEL_FAST,
+            model=settings.AI_MODEL,
             messages=[
                 {'role': 'system', 'content': _SYSTEM},
                 {'role': 'user', 'content': _USER.format(snippet=snippet)},
