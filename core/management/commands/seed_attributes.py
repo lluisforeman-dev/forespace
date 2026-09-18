@@ -7,7 +7,7 @@ ATTRIBUTES = [
     # ── Organisation facts ──────────────────────────────────────────────────
     {
         'key': 'founding_year',
-        'entity_type': 'organization',
+        'entity_type': 'company',
         'label': 'Founding Year',
         'datatype': 'int',
         'cardinality': 'single',
@@ -21,7 +21,7 @@ ATTRIBUTES = [
     },
     {
         'key': 'headquarters_city',
-        'entity_type': 'organization',
+        'entity_type': 'company',
         'label': 'Headquarters City',
         'datatype': 'text',
         'cardinality': 'single',
@@ -32,7 +32,7 @@ ATTRIBUTES = [
     },
     {
         'key': 'headquarters_country',
-        'entity_type': 'organization',
+        'entity_type': 'company',
         'label': 'Headquarters Country',
         'datatype': 'text',
         'cardinality': 'single',
@@ -45,7 +45,7 @@ ATTRIBUTES = [
     },
     {
         'key': 'employee_count',
-        'entity_type': 'organization',
+        'entity_type': 'company',
         'label': 'Employee Count',
         'datatype': 'int',
         'cardinality': 'single',
@@ -59,7 +59,7 @@ ATTRIBUTES = [
     },
     {
         'key': 'business_description',
-        'entity_type': 'organization',
+        'entity_type': 'company',
         'label': 'Business Description',
         'datatype': 'text',
         'cardinality': 'single',
@@ -73,7 +73,7 @@ ATTRIBUTES = [
     },
     {
         'key': 'website',
-        'entity_type': 'organization',
+        'entity_type': 'company',
         'label': 'Website',
         'datatype': 'text',
         'cardinality': 'single',
@@ -84,7 +84,7 @@ ATTRIBUTES = [
     },
     {
         'key': 'ceo_name',
-        'entity_type': 'organization',
+        'entity_type': 'company',
         'label': 'CEO / Managing Director',
         'datatype': 'text',
         'cardinality': 'single',
@@ -96,7 +96,7 @@ ATTRIBUTES = [
     # ── Funding ─────────────────────────────────────────────────────────────
     {
         'key': 'funding_round_amount_usd',
-        'entity_type': 'organization',
+        'entity_type': 'company',
         'label': 'Funding Round Amount (USD)',
         'datatype': 'money',
         'unit': 'USD',
@@ -112,7 +112,7 @@ ATTRIBUTES = [
     },
     {
         'key': 'funding_round_series',
-        'entity_type': 'organization',
+        'entity_type': 'company',
         'label': 'Funding Round Series',
         'datatype': 'text',
         'cardinality': 'multi',
@@ -126,7 +126,7 @@ ATTRIBUTES = [
     },
     {
         'key': 'total_funding_usd',
-        'entity_type': 'organization',
+        'entity_type': 'company',
         'label': 'Total Funding Raised (USD)',
         'datatype': 'money',
         'unit': 'USD',
@@ -204,7 +204,7 @@ ATTRIBUTES = [
     # ── Satellites / spacecraft ───────────────────────────────────────────
     {
         'key': 'satellite_count',
-        'entity_type': 'organization',
+        'entity_type': 'company',
         'label': 'Satellites in Orbit',
         'datatype': 'int',
         'cardinality': 'single',
@@ -215,7 +215,7 @@ ATTRIBUTES = [
     },
     {
         'key': 'constellation_target_count',
-        'entity_type': 'organization',
+        'entity_type': 'company',
         'label': 'Constellation Target Size',
         'datatype': 'int',
         'cardinality': 'single',

@@ -38,7 +38,7 @@ Search the web for current, verifiable information and return JSON with THREE se
 ━━ SECTION 1: claims ━━
 Structured key-value facts. For EACH claim:
   subject_mention        - exact entity name
-  subject_type           - organization | asset | person | facility | event | program
+  subject_type           - company | investor | entity | asset | person | facility | event | program
   attribute_key          - one of the ALLOWED KEYS listed below (no others)
   value                  - extracted value as string or number, or null
   unit                   - unit of measurement or null
@@ -50,7 +50,7 @@ Structured key-value facts. For EACH claim:
 ━━ SECTION 2: events ━━
 Discrete events in an entity's history. For EACH event:
   subject_mention  - exact entity name (primary subject)
-  subject_type     - organization | asset | person | facility | program
+  subject_type     - company | investor | entity | asset | person | facility | program
   event_type       - funding_round | launch | contract_award | partnership |
                      acquisition | failure | pivot | regulatory | milestone | leadership
   title            - short descriptive title (e.g. "Series B — £40M led by Airbus Ventures")
@@ -58,7 +58,7 @@ Discrete events in an entity's history. For EACH event:
   description      - 2-3 sentences: what happened and why it matters
   amount_usd       - numeric amount in USD if applicable, else null
   significance     - "high" | "medium" | "low"
-  participants     - list of {"name": "...", "type": "organization|person|asset|program"} objects
+  participants     - list of {"name": "...", "type": "company|investor|entity|person|asset|program"} objects
   source_url       - URL, or null
   confidence       - "high" | "medium" | "low"
 
@@ -77,10 +77,10 @@ Explicit relationships between named entities. This is the MOST IMPORTANT sectio
 it builds the knowledge graph connecting organisations, assets, and people.
 For EACH relationship:
   subject_mention  - entity name (who initiates / performs the relationship)
-  subject_type     - organization | asset | person | facility | program
+  subject_type     - company | investor | entity | asset | person | facility | program
   predicate        - one of the ALLOWED PREDICATE KEYS listed below (no others)
   object_mention   - entity name (who receives the relationship)
-  object_type      - organization | asset | person | facility | program
+  object_type      - company | investor | entity | asset | person | facility | program
   qualifiers       - extra attributes as JSON object, e.g. {"amount_usd": 5000000, "date": "2024-03"}
                      or {} if none. Common qualifier keys: amount_usd, date, stake_pct, round_series,
                      vehicle, orbit, payload_kg, contract_value_usd, role, scope, product, service_type,
@@ -397,7 +397,7 @@ _NON_SPACE_KEYWORDS = {
 }
 
 
-def _is_space_relevant(name: str, entity_type: str = 'organization') -> bool:
+def _is_space_relevant(name: str, entity_type: str = 'company') -> bool:
     """
     Fast heuristic: is this entity space or space-adjacent?
     Assets, facilities, events, programs are assumed relevant.
@@ -418,7 +418,9 @@ def _is_space_relevant(name: str, entity_type: str = 'organization') -> bool:
 _CONF_MAP = {'high': 78, 'medium': 62, 'low': 45}
 
 _TYPE_TO_TOPIC = {
-    'organization': 'company',
+    'company': 'company',
+    'investor': 'company',
+    'entity': 'company',
     'asset': 'company',
     'program': 'question',
     'facility': 'question',
@@ -443,9 +445,9 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
         if not mention or not description or not title:
             continue
 
-        subject_type = ev.get('subject_type', 'organization')
+        subject_type = ev.get('subject_type', 'company')
         if subject_type not in _VALID_ENTITY_TYPES:
-            subject_type = 'organization'
+            subject_type = 'company'
 
         entity_id = name_to_id.get(mention)
         if not entity_id:
@@ -494,12 +496,12 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
                 # Support both old ["name"] and new [{"name": ..., "type": ...}] formats
                 if isinstance(p, dict):
                     pname = str(p.get('name') or '').strip()
-                    ptype = p.get('type', 'organization')
+                    ptype = p.get('type', 'company')
                     if ptype not in _VALID_ENTITY_TYPES:
-                        ptype = 'organization'
+                        ptype = 'company'
                 else:
                     pname = str(p).strip()
-                    ptype = 'organization'
+                    ptype = 'company'
                 if not pname:
                     continue
                 pid = name_to_id.get(pname)
@@ -528,9 +530,9 @@ def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, 
         if not mention or len(text) < 40:
             continue
 
-        subject_type = frag.get('subject_type', 'organization')
+        subject_type = frag.get('subject_type', 'company')
         if subject_type not in _VALID_ENTITY_TYPES:
-            subject_type = 'organization'
+            subject_type = 'company'
 
         entity_id = name_to_id.get(mention)
         if not entity_id:
@@ -586,12 +588,12 @@ def _store_relations(relations: list, fallback_doc: Document, sonar_source: Sour
             logger.debug('_store_relations: unknown predicate "%s"', predicate)
             continue
 
-        subject_type = rel.get('subject_type', 'organization')
+        subject_type = rel.get('subject_type', 'company')
         if subject_type not in _VALID_ENTITY_TYPES:
-            subject_type = 'organization'
-        object_type = rel.get('object_type', 'organization')
+            subject_type = 'company'
+        object_type = rel.get('object_type', 'company')
         if object_type not in _VALID_ENTITY_TYPES:
-            object_type = 'organization'
+            object_type = 'company'
 
         confidence = conf_map.get(rel.get('confidence', 'medium'), 62)
         qualifiers = rel.get('qualifiers') or {}
@@ -784,7 +786,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
 
         attr = valid_attrs[attr_key]
         mention = claim.get('subject_mention') or topic
-        entity_type_hint = claim.get('subject_type', 'organization')
+        entity_type_hint = claim.get('subject_type', 'company')
         quote = claim.get('quote') or mention
         value = claim.get('value')
         unit = claim.get('unit')

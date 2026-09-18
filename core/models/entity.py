@@ -5,7 +5,9 @@ from django.contrib.postgres.fields import DateTimeRangeField
 
 class Entity(models.Model):
     ENTITY_TYPES = [
-        ('organization', 'Organization'),
+        ('company', 'Company'),
+        ('investor', 'Investor'),
+        ('entity', 'Entity'),
         ('facility', 'Facility'),
         ('asset', 'Asset'),
         ('person', 'Person'),

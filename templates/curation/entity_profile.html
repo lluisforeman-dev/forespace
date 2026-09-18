@@ -58,7 +58,9 @@
       {% csrf_token %}
       <input name="canonical_name" value="{{ entity.canonical_name }}" style="padding:4px 8px;border:1px solid #ccc;border-radius:4px;min-width:180px;font-size:13px">
       <select name="entity_type" style="padding:4px 8px;border:1px solid #ccc;border-radius:4px;font-size:13px">
-        <option value="organization"  {% if entity.entity_type == "organization"  %}selected{% endif %}>Organization</option>
+        <option value="company"       {% if entity.entity_type == "company"       %}selected{% endif %}>Company</option>
+        <option value="investor"      {% if entity.entity_type == "investor"      %}selected{% endif %}>Investor</option>
+        <option value="entity"        {% if entity.entity_type == "entity"        %}selected{% endif %}>Entity</option>
         <option value="facility"      {% if entity.entity_type == "facility"      %}selected{% endif %}>Facility</option>
         <option value="asset"         {% if entity.entity_type == "asset"         %}selected{% endif %}>Asset</option>
         <option value="person"        {% if entity.entity_type == "person"        %}selected{% endif %}>Person</option>

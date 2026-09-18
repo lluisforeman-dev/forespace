@@ -34,7 +34,8 @@ Reply: {{"same": true, "confidence": "high"|"medium"|"low"}} or {{"same": false}
 
 
 _VALID_ENTITY_TYPES = {
-    'organization', 'facility', 'asset', 'person',
+    'company', 'investor', 'entity',
+    'facility', 'asset', 'person',
     'document_node', 'event', 'program',
 }
 
@@ -42,11 +43,11 @@ _VALID_ENTITY_TYPES = {
 def resolve_mention(
     mention: str,
     document_id: str | None = None,
-    entity_type: str = 'organization',
+    entity_type: str = 'company',
 ) -> str:
     """Resolve a surface-form mention to an entity UUID. Creates a stub if needed."""
     if entity_type not in _VALID_ENTITY_TYPES:
-        entity_type = 'organization'
+        entity_type = 'company'
     norm = normalize_name(mention)
 
     # Level 2a — exact canonical name (case-insensitive)
@@ -134,7 +135,7 @@ def _create_stub(
     mention: str,
     norm: str,
     document_id: str | None,
-    entity_type: str = 'organization',
+    entity_type: str = 'company',
 ) -> str:
     """Create a stub entity for an unresolved mention."""
     slug_base = slugify(mention)[:200] or 'entity'
