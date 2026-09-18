@@ -103,11 +103,13 @@ RULES:
   headquarters_city, headquarters_country, employee_count, total_funding_usd, founding_year.
   These fields power geographic maps and funding charts — search every source for them.
   Do not skip these even if the document is primarily about something else.
-- ★ RESEARCH-CRITICAL: For universities, research institutes, and R&D-heavy entities, ALSO extract:
-  publication_count, research_focus. Use event_type=publication for individual papers or
-  conference presentations (IAC, AIAA, ESA symposia). Use event_type=research_grant for
-  funding awards (ESA contracts, government grants, EU Horizon). Use category=research for
-  fragments summarising a research programme, paper series, or academic collaboration.
+- ★ RESEARCH-CRITICAL: For ANY entity — companies, universities, research institutes, people,
+  government agencies — ALSO extract publication_count and research_focus when findable.
+  Use event_type=publication for individual papers, preprints, or conference presentations
+  (IAC, AIAA, ESA, IEEE symposia). Use event_type=research_grant for funding awards
+  (ESA contracts, government grants, EU Horizon, DARPA). Use category=research for fragments
+  summarising a research programme, paper series, or academic collaboration.
+  Companies like SpaceX, Airbus, and OHB publish research — do not skip them.
 - SPACE FOCUS: Only extract information that has a direct connection to space.
   For companies whose primary business is not space, ignore their non-space activities
   entirely — only extract facts, events, and fragments about their space operations,
@@ -339,9 +341,10 @@ def _generate_search_angles(topic: str, entity_type: str) -> list[str]:
 
     # Always lead with a guaranteed baseline angle for map-critical fields
     baseline = f'{topic} headquarters location employees headcount funding raised'
-    if entity_type == 'university':
-        # Universities get a dedicated research/publications angle instead of one LLM angle
-        research_angle = f'{topic} publications papers preprints space research grants IAC AIAA'
+    # Universities, people (researchers), and research-type entities always get a
+    # dedicated publications angle — companies and others rely on the LLM angles
+    if entity_type in ('university', 'person', 'entity'):
+        research_angle = f'{topic} publications papers preprints space research grants IAC AIAA IEEE'
         return [baseline, research_angle] + llm_angles[:1]
     return [baseline] + llm_angles[:2]
 
