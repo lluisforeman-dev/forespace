@@ -142,8 +142,18 @@ def _sonar_source() -> Source:
     return source
 
 
+_TYPE_TO_TOPIC = {
+    'organization': 'company',
+    'asset': 'company',
+    'program': 'question',
+    'facility': 'question',
+    'person': 'question',
+    'event': 'question',
+}
+
+
 @shared_task(bind=True, queue='extract', max_retries=2, default_retry_delay=30)
-def research_topic(self, topic: str, topic_type: str = 'company'):
+def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth: int = 0):
     """
     Use Perplexity Sonar to research a topic and write Assertions directly to the DB.
     topic_type: 'company' | 'question' | 'news'
@@ -321,12 +331,54 @@ def research_topic(self, topic: str, topic_type: str = 'company'):
         .values_list('entity_id', flat=True).distinct()
     )
     entity_id_strs = [str(eid) for eid in entity_ids]
+
+    # Collect entity names for relation extraction
+    from core.models import Entity as _Entity
+    entity_name_map = {
+        str(e.id): e.canonical_name
+        for e in _Entity.objects.filter(id__in=entity_ids).only('id', 'canonical_name', 'status', 'entity_type')
+    }
+
     if entity_ids:
         from ingest.tasks.classify import classify_entity
         for eid in entity_id_strs:
             classify_entity.apply_async(args=[eid, str(run.pk)], countdown=10)
-        # Evolve taxonomy based on what just came in — runs after classification settles
+
+        # Extract relations between entities found in this research run
+        from ingest.tasks.relate import extract_relations_sonar
+        extract_relations_sonar.apply_async(
+            args=[str(doc.id), list(entity_name_map.values())],
+            countdown=20,
+        )
+
+        # Evolve taxonomy based on what just came in
         from ingest.tasks.evolve import evolve_taxonomy
         evolve_taxonomy.apply_async(args=[entity_id_strs], countdown=60)
+
+        # Cascade: research newly discovered stubs that have no data yet
+        # Only cascade up to depth 2 to prevent runaway chains
+        if cascade_depth < 2:
+            stubs_to_research = [
+                e for e in entity_name_map.values()
+                if _Entity.objects.filter(
+                    canonical_name=e, status='stub'
+                ).exists()
+                and not Assertion.objects.filter(
+                    entity__canonical_name=e, status='accepted'
+                ).exists()
+                and not ExtractionRun.objects.filter(
+                    stats__topic=e,
+                    started_at__gte=timezone.now() - timedelta(days=7),
+                ).exists()
+            ]
+            for stub_name in stubs_to_research[:4]:  # max 4 cascades per run
+                stub_entity = _Entity.objects.filter(canonical_name=stub_name, status='stub').first()
+                t_type = _TYPE_TO_TOPIC.get(stub_entity.entity_type, 'company') if stub_entity else 'company'
+                research_topic.apply_async(
+                    args=[stub_name, t_type],
+                    kwargs={'cascade_depth': cascade_depth + 1},
+                    countdown=90 + cascade_depth * 60,
+                )
+                logger.info('research_topic: cascade depth=%d queued for "%s"', cascade_depth + 1, stub_name)
 
     return {'accepted': accepted, 'rejected': rejected}

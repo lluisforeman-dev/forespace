@@ -61,11 +61,22 @@ def _get_or_create_scheduled_source(source_name, feed_url, kind='trade_press', t
 
 @staff_member_required
 def dashboard(request):
+    from core.models import ExtractionRun, Relation
     snapshot = get_snapshot()
     recent_entities = (
         Entity.objects
         .exclude(status='merged')
         .order_by('-created_at')[:50]
+    )
+    recent_runs = (
+        ExtractionRun.objects
+        .order_by('-started_at')[:30]
+    )
+    recent_relations = (
+        Relation.objects
+        .filter(superseded_at__isnull=True)
+        .select_related('subject', 'object')
+        .order_by('-id')[:20]
     )
     ctx = {
         'stub_count': Entity.objects.filter(status='stub').count(),
@@ -73,6 +84,8 @@ def dashboard(request):
         'candidate_count': Assertion.objects.filter(status='candidate').count(),
         'analytics': snapshot,
         'recent_entities': recent_entities,
+        'recent_runs': recent_runs,
+        'recent_relations': recent_relations,
         'queued_tasks': _queue_lengths(),
         'num_feeds': len(SPACE_NEWS_FEEDS),
         'title': 'ForeSpace',

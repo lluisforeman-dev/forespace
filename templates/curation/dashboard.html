@@ -96,28 +96,92 @@
   {% endif %}
 </div>
 
+<!-- Activity feed + entities side by side -->
+<div class="grid2">
+
+<!-- Pipeline activity -->
+<div class="card">
+  <h2>Pipeline activity</h2>
+  {% if recent_runs %}
+  <div style="font-size:12px">
+    {% for run in recent_runs %}
+    <div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid #313244">
+      <div style="width:8px;height:8px;border-radius:50%;margin-top:4px;flex-shrink:0;
+        background:{% if run.status == 'completed' %}#a6e3a1{% elif run.status == 'running' %}#89b4fa{% elif run.status == 'failed' %}#f38ba8{% else %}#6c7086{% endif %}">
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="color:#cdd6f4;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+          {{ run.task }}
+          {% if run.stats.topic %}<span style="color:#cba6f7"> → {{ run.stats.topic|truncatechars:40 }}</span>{% endif %}
+        </div>
+        <div style="color:#6c7086;margin-top:1px">
+          {{ run.started_at|date:"H:i:s" }}
+          {% if run.stats.accepted is not None %}
+            · <span style="color:#a6e3a1">{{ run.stats.accepted }} accepted</span>
+          {% endif %}
+          {% if run.stats.rejected %}
+            · <span style="color:#6c7086">{{ run.stats.rejected }} rejected</span>
+          {% endif %}
+          {% if run.status == 'failed' %}<span style="color:#f38ba8"> · failed</span>{% endif %}
+        </div>
+      </div>
+      <div style="color:#45475a;white-space:nowrap">{{ run.model|truncatechars:20 }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p style="color:#888;font-size:13px;">No runs yet.</p>
+  {% endif %}
+</div>
+
 <!-- Recent entities -->
 <div class="card">
-  <h2>Recent entities</h2>
+  <h2>Discovered entities</h2>
   {% if recent_entities %}
   <table>
     <thead>
-      <tr><th>Name</th><th>Type</th><th>Status</th><th>Created</th></tr>
+      <tr><th>Name</th><th>Type</th><th>Status</th><th>When</th></tr>
     </thead>
     <tbody>
       {% for e in recent_entities %}
       <tr>
         <td><a href="{% url 'curation:entity_profile' e.id %}">{{ e.canonical_name }}</a></td>
-        <td>{{ e.get_entity_type_display }}</td>
+        <td style="font-size:11px;color:#888">{{ e.get_entity_type_display }}</td>
         <td><span class="badge badge-{{ e.status }}">{{ e.status }}</span></td>
-        <td>{{ e.created_at|date:"Y-m-d H:i" }}</td>
+        <td style="font-size:11px;color:#888">{{ e.created_at|date:"H:i d/m" }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
   {% else %}
-  <p style="color:#888;font-size:13px;">No entities yet — press one of the buttons above to start building the database.</p>
+  <p style="color:#888;font-size:13px;">No entities yet — press one of the buttons above to start.</p>
   {% endif %}
 </div>
+
+</div>
+
+<!-- Discovered relations -->
+{% if recent_relations %}
+<div class="card">
+  <h2>Discovered connections</h2>
+  <table>
+    <thead><tr><th>From</th><th>Relation</th><th>To</th><th>Confidence</th></tr></thead>
+    <tbody>
+      {% for r in recent_relations %}
+      <tr>
+        <td><a href="{% url 'curation:entity_profile' r.subject.id %}">{{ r.subject.canonical_name }}</a></td>
+        <td style="color:#cba6f7;font-size:12px">{{ r.predicate_id }}</td>
+        <td><a href="{% url 'curation:entity_profile' r.object.id %}">{{ r.object.canonical_name }}</a></td>
+        <td>
+          <span style="font-size:12px;color:{% if r.confidence >= 75 %}#a6e3a1{% elif r.confidence >= 55 %}#89b4fa{% else %}#f9e2af{% endif %}">
+            {{ r.confidence }}%
+          </span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 
 {% endblock %}
