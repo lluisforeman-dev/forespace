@@ -152,7 +152,7 @@ def _create_stub(
             entity_type=entity_type,
             canonical_name=mention,
             slug=slug,
-            status='stub',
+            status='active',
         )
         EntityAlias.objects.create(
             entity=entity,
@@ -162,5 +162,5 @@ def _create_stub(
             document_id=document_id,
         )
 
-    logger.info('Stub created: "%s" → %s', mention, entity.id)
+    logger.info('Entity created: "%s" → %s', mention, entity.id)
     return str(entity.id)
