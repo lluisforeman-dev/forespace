@@ -541,18 +541,33 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
                 pass
 
         try:
-            event_obj = Event.objects.create(
+            # Deduplicate: same entity + type + title + date = same real-world event.
+            # Use get_or_create so two sources for the same story don't create two rows.
+            event_obj, created = Event.objects.get_or_create(
                 entity_id=entity_id,
                 event_type=event_type,
                 title=title[:500],
                 date=date_val,
-                date_precision=date_precision,
-                description=description,
-                amount_usd=amount_usd,
-                significance=significance,
-                confidence=confidence,
-                source=ev_doc,
+                defaults={
+                    'date_precision': date_precision,
+                    'description': description,
+                    'amount_usd': amount_usd,
+                    'significance': significance,
+                    'confidence': confidence,
+                    'source': ev_doc,
+                },
             )
+            if not created:
+                # Existing event: upgrade confidence and take the longer description
+                update_fields = []
+                if len(description) > len(event_obj.description):
+                    event_obj.description = description
+                    update_fields.append('description')
+                if confidence > event_obj.confidence:
+                    event_obj.confidence = confidence
+                    update_fields.append('confidence')
+                if update_fields:
+                    event_obj.save(update_fields=update_fields)
             for p in (ev.get('participants') or [])[:8]:
                 # Support both old ["name"] and new [{"name": ..., "type": ...}] formats
                 if isinstance(p, dict):

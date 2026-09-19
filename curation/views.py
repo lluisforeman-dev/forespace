@@ -340,12 +340,33 @@ def entity_profile(request, entity_id):
     except EntitySummary.DoesNotExist:
         summary = None
 
-    events = (
+    raw_events = list(
         Event.objects
         .filter(entity=entity)
         .prefetch_related('participants')
-        .order_by('date', 'created_at')[:60]
+        .select_related('source')
+        .order_by('date', 'created_at')[:80]
     )
+    # Merge events that are the same real-world story (same type + date + title prefix).
+    # Collect all source URLs so the profile can show every link.
+    _seen_events = {}
+    events = []
+    for ev in raw_events:
+        key = (ev.date, ev.event_type, ev.title[:80].lower().strip())
+        if key in _seen_events:
+            existing = _seen_events[key]
+            if ev.source and ev.source.url and ev.source.url not in existing.source_urls:
+                existing.source_urls.append(ev.source.url)
+            if len(ev.description) > len(existing.description):
+                existing.description = ev.description
+            for p in ev.participants.all():
+                if p not in existing._merged_participants:
+                    existing._merged_participants.append(p)
+        else:
+            ev.source_urls = [ev.source.url] if ev.source and ev.source.url else []
+            ev._merged_participants = list(ev.participants.all())
+            _seen_events[key] = ev
+            events.append(ev)
 
     # Group fragments by category
     from itertools import groupby
