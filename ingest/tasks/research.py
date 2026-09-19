@@ -532,6 +532,44 @@ def _synthesise_event_description(existing: str, new: str, title: str) -> str:
     return existing if len(existing) >= len(new) else new
 
 
+def _is_same_story(desc_a: str, desc_b: str, title_a: str, title_b: str) -> bool:
+    """
+    Ask AI_MODEL_FAST whether two event descriptions are the same real-world
+    announcement covered by different sources. Returns True if yes.
+    Fast shortcut: if word-overlap on titles+descriptions is already >70%, assume yes.
+    """
+    def _words(s: str) -> set:
+        return set(s.lower().split())
+    combined_a = _words(title_a + ' ' + desc_a)
+    combined_b = _words(title_b + ' ' + desc_b)
+    if combined_a and combined_b:
+        jaccard = len(combined_a & combined_b) / len(combined_a | combined_b)
+        if jaccard > 0.70:
+            return True
+        if jaccard < 0.15:
+            return False  # clearly different events, skip LLM call
+
+    prompt = (
+        f'Are these two event descriptions about the same real-world announcement '
+        f'covered by different news sources? Answer only "yes" or "no".\n\n'
+        f'Event A title: {title_a}\nEvent A: {desc_a[:300]}\n\n'
+        f'Event B title: {title_b}\nEvent B: {desc_b[:300]}'
+    )
+    try:
+        resp = get_client().chat.completions.create(
+            model=settings.AI_MODEL_FAST,
+            messages=[{'role': 'user', 'content': prompt}],
+            max_tokens=5,
+            temperature=0,
+        )
+        log_call('event_same_story', settings.AI_MODEL_FAST, resp)
+        answer = (resp.choices[0].message.content or '').strip().lower()
+        return answer.startswith('yes')
+    except Exception as exc:
+        logger.warning('_is_same_story: %s', exc)
+        return False
+
+
 def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source) -> int:
     """Persist extracted events, resolving participant entity names."""
     valid_types = {t[0] for t in Event.EVENT_TYPES}
@@ -580,8 +618,7 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
                 pass
 
         try:
-            # Deduplicate: same entity + type + title + date = same real-world event.
-            # Use get_or_create so two sources for the same story don't create two rows.
+            # ── Fast path: exact title + date match → same story ─────────────
             event_obj, created = Event.objects.get_or_create(
                 entity_id=entity_id,
                 event_type=event_type,
@@ -596,12 +633,30 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
                     'source': ev_doc,
                 },
             )
+
+            if created and date_val:
+                # ── Fuzzy path: same day + same type but different headline ──
+                # Same-day announcements often come in different narrative styles.
+                # Check if any existing event on this date is actually the same story.
+                same_day_candidates = Event.objects.filter(
+                    entity_id=entity_id,
+                    event_type=event_type,
+                    date=date_val,
+                ).exclude(pk=event_obj.pk)
+                for candidate in same_day_candidates:
+                    if _is_same_story(candidate.description, description, candidate.title, title):
+                        # It's the same announcement — delete the row we just created
+                        # and merge into the existing one instead.
+                        event_obj.delete()
+                        event_obj = candidate
+                        created = False
+                        break
+
             if not created:
-                # Existing event: synthesise descriptions from both sources into a
-                # richer, more complete account. Truth is the compound of all sources.
+                # Compound sources: synthesise both descriptions into a richer account.
                 update_fields = []
                 if event_obj.description != description:
-                    merged = _synthesise_event_description(event_obj.description, description, title)
+                    merged = _synthesise_event_description(event_obj.description, description, event_obj.title)
                     if merged != event_obj.description:
                         event_obj.description = merged
                         update_fields.append('description')
