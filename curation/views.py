@@ -349,6 +349,7 @@ def entity_profile(request, entity_id):
     )
     # Merge events that are the same real-world story (same type + date + title prefix).
     # Collect all source URLs so the profile can show every link.
+    today = timezone.now().date()
     _seen_events = {}
     events = []
     for ev in raw_events:
@@ -362,11 +363,35 @@ def entity_profile(request, entity_id):
             for p in ev.participants.all():
                 if p not in existing.merged_participants:
                     existing.merged_participants.append(p)
+            # Keep best call data when merging
+            if ev.call_url and not existing.call_url:
+                existing.call_url = ev.call_url
+            if ev.call_status and not existing.call_status:
+                existing.call_status = ev.call_status
         else:
             ev.source_urls = [ev.source.url] if ev.source and ev.source.url else []
             ev.merged_participants = list(ev.participants.all())
             _seen_events[key] = ev
             events.append(ev)
+
+    # Derive display_call_status for every event (used in template)
+    for ev in events:
+        if ev.event_type == 'grant_call':
+            if ev.call_status:
+                ev.display_call_status = ev.call_status
+            elif ev.date and ev.date >= today:
+                ev.display_call_status = 'open'
+            else:
+                ev.display_call_status = 'closed'
+        else:
+            ev.display_call_status = None
+
+    # For funding_program entities: separate active calls for the top card
+    active_calls = (
+        [ev for ev in events
+         if ev.event_type == 'grant_call' and ev.display_call_status in ('open', 'upcoming')]
+        if entity.entity_type == 'funding_program' else []
+    )
 
     # Group fragments by category
     from itertools import groupby
@@ -384,6 +409,7 @@ def entity_profile(request, entity_id):
         'entity':               entity,
         'summary':              summary,
         'events':               events,
+        'active_calls':         active_calls,
         'fragments_by_category': fragments_by_category,
         'facts':                facts,
         'assertions':           all_assertions,

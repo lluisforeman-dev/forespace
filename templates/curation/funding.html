@@ -57,12 +57,25 @@
             {{ type_labels|get_item:ev.event_type|default:ev.event_type }}
           </span>
           <div style="flex:1;min-width:0;">
-            <!-- Title -->
-            <div style="font-weight:600;font-size:13px;color:#1a1a2e;margin-bottom:3px;">
+            <!-- Title + call status badge + apply button -->
+            <div style="font-weight:600;font-size:13px;color:#1a1a2e;margin-bottom:3px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
               {% if ev.source and ev.source.url and ev.source.url != 'sonar' %}
                 <a href="{{ ev.source.url }}" target="_blank" rel="noopener" style="color:#1a1a2e;">{{ ev.title }}</a>
               {% else %}
                 {{ ev.title }}
+              {% endif %}
+              {% if ev.event_type == 'grant_call' %}
+                {% if ev.call_status == 'open' or not ev.call_status %}
+                  <span style="padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;background:#d1fae5;color:#065f46;">OPEN</span>
+                {% elif ev.call_status == 'upcoming' %}
+                  <span style="padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;">UPCOMING</span>
+                {% elif ev.call_status == 'closed' %}
+                  <span style="padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;background:#f3f4f6;color:#6b7280;">CLOSED</span>
+                {% endif %}
+                {% if ev.call_url %}
+                  <a href="{{ ev.call_url }}" target="_blank" rel="noopener"
+                     style="padding:1px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#16a34a;color:#fff;text-decoration:none;">Apply →</a>
+                {% endif %}
               {% endif %}
             </div>
             <!-- Entity + date + amount -->

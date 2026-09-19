@@ -81,6 +81,53 @@
   </div>
 </div>
 
+<!-- ── Active Calls (funding programs only) ── -->
+{% if active_calls %}
+<div class="card" style="border-left:4px solid #16a34a;">
+  <h2 style="color:#065f46;">Active Calls
+    <span style="font-size:12px;font-weight:400;color:#aaa;margin-left:8px;">{{ active_calls|length }} call{{ active_calls|length|pluralize }} open or upcoming</span>
+  </h2>
+  {% for call in active_calls %}
+  {% with is_upcoming=call.display_call_status == 'upcoming' %}
+  <div style="background:{% if is_upcoming %}#fffbeb{% else %}#f0fdf4{% endif %};
+              border-left:3px solid {% if is_upcoming %}#d97706{% else %}#16a34a{% endif %};
+              padding:10px 14px;border-radius:0 6px 6px 0;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:4px;">
+      <span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;
+                   background:{% if is_upcoming %}#fef3c7{% else %}#d1fae5{% endif %};
+                   color:{% if is_upcoming %}#92400e{% else %}#065f46{% endif %};">
+        {% if is_upcoming %}UPCOMING{% else %}OPEN{% endif %}
+      </span>
+      <span style="font-weight:600;font-size:13px;color:#1a1a2e;">{{ call.title }}</span>
+      {% if call.date %}
+      <span style="font-size:12px;color:#888;">· Deadline {{ call.date|date:"d M Y" }}</span>
+      {% endif %}
+      {% if call.amount_usd %}
+      <span style="font-size:12px;color:#166534;font-weight:600;">· ${{ call.amount_usd|floatformat:0 }}</span>
+      {% endif %}
+      {% if call.call_url %}
+      <a href="{{ call.call_url }}" target="_blank" rel="noopener"
+         style="padding:3px 12px;border-radius:4px;font-size:12px;font-weight:600;
+                background:{% if is_upcoming %}#d97706{% else %}#16a34a{% endif %};color:#fff;text-decoration:none;">
+        Apply →</a>
+      {% endif %}
+    </div>
+    {% if call.description %}
+    <div style="font-size:13px;color:#444;line-height:1.5;">{{ call.description }}</div>
+    {% endif %}
+    {% if call.source_urls %}
+    <div style="margin-top:5px;">
+      {% for url in call.source_urls %}
+      <a href="{{ url }}" target="_blank" rel="noopener" style="font-size:11px;color:#aaa;">{{ url|truncatechars:70 }}</a>{% if not forloop.last %} &nbsp;·&nbsp; {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endwith %}
+  {% endfor %}
+</div>
+{% endif %}
+
 <!-- ── Synthesised Summary ── -->
 {% if summary %}
 <div class="card">
@@ -124,8 +171,23 @@
       <div class="tl-date">
         {% if ev.date %}{{ ev.date|date:"Y" }}{% if ev.date_precision == "month" or ev.date_precision == "day" %}-{{ ev.date|date:"m" }}{% endif %}{% if ev.date_precision == "day" %}-{{ ev.date|date:"d" }}{% endif %}{% else %}date unknown{% endif %}
         &nbsp;·&nbsp;<span style="color:#aaa;font-size:10px;text-transform:uppercase">{{ ev.event_type|title }}</span>
+        {% if ev.display_call_status == 'open' %}
+          <span style="margin-left:6px;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;background:#d1fae5;color:#065f46;">OPEN</span>
+        {% elif ev.display_call_status == 'upcoming' %}
+          <span style="margin-left:6px;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;">UPCOMING</span>
+        {% elif ev.display_call_status == 'closed' %}
+          <span style="margin-left:6px;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;background:#f3f4f6;color:#6b7280;">CLOSED</span>
+        {% endif %}
       </div>
-      <div class="tl-title">{{ ev.title }}{% if ev.amount_usd %} <span style="color:#28a745;font-size:12px">${{ ev.amount_usd|floatformat:0 }}</span>{% endif %}</div>
+      <div class="tl-title">
+        {{ ev.title }}{% if ev.amount_usd %} <span style="color:#28a745;font-size:12px">${{ ev.amount_usd|floatformat:0 }}</span>{% endif %}
+        {% if ev.call_url and ev.display_call_status != 'closed' %}
+        <a href="{{ ev.call_url }}" target="_blank" rel="noopener"
+           style="margin-left:8px;padding:1px 8px;border-radius:4px;font-size:11px;font-weight:600;
+                  background:{% if ev.display_call_status == 'upcoming' %}#d97706{% else %}#16a34a{% endif %};
+                  color:#fff;text-decoration:none;">Apply →</a>
+        {% endif %}
+      </div>
       <div class="tl-desc">{{ ev.description }}</div>
       {% if ev.merged_participants %}
       <div class="tl-meta">
