@@ -482,7 +482,7 @@ _TYPE_TO_TOPIC = {
     'university': 'company',
     'asset': 'company',
     'funding_program': 'funding_program',
-    'end_user': 'space_angle',   # research only their space touchpoints
+    'end_user': 'end_user',      # focused: only the space connection, leaf node
     'program': 'question',
     'facility': 'question',
     'person': 'person',
@@ -490,7 +490,7 @@ _TYPE_TO_TOPIC = {
 }
 
 # topic_types that are valid for ExtractionRun.task naming
-_VALID_TOPIC_TYPES = {'company', 'news', 'question', 'space_angle', 'research', 'funding', 'funding_program', 'person'}
+_VALID_TOPIC_TYPES = {'company', 'news', 'question', 'space_angle', 'research', 'funding', 'funding_program', 'person', 'end_user'}
 
 
 def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source) -> int:
@@ -884,6 +884,32 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             f'{ctx}'
             f'{_seen_block(seen)}'
         )
+    elif topic_type == 'end_user':
+        seen = _seen_urls_for_company(topic)
+        ctx = _entity_context_block(topic)
+        user_msg = (
+            f'Research "{topic}" specifically for its connection to the space industry.\n\n'
+            f'This entity is an end user — its primary business is NOT space, but it consumes '
+            f'space services or satellite-derived data. Focus exclusively on:\n\n'
+            f'1. SPACE SERVICE USED — what specific space service, satellite data, or '
+            f'space-derived capability does this entity use? '
+            f'(e.g. Earth observation, GNSS/PNT, satellite communications, AIS tracking, '
+            f'weather data, satellite imagery for agriculture, etc.)\n'
+            f'2. SERVICE PROVIDER — which company, agency, or constellation provides '
+            f'the space service to this entity? Extract the relation: '
+            f'"{topic}" → customer_of → [space company or programme].\n'
+            f'3. PURPOSE — for what operational purpose does this entity use the space service? '
+            f'(e.g. fleet tracking, crop monitoring, disaster response, navigation, '
+            f'broadband connectivity). Keep it to 1-2 sentences.\n'
+            f'4. SCALE — if findable: approximate volume, coverage area, or contract value '
+            f'associated with their space service use.\n\n'
+            f'Do NOT extract: general company facts, financials, employee count, headquarters, '
+            f'non-space products or services, competitive position in their own industry, '
+            f'or any information unrelated to their use of space services.\n\n'
+            f'{_vocab_block()}'
+            f'{ctx}'
+            f'{_seen_block(seen)}'
+        )
     else:  # question
         seen = _seen_urls_recent(days=14, limit=50)
         user_msg = (
@@ -1094,6 +1120,9 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         # Cascade: queue every discovered entity not recently researched,
         # sorted by accepted assertion count ascending — entities with the least
         # known information go first, naturally balancing coverage across the graph.
+        # end_user entities are leaf nodes — do not cascade from them.
+        if topic_type == 'end_user':
+            return {'accepted': accepted, 'rejected': rejected, 'events': events_stored, 'fragments': fragments_stored, 'relations': relations_stored}
         from django.db.models import Count
         cutoff = timezone.now() - timedelta(days=7)
         recently_researched = set(
