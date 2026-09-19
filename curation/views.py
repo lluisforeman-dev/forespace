@@ -330,7 +330,7 @@ def entity_profile(request, entity_id):
 
     classifications = (
         Classification.objects
-        .filter(entity=entity)
+        .filter(entity=entity, node__status='active', node__taxonomy__status='active')
         .select_related('node__taxonomy')
         .order_by('node__taxonomy__key', '-weight')
     )
