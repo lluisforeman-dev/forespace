@@ -668,9 +668,14 @@ def funding(request):
             .select_related('subject')
             .first()
         )
+        today = timezone.now().date()
         open_calls = (
             Event.objects
             .filter(entity=prog, event_type='grant_call')
+            .filter(
+                Q(call_status__in=('open', 'upcoming')) |
+                Q(call_status__isnull=True, date__gte=today)
+            )
             .order_by('date')[:3]
         )
         award_count = Event.objects.filter(
@@ -693,10 +698,15 @@ def funding(request):
     # Sort: programs with open calls first, then by award count
     programs.sort(key=lambda p: (-len(p['open_calls']), -p['award_count']))
 
-    # Open grant calls across all programs
+    # Open grant calls across all programs — only future/active calls
+    today = timezone.now().date()
     open_calls = (
         Event.objects
         .filter(event_type='grant_call')
+        .filter(
+            Q(call_status__in=('open', 'upcoming')) |
+            Q(call_status__isnull=True, date__gte=today)
+        )
         .select_related('entity', 'source')
         .order_by('date')[:30]
     )

@@ -64,6 +64,8 @@ Discrete events in an entity's history. For EACH event:
   participants     - list of {"name": "...", "type": "company|investor|entity|university|person|asset|program"} objects
   source_url       - URL, or null
   confidence       - "high" | "medium" | "low"
+  call_url         - for grant_call events only: direct URL to the application portal or official call page, or null
+  call_status      - for grant_call events only: "open" | "upcoming" | "closed"
 
 ━━ SECTION 3: fragments ━━
 Rich narrative paragraphs about entities. For EACH meaningful piece of intelligence:
@@ -617,6 +619,11 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
             except (TypeError, ValueError):
                 pass
 
+        call_url = ev.get('call_url') or None
+        call_status_raw = ev.get('call_status') or None
+        valid_call_statuses = {s[0] for s in Event.CALL_STATUS}
+        call_status = call_status_raw if call_status_raw in valid_call_statuses else None
+
         try:
             # ── Fast path: exact title + date match → same story ─────────────
             event_obj, created = Event.objects.get_or_create(
@@ -631,6 +638,8 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
                     'significance': significance,
                     'confidence': confidence,
                     'source': ev_doc,
+                    'call_url': call_url,
+                    'call_status': call_status,
                 },
             )
 
@@ -663,6 +672,13 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
                 if confidence > event_obj.confidence:
                     event_obj.confidence = confidence
                     update_fields.append('confidence')
+                # Always refresh call_url and call_status — new research may have better data
+                if call_url and call_url != event_obj.call_url:
+                    event_obj.call_url = call_url
+                    update_fields.append('call_url')
+                if call_status and call_status != event_obj.call_status:
+                    event_obj.call_status = call_status
+                    update_fields.append('call_status')
                 if update_fields:
                     event_obj.save(update_fields=update_fields)
             for p in (ev.get('participants') or [])[:8]:
@@ -955,20 +971,27 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         user_msg = (
             f'Research the space industry funding instrument: "{topic}"\n\n'
             f'Find ALL of the following — be exhaustive:\n\n'
-            f'1. OPEN CALLS — current open calls with: call ID or reference, deadline date, '
-            f'budget envelope (total available), topic description, and link.\n'
-            f'Use event_type=grant_call with date=deadline. Extract as many open calls as exist.\n\n'
+            f'1. OPEN & UPCOMING CALLS — for each call:\n'
+            f'   - call ID or reference number\n'
+            f'   - call_status: "open" (accepting proposals now), "upcoming" (announced but not yet open), or "closed"\n'
+            f'   - deadline date (use as the event date)\n'
+            f'   - budget envelope (total available for this call)\n'
+            f'   - topic or scope description\n'
+            f'   - call_url: the direct URL to the call page or application portal\n'
+            f'   Use event_type=grant_call. Set call_status and call_url on each event.\n'
+            f'   Extract ALL known calls — open, upcoming, and recently closed.\n\n'
             f'2. ELIGIBILITY — who can apply: company size (SME, startup, large enterprise, '
             f'university, research institute), geographic restriction, sector focus, '
-            f'Technology Readiness Level (TRL) requirements.\n\n'
-            f'3. AWARD SIZE — minimum and maximum award per application. Typical ticket size.\n\n'
+            f'Technology Readiness Level (TRL) requirements, nationality constraints.\n'
+            f'Also extract the application_url (programme-level portal where you start the application).\n\n'
+            f'3. AWARD SIZE — minimum and maximum grant per application. Typical ticket size. '
+            f'Co-funding rate (what % the programme covers).\n\n'
             f'4. RECENT AWARDS — who received funding from this instrument in the last 3 years, '
             f'how much, and for what project or purpose.\n'
             f'Use event_type=grant_award for each award. Include the recipient as subject_mention.\n\n'
-            f'5. FUTURE CALLS — any announced upcoming calls: expected dates, topics, budgets.\n\n'
-            f'6. ADMINISTRATOR — which institution runs or administers this instrument.\n'
+            f'5. ADMINISTRATOR — which institution runs or administers this instrument.\n'
             f'Extract relation: institution → administers → "{topic}"\n\n'
-            f'7. TRACK RECORD — total capital deployed, number of companies funded, success stories.\n\n'
+            f'6. TRACK RECORD — total capital deployed, number of companies funded, success stories.\n\n'
             f'{_vocab_block()}'
             f'{ctx}'
             f'{_seen_block(seen)}'

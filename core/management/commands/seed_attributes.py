@@ -326,6 +326,21 @@ ATTRIBUTES = [
         'volatility_days': 30,
         'description': 'Expected or confirmed date when the next call for applications will open.',
     },
+    {
+        'key': 'application_url',
+        'entity_type': 'funding_program',
+        'label': 'Application Portal URL',
+        'datatype': 'text',
+        'cardinality': 'single',
+        'is_projected': False,
+        'is_promoted': True,
+        'volatility_days': 365,
+        'description': (
+            'The official URL where applicants start the application process for this programme. '
+            'This is the programme-level portal (e.g. Funding & Tenders, ESA STAR, national portal), '
+            'distinct from the URL of a specific open call.'
+        ),
+    },
     # ── Research & academic ──────────────────────────────────────────────────
     {
         'key': 'publication_count',

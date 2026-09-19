@@ -6,6 +6,13 @@ class Event(models.Model):
 
     EVENT_TYPES = [
         ('funding_round',   'Funding Round'),
+        ('grant_award',     'Grant Award'),
+        ('grant_call',      'Grant Call (Open)'),
+        ('ipo',             'IPO'),
+        ('spac',            'SPAC'),
+        ('debt_financing',  'Debt Financing'),
+        ('convertible',     'Convertible Note'),
+        ('crowdfunding',    'Crowdfunding'),
         ('launch',          'Launch'),
         ('contract_award',  'Contract Award'),
         ('partnership',     'Partnership'),
@@ -17,6 +24,11 @@ class Event(models.Model):
         ('leadership',      'Leadership Change'),
         ('publication',     'Publication / Paper'),
         ('research_grant',  'Research Grant'),
+    ]
+    CALL_STATUS = [
+        ('open',     'Open'),
+        ('upcoming', 'Upcoming'),
+        ('closed',   'Closed'),
     ]
     SIGNIFICANCE = [
         ('high',   'High'),
@@ -38,6 +50,8 @@ class Event(models.Model):
     amount_usd   = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
     significance = models.CharField(max_length=10, choices=SIGNIFICANCE, default='medium')
     confidence   = models.SmallIntegerField(default=60)
+    call_url     = models.URLField(max_length=1000, null=True, blank=True)
+    call_status  = models.CharField(max_length=20, choices=CALL_STATUS, null=True, blank=True)
     participants = models.ManyToManyField(
         'core.Entity', related_name='participated_events', blank=True,
     )
