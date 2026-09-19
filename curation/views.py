@@ -360,11 +360,11 @@ def entity_profile(request, entity_id):
             if len(ev.description) > len(existing.description):
                 existing.description = ev.description
             for p in ev.participants.all():
-                if p not in existing._merged_participants:
-                    existing._merged_participants.append(p)
+                if p not in existing.merged_participants:
+                    existing.merged_participants.append(p)
         else:
             ev.source_urls = [ev.source.url] if ev.source and ev.source.url else []
-            ev._merged_participants = list(ev.participants.all())
+            ev.merged_participants = list(ev.participants.all())
             _seen_events[key] = ev
             events.append(ev)
 

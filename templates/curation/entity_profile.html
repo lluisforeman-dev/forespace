@@ -127,10 +127,10 @@
       </div>
       <div class="tl-title">{{ ev.title }}{% if ev.amount_usd %} <span style="color:#28a745;font-size:12px">${{ ev.amount_usd|floatformat:0 }}</span>{% endif %}</div>
       <div class="tl-desc">{{ ev.description }}</div>
-      {% if ev._merged_participants %}
+      {% if ev.merged_participants %}
       <div class="tl-meta">
         With:
-        {% for p in ev._merged_participants %}
+        {% for p in ev.merged_participants %}
           <a href="{% url 'curation:entity_profile' p.id %}" style="color:#0066cc">{{ p.canonical_name }}</a>{% if not forloop.last %}, {% endif %}
         {% endfor %}
       </div>
