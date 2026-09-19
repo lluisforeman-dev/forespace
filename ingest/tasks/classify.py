@@ -5,16 +5,16 @@ nodes from the appropriate taxonomy facets for this entity type.
 
 Facet routing per entity type:
   company / investor / entity / university
-      → value_chain, technology, orbit_regime, customer_type, maturity,
+      → value_chain, orbit_regime, customer_type, maturity,
         research_area, adjacent_sector
   funding_program
       → funding_type only  (what KIND of instrument is this?)
   program
-      → value_chain, technology, orbit_regime  (what kind of space programme?)
+      → value_chain, orbit_regime  (what kind of space programme?)
   person
       → research_area only  (what field do they work in?)
   asset
-      → technology, orbit_regime
+      → value_chain, orbit_regime
   facility / geography / document_node / event
       → skipped (no meaningful taxonomy classification)
 
@@ -41,16 +41,16 @@ logger = logging.getLogger(__name__)
 # Taxonomy facets applicable to each entity type.
 # Entity types not listed here are skipped entirely.
 _FACETS_FOR_TYPE: dict[str, set[str]] = {
-    'company':          {'value_chain', 'technology', 'orbit_regime', 'customer_type', 'maturity', 'research_area', 'adjacent_sector'},
+    'company':          {'value_chain', 'orbit_regime', 'customer_type', 'maturity', 'research_area', 'adjacent_sector'},
     'investor':         {'value_chain', 'customer_type', 'maturity', 'adjacent_sector'},
-    'entity':           {'value_chain', 'technology', 'orbit_regime', 'customer_type', 'maturity', 'research_area', 'adjacent_sector'},
+    'entity':           {'value_chain', 'orbit_regime', 'customer_type', 'maturity', 'research_area', 'adjacent_sector'},
     'university':       {'research_area', 'adjacent_sector'},
     'funding_program':  {'funding_type'},
-    'program':          {'value_chain', 'technology', 'orbit_regime'},
+    'program':          {'value_chain', 'orbit_regime'},
     'person':           {'research_area'},
-    'asset':            {'technology', 'orbit_regime'},
+    'asset':            {'value_chain', 'orbit_regime'},
     # End users: what industry sector are they in, who do they sell to, and what downstream
-    # space service do they consume? Never classify in technology/orbit/maturity — irrelevant.
+    # space service do they consume? Never classify in orbit/maturity — irrelevant.
     'end_user':         {'adjacent_sector', 'customer_type', 'value_chain'},
 }
 
@@ -75,8 +75,8 @@ Only use node paths from the allowed list. Return JSON: {"classifications": [...
 
 _SYSTEM_PROGRAM = """\
 You are a taxonomy classifier for a space-industry knowledge graph.
-Given a space programme profile, classify it under the value_chain, technology,
-and orbit_regime taxonomy facets as applicable.
+Given a space programme profile, classify it under the value_chain and orbit_regime
+taxonomy facets as applicable.
 Only use node paths from the allowed list. Return JSON: {"classifications": [...]}"""
 
 _SYSTEM_END_USER = """\
