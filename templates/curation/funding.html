@@ -166,8 +166,10 @@
           </span>
           {% if call.call_status == 'upcoming' %}
           <span style="padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;">UPCOMING</span>
-          {% else %}
+          {% elif call.call_status == 'open' %}
           <span style="padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;background:#d1fae5;color:#065f46;">OPEN</span>
+          {% else %}
+          <span style="padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;background:#f3f4f6;color:#6b7280;">CHECK STATUS</span>
           {% endif %}
           {% if call.date %}<span style="color:#888;">· Deadline {{ call.date|date:"d M Y" }}</span>{% endif %}
           {% if call.amount_usd %}<span style="color:#166534;">· ${{ call.amount_usd|floatformat:0 }}</span>{% endif %}

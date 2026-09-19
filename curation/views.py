@@ -386,10 +386,10 @@ def entity_profile(request, entity_id):
         else:
             ev.display_call_status = None
 
-    # For funding_program entities: separate active calls for the top card
+    # For funding_program entities: all calls except explicitly closed for the top card
     active_calls = (
         [ev for ev in events
-         if ev.event_type == 'grant_call' and ev.display_call_status in ('open', 'upcoming')]
+         if ev.event_type == 'grant_call' and ev.display_call_status != 'closed']
         if entity.entity_type == 'funding_program' else []
     )
 
@@ -694,15 +694,11 @@ def funding(request):
             .select_related('subject')
             .first()
         )
-        today = timezone.now().date()
         open_calls = (
             Event.objects
             .filter(entity=prog, event_type='grant_call')
-            .filter(
-                Q(call_status__in=('open', 'upcoming')) |
-                Q(call_status__isnull=True, date__gte=today)
-            )
-            .order_by('date')[:3]
+            .exclude(call_status='closed')
+            .order_by('-date')[:3]
         )
         award_count = Event.objects.filter(
             participants=prog,
@@ -724,17 +720,13 @@ def funding(request):
     # Sort: programs with open calls first, then by award count
     programs.sort(key=lambda p: (-len(p['open_calls']), -p['award_count']))
 
-    # Open grant calls across all programs — only future/active calls
-    today = timezone.now().date()
+    # Grant calls across all programs — exclude explicitly closed, show rest
     open_calls = (
         Event.objects
         .filter(event_type='grant_call')
-        .filter(
-            Q(call_status__in=('open', 'upcoming')) |
-            Q(call_status__isnull=True, date__gte=today)
-        )
+        .exclude(call_status='closed')
         .select_related('entity', 'source')
-        .order_by('date')[:30]
+        .order_by('-date')[:30]
     )
 
     # Equity investors — with recent deals for context
