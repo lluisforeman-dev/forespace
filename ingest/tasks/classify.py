@@ -207,6 +207,9 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
     created = skipped = 0
     with transaction.atomic():
         for item in classifications:
+            if not isinstance(item, dict):
+                skipped += 1
+                continue
             facet_key = item.get('facet_key') or item.get('facet', '')
             node_path = item.get('node_path') or item.get('node', '')
             if not facet_key or not node_path:
