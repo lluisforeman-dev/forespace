@@ -88,15 +88,14 @@
     <span style="font-size:12px;font-weight:400;color:#aaa;margin-left:8px;">{{ active_calls|length }} call{{ active_calls|length|pluralize }} open or upcoming</span>
   </h2>
   {% for call in active_calls %}
-  {% with is_upcoming=call.display_call_status == 'upcoming' %}
-  <div style="background:{% if is_upcoming %}#fffbeb{% else %}#f0fdf4{% endif %};
-              border-left:3px solid {% if is_upcoming %}#d97706{% else %}#16a34a{% endif %};
+  <div style="background:{% if call.display_call_status == 'upcoming' %}#fffbeb{% else %}#f0fdf4{% endif %};
+              border-left:3px solid {% if call.display_call_status == 'upcoming' %}#d97706{% else %}#16a34a{% endif %};
               padding:10px 14px;border-radius:0 6px 6px 0;margin-bottom:10px;">
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:4px;">
       <span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;
-                   background:{% if is_upcoming %}#fef3c7{% else %}#d1fae5{% endif %};
-                   color:{% if is_upcoming %}#92400e{% else %}#065f46{% endif %};">
-        {% if is_upcoming %}UPCOMING{% else %}OPEN{% endif %}
+                   background:{% if call.display_call_status == 'upcoming' %}#fef3c7{% else %}#d1fae5{% endif %};
+                   color:{% if call.display_call_status == 'upcoming' %}#92400e{% else %}#065f46{% endif %};">
+        {% if call.display_call_status == 'upcoming' %}UPCOMING{% else %}OPEN{% endif %}
       </span>
       <span style="font-weight:600;font-size:13px;color:#1a1a2e;">{{ call.title }}</span>
       {% if call.date %}
@@ -108,7 +107,7 @@
       {% if call.call_url %}
       <a href="{{ call.call_url }}" target="_blank" rel="noopener"
          style="padding:3px 12px;border-radius:4px;font-size:12px;font-weight:600;
-                background:{% if is_upcoming %}#d97706{% else %}#16a34a{% endif %};color:#fff;text-decoration:none;">
+                background:{% if call.display_call_status == 'upcoming' %}#d97706{% else %}#16a34a{% endif %};color:#fff;text-decoration:none;">
         Apply →</a>
       {% endif %}
     </div>
@@ -123,7 +122,6 @@
     </div>
     {% endif %}
   </div>
-  {% endwith %}
   {% endfor %}
 </div>
 {% endif %}

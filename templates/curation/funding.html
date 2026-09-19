@@ -157,15 +157,14 @@
 
       <!-- Open calls -->
       {% for call in prog.open_calls %}
-      {% with is_upcoming=call.call_status == 'upcoming' %}
-      <div style="background:{% if is_upcoming %}#fffbeb{% else %}#f0fdf4{% endif %};
-                  border-left:3px solid {% if is_upcoming %}#d97706{% else %}#16a34a{% endif %};
+      <div style="background:{% if call.call_status == 'upcoming' %}#fffbeb{% else %}#f0fdf4{% endif %};
+                  border-left:3px solid {% if call.call_status == 'upcoming' %}#d97706{% else %}#16a34a{% endif %};
                   padding:6px 10px;border-radius:0 4px 4px 0;margin-bottom:4px;font-size:12px;">
         <div style="display:flex;align-items:baseline;flex-wrap:wrap;gap:4px;">
-          <span style="font-weight:600;color:{% if is_upcoming %}#92400e{% else %}#065f46{% endif %};">
+          <span style="font-weight:600;color:{% if call.call_status == 'upcoming' %}#92400e{% else %}#065f46{% endif %};">
             {{ call.title|truncatechars:60 }}
           </span>
-          {% if is_upcoming %}
+          {% if call.call_status == 'upcoming' %}
           <span style="padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;">UPCOMING</span>
           {% else %}
           <span style="padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;background:#d1fae5;color:#065f46;">OPEN</span>
@@ -175,7 +174,7 @@
           {% if call.call_url %}
           <a href="{{ call.call_url }}" target="_blank" rel="noopener"
              style="padding:1px 8px;border-radius:4px;font-size:11px;font-weight:600;
-                    background:{% if is_upcoming %}#d97706{% else %}#16a34a{% endif %};color:#fff;">
+                    background:{% if call.call_status == 'upcoming' %}#d97706{% else %}#16a34a{% endif %};color:#fff;">
             Apply →</a>
           {% elif call.source and call.source.url and call.source.url != 'sonar' %}
           <a href="{{ call.source.url }}" target="_blank" rel="noopener"
@@ -186,7 +185,6 @@
         <div style="color:#555;margin-top:3px;line-height:1.4;">{{ call.description|truncatechars:160 }}</div>
         {% endif %}
       </div>
-      {% endwith %}
       {% endfor %}
 
       <!-- Track record -->
