@@ -49,6 +49,9 @@ _FACETS_FOR_TYPE: dict[str, set[str]] = {
     'program':          {'value_chain', 'technology', 'orbit_regime'},
     'person':           {'research_area'},
     'asset':            {'technology', 'orbit_regime'},
+    # End users: what industry sector are they in, who do they sell to, and what downstream
+    # space service do they consume? Never classify in technology/orbit/maturity — irrelevant.
+    'end_user':         {'adjacent_sector', 'customer_type', 'value_chain'},
 }
 
 _SYSTEM_COMPANY = """\
@@ -76,6 +79,18 @@ Given a space programme profile, classify it under the value_chain, technology,
 and orbit_regime taxonomy facets as applicable.
 Only use node paths from the allowed list. Return JSON: {"classifications": [...]}"""
 
+_SYSTEM_END_USER = """\
+You are a taxonomy classifier for a space-industry knowledge graph.
+Given an end-user profile — a company whose primary business is NOT space but which
+consumes space services or data — classify it across three facets:
+  adjacent_sector : what industry sector is this company in?
+  customer_type   : does it sell to governments, commercial clients, or consumers?
+  value_chain     : which downstream space service does it consume?
+                    (only assign downstream.* nodes — e.g. downstream.earth_observation,
+                     downstream.navigation, downstream.satcom. Do NOT assign upstream or
+                     midstream nodes.)
+Only use node paths from the allowed list. Return JSON: {"classifications": [...]}"""
+
 
 def _system_prompt_for_type(entity_type: str) -> str:
     if entity_type == 'funding_program':
@@ -84,12 +99,15 @@ def _system_prompt_for_type(entity_type: str) -> str:
         return _SYSTEM_PERSON
     if entity_type == 'program':
         return _SYSTEM_PROGRAM
+    if entity_type == 'end_user':
+        return _SYSTEM_END_USER
     return _SYSTEM_COMPANY
 
 
 def _profile_label(entity_type: str) -> str:
     return {
         'funding_program': 'Funding instrument',
+        'end_user': 'End user (space services consumer)',
         'person': 'Person',
         'program': 'Space programme',
         'university': 'University',

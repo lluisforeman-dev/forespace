@@ -38,7 +38,7 @@ Search the web for current, verifiable information and return JSON with THREE se
 ━━ SECTION 1: claims ━━
 Structured key-value facts. For EACH claim:
   subject_mention        - exact entity name
-  subject_type           - company | investor | entity | university | asset | person | facility | event | program | funding_program
+  subject_type           - company | investor | entity | university | asset | person | facility | event | program | funding_program | end_user
   attribute_key          - one of the ALLOWED KEYS listed below (no others)
   value                  - extracted value as string or number, or null
   unit                   - unit of measurement or null
@@ -50,7 +50,7 @@ Structured key-value facts. For EACH claim:
 ━━ SECTION 2: events ━━
 Discrete events in an entity's history. For EACH event:
   subject_mention  - exact entity name (primary subject)
-  subject_type     - company | investor | entity | university | asset | person | facility | program | funding_program
+  subject_type     - company | investor | entity | university | asset | person | facility | program | funding_program | end_user
   event_type       - funding_round | grant_award | grant_call | ipo | spac |
                      debt_financing | convertible | crowdfunding |
                      launch | contract_award | partnership |
@@ -68,7 +68,7 @@ Discrete events in an entity's history. For EACH event:
 ━━ SECTION 3: fragments ━━
 Rich narrative paragraphs about entities. For EACH meaningful piece of intelligence:
   subject_mention       - exact entity name
-  subject_type          - organization | asset | person | facility | program | funding_program
+  subject_type          - organization | asset | person | facility | program | funding_program | end_user
   category              - technical | financial | competitive | regulatory |
                           strategic | operational | people | challenge | research
   text                  - verbatim or close paraphrase of a full paragraph of intelligence
@@ -80,10 +80,10 @@ Explicit relationships between named entities. This is the MOST IMPORTANT sectio
 it builds the knowledge graph connecting organisations, assets, and people.
 For EACH relationship:
   subject_mention  - entity name (who initiates / performs the relationship)
-  subject_type     - company | investor | entity | university | asset | person | facility | program | funding_program
+  subject_type     - company | investor | entity | university | asset | person | facility | program | funding_program | end_user
   predicate        - one of the ALLOWED PREDICATE KEYS listed below (no others)
   object_mention   - entity name (who receives the relationship)
-  object_type      - company | investor | entity | university | asset | person | facility | program | funding_program
+  object_type      - company | investor | entity | university | asset | person | facility | program | funding_program | end_user
   qualifiers       - extra attributes as JSON object, e.g. {"amount_usd": 5000000, "date": "2024-03"}
                      or {} if none. Common qualifier keys: amount_usd, date, stake_pct, round_series,
                      vehicle, orbit, payload_kg, contract_value_usd, role, scope, product, service_type,
@@ -133,6 +133,13 @@ RULES:
 - Always use the full institutional name for government bodies and funding agencies —
   "Government of Catalonia" or "Generalitat de Catalunya" not "Catalonia",
   "European Commission" not "EU", "NASA" not "United States government".
+- Distinguish SPACE COMPANIES from END USERS:
+  entity_type=company: active space industry participant — builds hardware, launches rockets,
+    operates satellites, processes data, provides connectivity. Their primary business IS space.
+  entity_type=end_user: downstream consumer of space services whose primary business is NOT space.
+    Examples: a shipping company using AIS, a bank using satellite imagery for commodity tracking,
+    a farmer using GNSS precision agriculture, a telecom using satellite backhaul, a retailer using
+    weather data. Label these end_user so they are tracked as demand-side market signals.
 - Distinguish INSTITUTION, FUNDING PROGRAMME, and SPACE PROGRAMME:
   entity_type=entity|investor: European Commission, ESA, Generalitat de Catalunya, EIB, Innovate UK, BlackRock
   entity_type=funding_program: Horizon Europe, ESA ARTES, EIC Accelerator, Préstecs ICF, BlackRock Space Fund
@@ -449,7 +456,7 @@ def _is_space_relevant(name: str, entity_type: str = 'company') -> bool:
     """
     if entity_type == 'geography':
         return False  # never auto-research geographic entities
-    if entity_type in ('asset', 'facility', 'event', 'program', 'funding_program'):
+    if entity_type in ('asset', 'facility', 'event', 'program', 'funding_program', 'end_user'):
         return True
     name_lower = name.lower()
     if any(kw in name_lower for kw in _SPACE_KEYWORDS):
@@ -469,6 +476,7 @@ _TYPE_TO_TOPIC = {
     'university': 'company',
     'asset': 'company',
     'funding_program': 'funding_program',
+    'end_user': 'space_angle',   # research only their space touchpoints
     'program': 'question',
     'facility': 'question',
     'person': 'person',

@@ -109,6 +109,7 @@ _VALID_ENTITY_TYPES = {
     'facility', 'asset', 'person',
     'document_node', 'event', 'program',
     'funding_program',  # deployable funding instruments — grants, VC funds, loan programmes
+    'end_user',   # downstream consumers of space services (not space companies themselves)
     'geography',  # countries, regions, cities — relation targets only, never researched
 }
 

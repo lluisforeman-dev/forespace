@@ -16,6 +16,7 @@ class Entity(models.Model):
         ('event', 'Event'),
         ('program', 'Program'),
         ('funding_program', 'Funding Program'),
+        ('end_user', 'End User'),
     ]
     STATUS_CHOICES = [
         ('active', 'Active'),
