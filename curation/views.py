@@ -631,15 +631,56 @@ def funding(request):
     if ftype:
         events_qs = events_qs.filter(event_type=ftype)
 
-    # Open grant calls (grant_call events with date in the future or recent)
+    # Funding programs — program entities with their administrator and open calls
+    from core.models import KnowledgeFragment
+    program_entities = (
+        Entity.objects
+        .filter(entity_type='program', status__in=('active', 'stub'))
+        .order_by('canonical_name')[:60]
+    )
+    # For each program: find administrator, open calls, award count, best fragment
+    programs = []
+    for prog in program_entities:
+        admin_rel = (
+            Relation.objects
+            .filter(predicate='administers', object_id=prog.id, superseded_at__isnull=True)
+            .select_related('subject')
+            .first()
+        )
+        open_calls = (
+            Event.objects
+            .filter(entity=prog, event_type='grant_call')
+            .order_by('date')[:3]
+        )
+        award_count = Event.objects.filter(
+            participants=prog,
+            event_type__in=['grant_award', 'research_grant', 'funding_round'],
+        ).count()
+        fragment = (
+            KnowledgeFragment.objects
+            .filter(entity=prog)
+            .order_by('-confidence')
+            .first()
+        )
+        programs.append({
+            'entity': prog,
+            'administrator': admin_rel.subject if admin_rel else None,
+            'open_calls': list(open_calls),
+            'award_count': award_count,
+            'fragment': fragment,
+        })
+    # Sort: programs with open calls first, then by award count
+    programs.sort(key=lambda p: (-len(p['open_calls']), -p['award_count']))
+
+    # Open grant calls across all programs
     open_calls = (
         Event.objects
         .filter(event_type='grant_call')
         .select_related('entity', 'source')
-        .order_by('date')[:20]
+        .order_by('date')[:30]
     )
 
-    # Top investors by number of investments
+    # Equity investors — with recent deals for context
     top_investors = (
         Relation.objects
         .filter(predicate='invested_in', superseded_at__isnull=True)
@@ -666,6 +707,7 @@ def funding(request):
 
     return render(request, 'curation/funding.html', {
         'events': events_qs[:300],
+        'programs': programs,
         'open_calls': open_calls,
         'top_investors': top_investors_list,
         'counts': counts,
