@@ -1,7 +1,22 @@
 """Taxonomy classification task — §6.
 
 Builds an entity profile from accepted assertions, then asks the LLM to assign
-nodes across all 6 taxonomy facets with weighted membership.
+nodes from the appropriate taxonomy facets for this entity type.
+
+Facet routing per entity type:
+  company / investor / entity / university
+      → value_chain, technology, orbit_regime, customer_type, maturity,
+        research_area, adjacent_sector
+  funding_program
+      → funding_type only  (what KIND of instrument is this?)
+  program
+      → value_chain, technology, orbit_regime  (what kind of space programme?)
+  person
+      → research_area only  (what field do they work in?)
+  asset
+      → technology, orbit_regime
+  facility / geography / document_node / event
+      → skipped (no meaningful taxonomy classification)
 
 Anti-self-confirmation (§9): classification sees the entity's own accepted facts
 (not the graph state of *other* entities), which is acceptable — the LLM is
@@ -23,12 +38,65 @@ from ingest.cost import log_call
 
 logger = logging.getLogger(__name__)
 
+# Taxonomy facets applicable to each entity type.
+# Entity types not listed here are skipped entirely.
+_FACETS_FOR_TYPE: dict[str, set[str]] = {
+    'company':          {'value_chain', 'technology', 'orbit_regime', 'customer_type', 'maturity', 'research_area', 'adjacent_sector'},
+    'investor':         {'value_chain', 'customer_type', 'maturity', 'adjacent_sector'},
+    'entity':           {'value_chain', 'technology', 'orbit_regime', 'customer_type', 'maturity', 'research_area', 'adjacent_sector'},
+    'university':       {'research_area', 'adjacent_sector'},
+    'funding_program':  {'funding_type'},
+    'program':          {'value_chain', 'technology', 'orbit_regime'},
+    'person':           {'research_area'},
+    'asset':            {'technology', 'orbit_regime'},
+}
 
-_SYSTEM = """\
+_SYSTEM_COMPANY = """\
 You are a taxonomy classifier for a space-industry knowledge graph.
 Given a company profile, assign it to nodes in each of the provided taxonomy facets.
 A company can have weighted membership across multiple nodes (weights sum to ~1.0 per facet).
 Only use node paths from the allowed list. Return JSON: {"classifications": [...]}"""
+
+_SYSTEM_FUNDING_PROGRAM = """\
+You are a taxonomy classifier for a space-industry knowledge graph.
+Given a funding instrument profile, classify it under the funding_type taxonomy facet.
+Assign the single most specific node that describes what TYPE of instrument this is
+(e.g. grant.horizon_europe, equity.seed, debt.eib_eif, non_equity.in_kind).
+Return JSON: {"classifications": [...]}"""
+
+_SYSTEM_PERSON = """\
+You are a taxonomy classifier for a space-industry knowledge graph.
+Given a person's profile, classify their primary research or professional area
+under the research_area taxonomy facet.
+Only use node paths from the allowed list. Return JSON: {"classifications": [...]}"""
+
+_SYSTEM_PROGRAM = """\
+You are a taxonomy classifier for a space-industry knowledge graph.
+Given a space programme profile, classify it under the value_chain, technology,
+and orbit_regime taxonomy facets as applicable.
+Only use node paths from the allowed list. Return JSON: {"classifications": [...]}"""
+
+
+def _system_prompt_for_type(entity_type: str) -> str:
+    if entity_type == 'funding_program':
+        return _SYSTEM_FUNDING_PROGRAM
+    if entity_type == 'person':
+        return _SYSTEM_PERSON
+    if entity_type == 'program':
+        return _SYSTEM_PROGRAM
+    return _SYSTEM_COMPANY
+
+
+def _profile_label(entity_type: str) -> str:
+    return {
+        'funding_program': 'Funding instrument',
+        'person': 'Person',
+        'program': 'Space programme',
+        'university': 'University',
+        'investor': 'Investor',
+        'facility': 'Facility',
+        'asset': 'Asset',
+    }.get(entity_type, 'Company')
 
 
 def _build_profile(entity: Entity) -> str:
@@ -39,7 +107,8 @@ def _build_profile(entity: Entity) -> str:
         .select_related('attribute')
         .order_by('attribute_id')
     )
-    lines = [f'Company: {entity.canonical_name}']
+    label = _profile_label(entity.entity_type)
+    lines = [f'{label}: {entity.canonical_name}']
     for a in assertions:
         val = a.value_text or a.value_num or a.value_date or a.value_bool
         if val is not None:
@@ -47,30 +116,36 @@ def _build_profile(entity: Entity) -> str:
     return '\n'.join(lines)
 
 
-def _build_taxonomy_vocab() -> str:
-    """List all active taxonomy nodes for the LLM prompt."""
+def _build_taxonomy_vocab(allowed_facets: set[str]) -> str:
+    """List active taxonomy nodes for the applicable facets only."""
     lines = []
-    for taxonomy in Taxonomy.objects.filter(status='active').prefetch_related('nodes'):
-        lines.append(f'\nFacet: {taxonomy.key} ({taxonomy.key})')
+    for taxonomy in Taxonomy.objects.filter(status='active', key__in=allowed_facets).prefetch_related('nodes'):
+        lines.append(f'\nFacet: {taxonomy.key}')
         for node in taxonomy.nodes.filter(status='active').order_by('path'):
             lines.append(f'  {node.path}: {node.label} — {node.definition[:120]}')
-    return '\n'.join(lines) or '(run seed_taxonomy first)'
+    return '\n'.join(lines) or '(no matching taxonomy nodes)'
 
 
 @shared_task(bind=True, queue='extract', max_retries=2)
 def classify_entity(self, entity_id: str, run_id: str | None = None):
-    """Classify an entity across all taxonomy facets."""
+    """Classify an entity across the taxonomy facets appropriate for its type."""
     try:
         entity = Entity.objects.get(pk=entity_id)
     except Entity.DoesNotExist:
         return
 
-    profile = _build_profile(entity)
-    vocab = _build_taxonomy_vocab()
-    if '(run seed_taxonomy' in vocab:
-        logger.warning('classify_entity: no taxonomy nodes found — run seed_taxonomy first')
+    allowed_facets = _FACETS_FOR_TYPE.get(entity.entity_type)
+    if not allowed_facets:
+        logger.debug('classify_entity %s: skipping entity_type=%s', entity_id, entity.entity_type)
         return
 
+    profile = _build_profile(entity)
+    vocab = _build_taxonomy_vocab(allowed_facets)
+    if '(no matching' in vocab:
+        logger.warning('classify_entity %s: no active taxonomy nodes for facets %s', entity_id, allowed_facets)
+        return
+
+    system_prompt = _system_prompt_for_type(entity.entity_type)
     model = settings.AI_MODEL_FAST
     user_msg = f'{profile}\n\nAllowed taxonomy nodes:\n{vocab}'
 
@@ -78,7 +153,7 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
         resp = get_client().chat.completions.create(
             model=model,
             messages=[
-                {'role': 'system', 'content': _SYSTEM},
+                {'role': 'system', 'content': system_prompt},
                 {'role': 'user', 'content': user_msg},
             ],
             response_format={'type': 'json_object'},
@@ -102,9 +177,9 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
         logger.error('classify_entity %s error: %s', entity_id, exc)
         raise self.retry(exc=exc)
 
-    # Build lookup of valid nodes
+    # Build lookup restricted to the allowed facets
     valid_nodes: dict[tuple[str, str], TaxonomyNode] = {}
-    for node in TaxonomyNode.objects.filter(status='active').select_related('taxonomy'):
+    for node in TaxonomyNode.objects.filter(status='active', taxonomy__key__in=allowed_facets).select_related('taxonomy'):
         valid_nodes[(node.taxonomy.key, node.path)] = node
 
     from core.models import ExtractionRun
@@ -121,7 +196,7 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
                 continue
             node = valid_nodes.get((facet_key, node_path))
             if not node:
-                logger.warning('classify: unknown node %s/%s', facet_key, node_path)
+                logger.warning('classify: unknown node %s/%s for entity_type=%s', facet_key, node_path, entity.entity_type)
                 skipped += 1
                 continue
             conf = conf_map.get(item.get('confidence', 'medium'), 65)
@@ -138,4 +213,4 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
             )
             created += 1
 
-    logger.info('classify_entity %s: %d classifications, %d skipped', entity_id, created, skipped)
+    logger.info('classify_entity %s (%s): %d classifications, %d skipped', entity_id, entity.entity_type, created, skipped)

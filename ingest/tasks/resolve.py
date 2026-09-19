@@ -108,6 +108,7 @@ _VALID_ENTITY_TYPES = {
     'company', 'investor', 'entity', 'university',
     'facility', 'asset', 'person',
     'document_node', 'event', 'program',
+    'funding_program',  # deployable funding instruments — grants, VC funds, loan programmes
     'geography',  # countries, regions, cities — relation targets only, never researched
 }
 

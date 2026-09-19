@@ -219,6 +219,113 @@ ATTRIBUTES = [
         'volatility_days': None,
         'description': 'Amount of a specific grant award received, converted to USD. Record alongside grant_program.',
     },
+    # ── Funding programme instrument ─────────────────────────────────────────
+    # Applied to entity_type='funding_program' — describes the instrument itself.
+    {
+        'key': 'call_deadline',
+        'entity_type': 'funding_program',
+        'label': 'Call Deadline',
+        'datatype': 'date',
+        'cardinality': 'multi',
+        'is_projected': True,
+        'is_promoted': True,
+        'volatility_days': 7,
+        'description': (
+            'Deadline date for the current or next open call. '
+            'If multiple calls are open, extract each deadline separately.'
+        ),
+    },
+    {
+        'key': 'budget_envelope_usd',
+        'entity_type': 'funding_program',
+        'label': 'Budget Envelope (USD)',
+        'datatype': 'money',
+        'unit': 'USD',
+        'cardinality': 'multi',
+        'is_projected': True,
+        'is_promoted': True,
+        'volatility_days': 90,
+        'description': (
+            'Total budget available for a call cycle, cohort, or programme period, converted to USD.'
+        ),
+    },
+    {
+        'key': 'min_award_usd',
+        'entity_type': 'funding_program',
+        'label': 'Minimum Award (USD)',
+        'datatype': 'money',
+        'unit': 'USD',
+        'cardinality': 'single',
+        'is_projected': True,
+        'is_promoted': False,
+        'volatility_days': 180,
+        'description': 'Minimum amount awarded per successful application in a single call, in USD.',
+    },
+    {
+        'key': 'max_award_usd',
+        'entity_type': 'funding_program',
+        'label': 'Maximum Award (USD)',
+        'datatype': 'money',
+        'unit': 'USD',
+        'cardinality': 'single',
+        'is_projected': True,
+        'is_promoted': True,
+        'volatility_days': 180,
+        'description': 'Maximum amount awarded per successful application in a single call, in USD.',
+    },
+    {
+        'key': 'eligibility',
+        'entity_type': 'funding_program',
+        'label': 'Eligibility',
+        'datatype': 'text',
+        'cardinality': 'single',
+        'is_projected': True,
+        'is_promoted': True,
+        'volatility_days': 365,
+        'description': (
+            'Who is eligible to apply: company size (SME, startup, large enterprise), '
+            'legal form (for-profit, non-profit, university), sector, and any other conditions.'
+        ),
+    },
+    {
+        'key': 'geographic_scope',
+        'entity_type': 'funding_program',
+        'label': 'Geographic Scope',
+        'datatype': 'text',
+        'cardinality': 'single',
+        'is_projected': True,
+        'is_promoted': False,
+        'volatility_days': 365,
+        'description': (
+            'Countries or regions where applicants must be based. '
+            'Examples: "EU member states", "UK", "Catalonia", "US".'
+        ),
+    },
+    {
+        'key': 'typical_trl',
+        'entity_type': 'funding_program',
+        'label': 'Typical TRL Range',
+        'datatype': 'text',
+        'cardinality': 'single',
+        'is_projected': True,
+        'is_promoted': False,
+        'volatility_days': 365,
+        'description': (
+            'Required or preferred Technology Readiness Level range for applicants. '
+            'Examples: "TRL 3-5", "TRL 6-8".'
+        ),
+    },
+    {
+        'key': 'next_call_date',
+        'entity_type': 'funding_program',
+        'label': 'Next Call Opening Date',
+        'datatype': 'date',
+        'cardinality': 'single',
+        'is_projected': True,
+        'is_promoted': True,
+        'volatility_days': 30,
+        'description': 'Expected or confirmed date when the next call for applications will open.',
+    },
     # ── Research & academic ──────────────────────────────────────────────────
     {
         'key': 'publication_count',

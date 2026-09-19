@@ -38,7 +38,7 @@ Search the web for current, verifiable information and return JSON with THREE se
 ━━ SECTION 1: claims ━━
 Structured key-value facts. For EACH claim:
   subject_mention        - exact entity name
-  subject_type           - company | investor | entity | university | asset | person | facility | event | program
+  subject_type           - company | investor | entity | university | asset | person | facility | event | program | funding_program
   attribute_key          - one of the ALLOWED KEYS listed below (no others)
   value                  - extracted value as string or number, or null
   unit                   - unit of measurement or null
@@ -50,7 +50,7 @@ Structured key-value facts. For EACH claim:
 ━━ SECTION 2: events ━━
 Discrete events in an entity's history. For EACH event:
   subject_mention  - exact entity name (primary subject)
-  subject_type     - company | investor | entity | university | asset | person | facility | program
+  subject_type     - company | investor | entity | university | asset | person | facility | program | funding_program
   event_type       - funding_round | grant_award | grant_call | ipo | spac |
                      debt_financing | convertible | crowdfunding |
                      launch | contract_award | partnership |
@@ -68,7 +68,7 @@ Discrete events in an entity's history. For EACH event:
 ━━ SECTION 3: fragments ━━
 Rich narrative paragraphs about entities. For EACH meaningful piece of intelligence:
   subject_mention       - exact entity name
-  subject_type          - organization | asset | person | facility | program
+  subject_type          - organization | asset | person | facility | program | funding_program
   category              - technical | financial | competitive | regulatory |
                           strategic | operational | people | challenge | research
   text                  - verbatim or close paraphrase of a full paragraph of intelligence
@@ -80,10 +80,10 @@ Explicit relationships between named entities. This is the MOST IMPORTANT sectio
 it builds the knowledge graph connecting organisations, assets, and people.
 For EACH relationship:
   subject_mention  - entity name (who initiates / performs the relationship)
-  subject_type     - company | investor | entity | university | asset | person | facility | program
+  subject_type     - company | investor | entity | university | asset | person | facility | program | funding_program
   predicate        - one of the ALLOWED PREDICATE KEYS listed below (no others)
   object_mention   - entity name (who receives the relationship)
-  object_type      - company | investor | entity | university | asset | person | facility | program
+  object_type      - company | investor | entity | university | asset | person | facility | program | funding_program
   qualifiers       - extra attributes as JSON object, e.g. {"amount_usd": 5000000, "date": "2024-03"}
                      or {} if none. Common qualifier keys: amount_usd, date, stake_pct, round_series,
                      vehicle, orbit, payload_kg, contract_value_usd, role, scope, product, service_type,
@@ -133,9 +133,13 @@ RULES:
 - Always use the full institutional name for government bodies and funding agencies —
   "Government of Catalonia" or "Generalitat de Catalunya" not "Catalonia",
   "European Commission" not "EU", "NASA" not "United States government".
-- Distinguish the INSTITUTION from its FUNDING PROGRAMME:
-  the Generalitat administers "Préstecs ICF" (a program entity);
-  a company receives funding FROM the programme, not from the geographic region.
+- Distinguish INSTITUTION, FUNDING PROGRAMME, and SPACE PROGRAMME:
+  entity_type=entity|investor: European Commission, ESA, Generalitat de Catalunya, EIB, Innovate UK, BlackRock
+  entity_type=funding_program: Horizon Europe, ESA ARTES, EIC Accelerator, Préstecs ICF, BlackRock Space Fund
+    — a funding_program is a deployable instrument with calls, deadlines, budgets, and eligibility criteria.
+    — a company receives capital FROM a funding_program, not from the institution directly.
+  entity_type=program: Artemis, ISS, SpaceX Rideshare Program, Ariane 6
+    — a program is a space/commercial operational programme, NOT a funding instrument.
 - In claims, only use attribute_key values from the allowed list below.
 - Extract as many events, fragments, and relations as you find — do not summarise.
 - Fragments must be substantive (> 2 sentences). Capture challenges, pivots, tech choices,
@@ -445,7 +449,7 @@ def _is_space_relevant(name: str, entity_type: str = 'company') -> bool:
     """
     if entity_type == 'geography':
         return False  # never auto-research geographic entities
-    if entity_type in ('asset', 'facility', 'event', 'program'):
+    if entity_type in ('asset', 'facility', 'event', 'program', 'funding_program'):
         return True
     name_lower = name.lower()
     if any(kw in name_lower for kw in _SPACE_KEYWORDS):
@@ -464,14 +468,15 @@ _TYPE_TO_TOPIC = {
     'entity': 'company',
     'university': 'company',
     'asset': 'company',
+    'funding_program': 'funding_program',
     'program': 'question',
     'facility': 'question',
-    'person': 'question',
+    'person': 'person',
     'event': 'question',
 }
 
 # topic_types that are valid for ExtractionRun.task naming
-_VALID_TOPIC_TYPES = {'company', 'news', 'question', 'space_angle', 'research', 'funding'}
+_VALID_TOPIC_TYPES = {'company', 'news', 'question', 'space_angle', 'research', 'funding', 'funding_program', 'person'}
 
 
 def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source) -> int:
@@ -816,6 +821,53 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             f'"who received Horizon Europe funding?" independently.\n\n'
             f'Be exhaustive — extract every funding event, grant, and investor relation you find.\n\n'
             f'{_vocab_block()}'
+            f'{_seen_block(seen)}'
+        )
+    elif topic_type == 'funding_program':
+        seen = _seen_urls_for_company(topic)
+        ctx = _entity_context_block(topic)
+        user_msg = (
+            f'Research the space industry funding instrument: "{topic}"\n\n'
+            f'Find ALL of the following — be exhaustive:\n\n'
+            f'1. OPEN CALLS — current open calls with: call ID or reference, deadline date, '
+            f'budget envelope (total available), topic description, and link.\n'
+            f'Use event_type=grant_call with date=deadline. Extract as many open calls as exist.\n\n'
+            f'2. ELIGIBILITY — who can apply: company size (SME, startup, large enterprise, '
+            f'university, research institute), geographic restriction, sector focus, '
+            f'Technology Readiness Level (TRL) requirements.\n\n'
+            f'3. AWARD SIZE — minimum and maximum award per application. Typical ticket size.\n\n'
+            f'4. RECENT AWARDS — who received funding from this instrument in the last 3 years, '
+            f'how much, and for what project or purpose.\n'
+            f'Use event_type=grant_award for each award. Include the recipient as subject_mention.\n\n'
+            f'5. FUTURE CALLS — any announced upcoming calls: expected dates, topics, budgets.\n\n'
+            f'6. ADMINISTRATOR — which institution runs or administers this instrument.\n'
+            f'Extract relation: institution → administers → "{topic}"\n\n'
+            f'7. TRACK RECORD — total capital deployed, number of companies funded, success stories.\n\n'
+            f'{_vocab_block()}'
+            f'{ctx}'
+            f'{_seen_block(seen)}'
+        )
+    elif topic_type == 'person':
+        seen = _seen_urls_for_company(topic)
+        ctx = _entity_context_block(topic)
+        user_msg = (
+            f'Research the following person in the space industry: "{topic}"\n\n'
+            f'Extract a compact, focused profile — do NOT produce a full CV. Focus on:\n\n'
+            f'1. CURRENT ROLE — title and organisation right now.\n'
+            f'2. SPACE CONTRIBUTION — the 2-3 most significant things this person has done '
+            f'in the space industry: programmes led, technologies developed, companies founded, '
+            f'key decisions made. Be specific — include names and numbers where available.\n'
+            f'3. CAREER THREAD — the career arc in 1-2 sentences: where they came from and '
+            f'where they are going. Only include prior roles that are relevant to understanding '
+            f'their space expertise.\n'
+            f'4. RESEARCH — any published papers, patents, or conference presentations '
+            f'directly related to space (IAC, AIAA, IEEE Aerospace, etc.).\n'
+            f'5. RELATIONS — which organisations they have worked for or founded, '
+            f'and which key people they collaborate with.\n\n'
+            f'Do NOT extract: education history, non-space career details, personal information, '
+            f'awards unrelated to space, or generic biographical facts.\n\n'
+            f'{_vocab_block()}'
+            f'{ctx}'
             f'{_seen_block(seen)}'
         )
     else:  # question

@@ -15,6 +15,7 @@ class Entity(models.Model):
         ('document_node', 'Document'),
         ('event', 'Event'),
         ('program', 'Program'),
+        ('funding_program', 'Funding Program'),
     ]
     STATUS_CHOICES = [
         ('active', 'Active'),

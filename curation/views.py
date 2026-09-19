@@ -635,7 +635,7 @@ def funding(request):
     from core.models import KnowledgeFragment
     program_entities = (
         Entity.objects
-        .filter(entity_type='program', status__in=('active', 'stub'))
+        .filter(entity_type='funding_program', status__in=('active', 'stub'))
         .order_by('canonical_name')[:60]
     )
     # For each program: find administrator, open calls, award count, best fragment
