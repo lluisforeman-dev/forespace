@@ -493,6 +493,45 @@ _TYPE_TO_TOPIC = {
 _VALID_TOPIC_TYPES = {'company', 'news', 'question', 'space_angle', 'research', 'funding', 'funding_program', 'person', 'end_user'}
 
 
+def _synthesise_event_description(existing: str, new: str, title: str) -> str:
+    """
+    Merge two descriptions of the same event from different sources into one
+    richer, more complete description using AI_MODEL_FAST.
+    Falls back to the longer description if the LLM call fails.
+    """
+    # Skip synthesis if texts are nearly identical (>85% word overlap)
+    def _word_set(s: str) -> set:
+        return set(s.lower().split())
+    a, b = _word_set(existing), _word_set(new)
+    if a and b:
+        jaccard = len(a & b) / len(a | b)
+        if jaccard > 0.85:
+            return existing if len(existing) >= len(new) else new
+
+    prompt = (
+        f'Two sources describe the same event: "{title}"\n\n'
+        f'Source A: {existing}\n\n'
+        f'Source B: {new}\n\n'
+        f'Synthesise these into one comprehensive description (2-4 sentences) that captures '
+        f'all unique facts and details from both sources. Be concise and factual. '
+        f'Return only the description text, no preamble.'
+    )
+    try:
+        resp = get_client().chat.completions.create(
+            model=settings.AI_MODEL_FAST,
+            messages=[{'role': 'user', 'content': prompt}],
+            max_tokens=300,
+            temperature=0,
+        )
+        log_call('event_synthesis', settings.AI_MODEL_FAST, resp)
+        result = (resp.choices[0].message.content or '').strip()
+        if result:
+            return result
+    except Exception as exc:
+        logger.warning('_synthesise_event_description: %s', exc)
+    return existing if len(existing) >= len(new) else new
+
+
 def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source) -> int:
     """Persist extracted events, resolving participant entity names."""
     valid_types = {t[0] for t in Event.EVENT_TYPES}
@@ -558,11 +597,14 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
                 },
             )
             if not created:
-                # Existing event: upgrade confidence and take the longer description
+                # Existing event: synthesise descriptions from both sources into a
+                # richer, more complete account. Truth is the compound of all sources.
                 update_fields = []
-                if len(description) > len(event_obj.description):
-                    event_obj.description = description
-                    update_fields.append('description')
+                if event_obj.description != description:
+                    merged = _synthesise_event_description(event_obj.description, description, title)
+                    if merged != event_obj.description:
+                        event_obj.description = merged
+                        update_fields.append('description')
                 if confidence > event_obj.confidence:
                     event_obj.confidence = confidence
                     update_fields.append('confidence')
