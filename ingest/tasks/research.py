@@ -133,13 +133,19 @@ RULES:
 - Always use the full institutional name for government bodies and funding agencies —
   "Government of Catalonia" or "Generalitat de Catalunya" not "Catalonia",
   "European Commission" not "EU", "NASA" not "United States government".
-- Distinguish SPACE COMPANIES from END USERS:
-  entity_type=company: active space industry participant — builds hardware, launches rockets,
-    operates satellites, processes data, provides connectivity. Their primary business IS space.
-  entity_type=end_user: downstream consumer of space services whose primary business is NOT space.
-    Examples: a shipping company using AIS, a bank using satellite imagery for commodity tracking,
-    a farmer using GNSS precision agriculture, a telecom using satellite backhaul, a retailer using
-    weather data. Label these end_user so they are tracked as demand-side market signals.
+- Distinguish SPACE COMPANIES from END USERS — default to company/entity when uncertain:
+  entity_type=company : the entity builds hardware, launches rockets, operates satellites,
+    processes satellite data as a product, or provides space-derived connectivity.
+    Its primary mission involves space. Examples: SpaceX, Planet Labs, GMV, Open Cosmos.
+  entity_type=entity  : an institution, agency, or body with a meaningful space role but not
+    purely commercial — government agencies, intergovernmental bodies, research labs, NGOs
+    with a space department. Examples: ESA, NASA, DLR, CNES, Eutelsat.
+  entity_type=end_user: ONLY use this when it is UNAMBIGUOUS that the entity's entire
+    purpose is outside the space industry and space is merely a passive data input.
+    Examples: Open Arms (humanitarian NGO using satellite imagery for sea rescue with zero
+    space staff), a supermarket chain using GPS for fleet logistics.
+  DEFAULT RULE: if there is any doubt, label the entity company or entity — it is better
+  to over-include in the space industry than to incorrectly exclude a space-adjacent actor.
 - Distinguish INSTITUTION, FUNDING PROGRAMME, and SPACE PROGRAMME:
   entity_type=entity|investor: European Commission, ESA, Generalitat de Catalunya, EIB, Innovate UK, BlackRock
   entity_type=funding_program: Horizon Europe, ESA ARTES, EIC Accelerator, Préstecs ICF, BlackRock Space Fund
