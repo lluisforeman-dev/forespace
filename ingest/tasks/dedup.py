@@ -231,6 +231,9 @@ def dedup_sweep(self, min_similarity: float = _DEDUP_TRGM_MIN, dry_run: bool = F
                 )
                 log_call('dedup', settings.AI_MODEL_FAST, resp)
                 raw = (resp.choices[0].message.content or '').strip()
+                if not raw:
+                    skipped_count += 1
+                    continue
                 result = json.loads(raw.replace('True', 'true').replace('False', 'false'))
                 do_merge = bool(result.get('same')) and result.get('confidence') in ('high', 'medium')
                 confidence = result.get('confidence', 'low')
