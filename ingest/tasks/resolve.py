@@ -381,7 +381,7 @@ def _llm_known_entity(mention: str, entity_type: str) -> tuple[str | None, str |
         result = json.loads(raw)
 
         canonical = result.get('canonical')
-        if not canonical or result.get('confidence') != 'high':
+        if not canonical or result.get('confidence') not in ('high', 'medium'):
             return None, None
 
         # If canonical is the same as the mention, no new information
@@ -445,4 +445,96 @@ def _create_stub(
         )
 
     logger.info('Entity created: "%s" → %s', mention, entity.id)
+
+    # Queue alias enrichment for all resolvable entity types.
+    # Geography and document_node are skipped — no meaningful aliases.
+    if entity_type not in ('geography', 'document_node', 'event'):
+        enrich_entity_aliases.apply_async(
+            args=[str(entity.id), mention, entity_type],
+            countdown=5,  # slight delay so the stub is committed
+        )
+
     return str(entity.id)
+
+
+# ── Alias enrichment ────────────────────────────────────────────────────────
+
+_ALIAS_SYSTEM = """\
+You are an alias generator for a space-industry knowledge graph.
+Given an organisation's canonical name, list every alternative name it is genuinely known by.
+
+Include ALL of the following that apply:
+- Legal / registered name with corporate suffix (e.g. "Sateliot" → "Satel IoT SL")
+- Brand or trading name if different from legal name
+- Acronym or initialisation (e.g. "IEEC", "ESA", "GMV")
+- Names in other languages (English, Spanish, Catalan, French, German…)
+- Former names or name before rebranding
+- Common shortened or colloquial forms
+
+Rules:
+- Only include names you are highly confident are real alternative names for this specific entity.
+- Do not invent names. Return an empty list if you are uncertain.
+- Do not include generic descriptions (e.g. "the space agency").
+- Limit to 8 aliases maximum.
+
+Return JSON only: {"aliases": ["name1", "name2", ...]}"""
+
+
+def _fetch_aliases(canonical_name: str, entity_type: str) -> list[str]:
+    """Ask the LLM for known alternative names for this entity."""
+    try:
+        from ingest.ai import get_client
+        from ingest.cost import log_call
+        from ingest.prompts import get_prompt
+        client = get_client()
+        resp = client.chat.completions.create(
+            model=settings.AI_MODEL_FAST,
+            messages=[
+                {'role': 'system', 'content': get_prompt('alias_enrichment', _ALIAS_SYSTEM)},
+                {'role': 'user', 'content': f'Organisation: "{canonical_name}" (type: {entity_type})'},
+            ],
+            response_format={'type': 'json_object'},
+            max_tokens=300,
+            temperature=0,
+        )
+        log_call('alias_enrichment', settings.AI_MODEL_FAST, resp)
+        raw = (resp.choices[0].message.content or '').strip()
+        if not raw:
+            return []
+        data = json.loads(raw)
+        return [str(a).strip() for a in data.get('aliases', []) if a and str(a).strip()]
+    except Exception as exc:
+        logger.warning('_fetch_aliases "%s": %s', canonical_name, exc)
+        return []
+
+
+from celery import shared_task as _shared_task
+
+
+@_shared_task(bind=True, queue='extract', max_retries=1, default_retry_delay=60)
+def enrich_entity_aliases(self, entity_id: str, canonical_name: str, entity_type: str):
+    """Generate and register alternative names for a newly created entity."""
+    aliases = _fetch_aliases(canonical_name, entity_type)
+    if not aliases:
+        return
+
+    registered = 0
+    for alias in aliases:
+        norm = normalize_name(alias)
+        if not norm or norm == normalize_name(canonical_name):
+            continue
+        # Skip if already registered for this or any other entity (avoid cross-entity alias collision)
+        if EntityAlias.objects.filter(alias_norm=norm).exists():
+            continue
+        try:
+            EntityAlias.objects.create(
+                entity_id=entity_id,
+                alias=alias,
+                alias_norm=norm,
+                alias_kind='abbrev',
+            )
+            registered += 1
+        except Exception:
+            pass  # unique constraint race — harmless
+
+    logger.info('enrich_entity_aliases %s ("%s"): %d aliases registered', entity_id, canonical_name, registered)
