@@ -823,3 +823,36 @@ def run_dedup_sweep(request):
         mode = 'dry run' if dry_run else 'live'
         messages.success(request, f'Deduplication sweep queued ({mode}). Check worker logs for results.')
     return HttpResponseRedirect(reverse('curation:dashboard'))
+
+
+@staff_member_required
+def entity_search(request):
+    """JSON autocomplete endpoint — returns entities matching the query string."""
+    import json as _json
+    from django.http import JsonResponse
+    from django.db.models import Q
+    q = request.GET.get('q', '').strip()
+    if len(q) < 2:
+        return JsonResponse({'results': []})
+    qs = (
+        Entity.objects
+        .filter(
+            Q(canonical_name__icontains=q) | Q(aliases__alias__icontains=q)
+        )
+        .exclude(status='merged')
+        .exclude(entity_type='geography')
+        .distinct()
+        .only('id', 'canonical_name', 'entity_type', 'status')
+        [:12]
+    )
+    results = [
+        {
+            'id': str(e.id),
+            'name': e.canonical_name,
+            'type': e.entity_type,
+            'status': e.status,
+            'url': reverse('curation:entity_profile', args=[e.id]),
+        }
+        for e in qs
+    ]
+    return JsonResponse({'results': results})

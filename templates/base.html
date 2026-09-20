@@ -59,6 +59,31 @@
 
     .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+
+    /* Nav search */
+    .nav-search { position: relative; }
+    .nav-search input {
+      width: 220px; padding: 5px 10px; border-radius: 4px; border: none;
+      background: #2d2d5e; color: #fff; font-size: 12px; outline: none;
+      margin-bottom: 0;
+    }
+    .nav-search input::placeholder { color: #888; }
+    .nav-search input:focus { background: #3a3a6e; box-shadow: none; border: none; }
+    .nav-search-dropdown {
+      display: none; position: absolute; top: calc(100% + 6px); left: 0;
+      width: 320px; background: #fff; border: 1px solid #ddd; border-radius: 6px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.15); z-index: 1000; max-height: 360px; overflow-y: auto;
+    }
+    .nav-search-dropdown.open { display: block; }
+    .nav-search-result {
+      display: block; padding: 9px 14px; text-decoration: none; color: #222;
+      border-bottom: 1px solid #f0f0f0; cursor: pointer;
+    }
+    .nav-search-result:last-child { border-bottom: none; }
+    .nav-search-result:hover, .nav-search-result.active { background: #f0f4ff; }
+    .nav-search-result .name { font-size: 13px; font-weight: 600; color: #1a1a2e; }
+    .nav-search-result .meta { font-size: 11px; color: #888; margin-top: 1px; }
+    .nav-search-empty { padding: 10px 14px; font-size: 12px; color: #aaa; }
   </style>
 </head>
 <body>
@@ -73,9 +98,76 @@
   <a href="{% url 'curation:research' %}" style="color:#666;font-size:12px">Pipeline</a>
   <a href="{% url 'curation:prompts_list' %}" style="color:#666;font-size:12px">Prompts</a>
   <span class="spacer"></span>
+  <div class="nav-search" id="navSearch">
+    <input type="text" id="navSearchInput" placeholder="Search entities…" autocomplete="off">
+    <div class="nav-search-dropdown" id="navSearchDropdown"></div>
+  </div>
   <span class="user">{{ user.username }}</span>
   <a href="{% url 'logout' %}">Logout</a>
 </nav>
+<script>
+(function () {
+  const input = document.getElementById('navSearchInput');
+  const dropdown = document.getElementById('navSearchDropdown');
+  const searchUrl = '{% url "curation:entity_search" %}';
+  let timer, activeIdx = -1;
+
+  function renderResults(results) {
+    activeIdx = -1;
+    if (!results.length) {
+      dropdown.innerHTML = '<div class="nav-search-empty">No results</div>';
+    } else {
+      dropdown.innerHTML = results.map((r, i) =>
+        `<a class="nav-search-result" href="${r.url}" data-idx="${i}">
+          <div class="name">${r.name}</div>
+          <div class="meta">${r.type}${r.status !== 'active' ? ' · ' + r.status : ''}</div>
+        </a>`
+      ).join('');
+    }
+    dropdown.classList.add('open');
+  }
+
+  function close() {
+    dropdown.classList.remove('open');
+    activeIdx = -1;
+  }
+
+  input.addEventListener('input', function () {
+    clearTimeout(timer);
+    const q = this.value.trim();
+    if (q.length < 2) { close(); return; }
+    timer = setTimeout(() => {
+      fetch(`${searchUrl}?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(data => renderResults(data.results))
+        .catch(() => close());
+    }, 150);
+  });
+
+  input.addEventListener('keydown', function (e) {
+    const items = dropdown.querySelectorAll('.nav-search-result');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIdx = Math.min(activeIdx + 1, items.length - 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIdx = Math.max(activeIdx - 1, 0);
+    } else if (e.key === 'Enter' && activeIdx >= 0) {
+      e.preventDefault();
+      items[activeIdx].click();
+      return;
+    } else if (e.key === 'Escape') {
+      close(); return;
+    } else { return; }
+    items.forEach((el, i) => el.classList.toggle('active', i === activeIdx));
+    if (items[activeIdx]) items[activeIdx].scrollIntoView({block: 'nearest'});
+  });
+
+  document.addEventListener('click', function (e) {
+    if (!document.getElementById('navSearch').contains(e.target)) close();
+  });
+})();
+</script>
 {% endif %}
 <div class="container">
   {% if messages %}
