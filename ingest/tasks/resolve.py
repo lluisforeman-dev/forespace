@@ -114,6 +114,36 @@ _VALID_ENTITY_TYPES = {
     'geography',  # countries, regions, cities — relation targets only, never researched
 }
 
+# Legal company suffixes that indicate a specific registered entity the LLM is unlikely to know.
+# Subset of core.normalize._SUFFIXES — org-type words excluded intentionally
+# (we DO want L5 for "European Space Agency" even though "agency" is a suffix).
+_L5_LEGAL_SUFFIXES = {
+    'inc', 'llc', 'ltd', 'corp', 'gmbh', 'sa', 'sas', 'bv', 'ag', 'plc',
+    'sl', 'slu', 'spa', 'nv', 'oy', 'ab', 'as', 'aps',
+}
+
+
+def _should_call_l5(mention: str) -> bool:
+    """Return True if L5 (world-knowledge LLM lookup) is worth attempting.
+
+    L5 is skipped when the mention is clearly a specific registered legal entity
+    that the LLM is unlikely to know — identified by a legal company suffix.
+    L5 is always attempted for acronyms (short) and non-ASCII names (language variants)
+    because those are exactly the cases L5 is designed for.
+    """
+    # Short mention → likely acronym (ESA, IEEC, GMV, JPL) — L5 excels here
+    stripped = mention.replace(' ', '').replace('.', '')
+    if len(stripped) <= 6:
+        return True
+    # Non-ASCII → language variant ("Institut d'Estudis…") — L5 provides English canonical
+    if not stripped.isascii():
+        return True
+    # Ends with a legal company suffix → specific registered entity, LLM unlikely to know it
+    last_token = mention.strip().split()[-1].lower().rstrip('.')
+    if last_token in _L5_LEGAL_SUFFIXES:
+        return False
+    return True
+
 
 def resolve_mention(
     mention: str,
@@ -185,8 +215,11 @@ def resolve_mention(
 
     # Level 5 — LLM world-knowledge canonical lookup
     # Handles cases where string similarity is useless (acronyms, legal name variants)
-    # Skip for persons — their canonical name is their own name, not their employer
-    canonical, found_id = _llm_known_entity(mention, entity_type, subject_context) if entity_type != 'person' else (None, None)
+    # Skip for persons, and skip when heuristic says LLM is unlikely to know the entity.
+    if entity_type != 'person' and _should_call_l5(mention):
+        canonical, found_id = _llm_known_entity(mention, entity_type, subject_context)
+    else:
+        canonical, found_id = None, None
     if found_id:
         _add_alias(found_id, mention, norm, document_id)
         logger.info('L5 match: "%s" → %s (canonical: %s)', mention, found_id, canonical)
