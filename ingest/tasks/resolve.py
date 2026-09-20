@@ -205,12 +205,14 @@ def resolve_mention(
         best_entity_id, best_alias_norm, best_sim = rows[0]
         if best_sim >= _TRGM_THRESHOLD:
             logger.info('L3 match: "%s" → %s (sim=%.2f)', mention, best_entity_id, best_sim)
+            _add_alias(str(best_entity_id), mention, norm, document_id)
             return str(best_entity_id)
 
         # Level 4 — LLM disambiguation for borderline candidates
         resolved = _llm_disambiguate(mention, entity_type, rows, subject_context)
         if resolved:
             logger.info('L4 LLM match: "%s" → %s', mention, resolved)
+            _add_alias(resolved, mention, norm, document_id)
             return resolved
 
     # Level 5 — LLM world-knowledge canonical lookup
