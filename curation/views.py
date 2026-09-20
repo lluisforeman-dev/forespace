@@ -814,6 +814,38 @@ def prompt_edit(request, key):
 
 
 @staff_member_required
+def research_all(request):
+    """Queue research_topic for every entity that has no events yet — same pipeline as manual research."""
+    if request.method == 'POST':
+        from ingest.tasks.research import research_topic
+        _TYPE_TO_TOPIC = {
+            'company': 'company', 'investor': 'company', 'entity': 'company',
+            'university': 'company', 'asset': 'company',
+            'funding_program': 'funding_program', 'end_user': 'end_user',
+            'program': 'question', 'facility': 'question',
+            'person': 'person', 'event': 'question',
+        }
+        no_events = (
+            Entity.objects
+            .exclude(status='merged')
+            .exclude(entity_type='geography')
+            .exclude(id__in=Event.objects.values('entity_id'))
+            .only('id', 'canonical_name', 'entity_type')
+        )
+        queued = 0
+        for i, entity in enumerate(no_events):
+            topic_type = _TYPE_TO_TOPIC.get(entity.entity_type, 'company')
+            research_topic.apply_async(
+                args=[entity.canonical_name, topic_type],
+                kwargs={'cascade_depth': 0},
+                countdown=60 + i * 30,
+            )
+            queued += 1
+        messages.success(request, f'Queued research for {queued} entities — full pipeline will run for each.')
+    return HttpResponseRedirect(reverse('curation:dashboard'))
+
+
+@staff_member_required
 def summarise_all(request):
     """Queue synthesise_entity_summary for every entity that has no summary yet."""
     if request.method == 'POST':
