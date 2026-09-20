@@ -184,7 +184,8 @@ def extract_document(self, document_id: str):
             # expanded form; then register the acronym as an alias so future
             # mentions of the short form hit Level-2 exact match.
             lookup_name = claim.subject_mention_full or claim.subject_mention
-            entity_id = resolve_mention(lookup_name, document_id=document_id)
+            doc_ctx = ' | '.join(filter(None, [doc.title, doc.source.name]))
+            entity_id = resolve_mention(lookup_name, document_id=document_id, subject_context=doc_ctx)
             if (
                 claim.subject_mention_full
                 and claim.subject_mention != claim.subject_mention_full

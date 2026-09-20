@@ -119,8 +119,14 @@ def resolve_mention(
     mention: str,
     document_id: str | None = None,
     entity_type: str = 'company',
+    subject_context: str = '',
 ) -> str:
-    """Resolve a surface-form mention to an entity UUID. Creates a stub if needed."""
+    """Resolve a surface-form mention to an entity UUID. Creates a stub if needed.
+
+    subject_context: optional hint about the document's primary subject, e.g.
+        "Researching: SpaceX (company)" — passed to L4/L5 LLM prompts to help
+        disambiguate mentions that share an acronym or name across domains.
+    """
     if entity_type not in _VALID_ENTITY_TYPES:
         entity_type = 'company'
     norm = normalize_name(mention)
@@ -172,7 +178,7 @@ def resolve_mention(
             return str(best_entity_id)
 
         # Level 4 — LLM disambiguation for borderline candidates
-        resolved = _llm_disambiguate(mention, entity_type, rows)
+        resolved = _llm_disambiguate(mention, entity_type, rows, subject_context)
         if resolved:
             logger.info('L4 LLM match: "%s" → %s', mention, resolved)
             return resolved
@@ -180,7 +186,7 @@ def resolve_mention(
     # Level 5 — LLM world-knowledge canonical lookup
     # Handles cases where string similarity is useless (acronyms, legal name variants)
     # Skip for persons — their canonical name is their own name, not their employer
-    canonical, found_id = _llm_known_entity(mention, entity_type) if entity_type != 'person' else (None, None)
+    canonical, found_id = _llm_known_entity(mention, entity_type, subject_context) if entity_type != 'person' else (None, None)
     if found_id:
         _add_alias(found_id, mention, norm, document_id)
         logger.info('L5 match: "%s" → %s (canonical: %s)', mention, found_id, canonical)
@@ -238,11 +244,12 @@ def _entity_context_for_resolution(entity_id: str) -> str:
     return '\n'.join(lines)
 
 
-def _llm_disambiguate(mention: str, mention_type: str, candidates: list) -> str | None:
+def _llm_disambiguate(mention: str, mention_type: str, candidates: list, subject_context: str = '') -> str | None:
     """Ask the LLM whether any borderline trigram candidate matches the mention.
 
     For each candidate, pulls knowledge context from the DB and passes it to the
     LLM so it can compare facts, not just strings.
+    subject_context provides the primary subject being researched in the source document.
     """
     try:
         from ingest.ai import get_client
@@ -267,6 +274,8 @@ def _llm_disambiguate(mention: str, mention_type: str, candidates: list) -> str 
                     mention_type=mention_type,
                     candidate=candidate_name,
                 )
+            if subject_context:
+                user_msg += f'\n\nDocument context: {subject_context}'
 
             resp = client.chat.completions.create(
                 model=settings.AI_MODEL_FAST,
@@ -348,26 +357,29 @@ def _add_alias(entity_id: str, surface_form: str, norm: str, document_id: str | 
     )
 
 
-def _llm_known_entity(mention: str, entity_type: str) -> tuple[str | None, str | None]:
+def _llm_known_entity(mention: str, entity_type: str, subject_context: str = '') -> tuple[str | None, str | None]:
     """L5 — ask the LLM for the canonical name using world knowledge.
 
     Returns (canonical_name, entity_id):
     - entity_id set → canonical found in DB, merge into it
     - canonical_name set, entity_id None → use canonical as stub name
     - both None → LLM doesn't recognise the mention
+    subject_context provides the primary subject being researched in the source document.
     """
     try:
         from ingest.ai import get_client
         from ingest.cost import log_call
         client = get_client()
 
+        user_content = _LLM_CANONICAL_USER.format(mention=mention, entity_type=entity_type)
+        if subject_context:
+            user_content += f'\n\nDocument context: {subject_context}'
+
         resp = client.chat.completions.create(
             model=settings.AI_MODEL_FAST,
             messages=[
                 {'role': 'system', 'content': _LLM_RESOLVE_SYSTEM},
-                {'role': 'user', 'content': _LLM_CANONICAL_USER.format(
-                    mention=mention, entity_type=entity_type,
-                )},
+                {'role': 'user', 'content': user_content},
             ],
             response_format={'type': 'json_object'},
             max_tokens=80,

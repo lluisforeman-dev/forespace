@@ -573,7 +573,7 @@ def _is_same_story(desc_a: str, desc_b: str, title_a: str, title_b: str) -> bool
         return False
 
 
-def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source) -> int:
+def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source, subject_context: str = '') -> int:
     """Persist extracted events, resolving participant entity names."""
     valid_types = {t[0] for t in Event.EVENT_TYPES}
     valid_sig = {s[0] for s in Event.SIGNIFICANCE}
@@ -593,7 +593,7 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
         entity_id = name_to_id.get(mention)
         if not entity_id:
             try:
-                entity_id = resolve_mention(mention, document_id=str(fallback_doc.id), entity_type=subject_type)
+                entity_id = resolve_mention(mention, document_id=str(fallback_doc.id), entity_type=subject_type, subject_context=subject_context)
             except Exception:
                 continue
 
@@ -697,7 +697,7 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
                 pid = name_to_id.get(pname)
                 if not pid:
                     try:
-                        pid = resolve_mention(pname, document_id=str(fallback_doc.id), entity_type=ptype)
+                        pid = resolve_mention(pname, document_id=str(fallback_doc.id), entity_type=ptype, subject_context=subject_context)
                     except Exception:
                         continue
                 if pid != entity_id:
@@ -709,7 +709,7 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
     return stored
 
 
-def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source) -> int:
+def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source, subject_context: str = '') -> int:
     """Persist knowledge fragments."""
     valid_cats = {c[0] for c in KnowledgeFragment.CATEGORIES}
     stored = 0
@@ -727,7 +727,7 @@ def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, 
         entity_id = name_to_id.get(mention)
         if not entity_id:
             try:
-                entity_id = resolve_mention(mention, document_id=str(fallback_doc.id), entity_type=subject_type)
+                entity_id = resolve_mention(mention, document_id=str(fallback_doc.id), entity_type=subject_type, subject_context=subject_context)
             except Exception:
                 continue
 
@@ -756,7 +756,7 @@ def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, 
     return stored
 
 
-def _store_relations(relations: list, fallback_doc: Document, sonar_source: Source) -> int:
+def _store_relations(relations: list, fallback_doc: Document, sonar_source: Source, subject_context: str = '') -> int:
     """Persist inline-extracted relations from Sonar output."""
     valid_predicates = {p.key for p in PredicateDef.objects.all()}
     if not valid_predicates:
@@ -795,10 +795,10 @@ def _store_relations(relations: list, fallback_doc: Document, sonar_source: Sour
         try:
             with transaction.atomic():
                 subject_id = resolve_mention(
-                    subject_mention, document_id=str(fallback_doc.id), entity_type=subject_type
+                    subject_mention, document_id=str(fallback_doc.id), entity_type=subject_type, subject_context=subject_context
                 )
                 object_id = resolve_mention(
-                    object_mention, document_id=str(fallback_doc.id), entity_type=object_type
+                    object_mention, document_id=str(fallback_doc.id), entity_type=object_type, subject_context=subject_context
                 )
 
                 existing = Relation.objects.filter(
@@ -1155,6 +1155,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
                     mention,
                     document_id=str(doc.id),
                     entity_type=entity_type_hint,
+                    subject_context=f'Researching: {topic} ({topic_type})',
                 )
                 a = Assertion.objects.create(
                     entity_id=entity_id,
@@ -1191,14 +1192,16 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
     }
     name_to_id = {v: k for k, v in entity_name_map.items()}
 
+    _subject_ctx = f'Researching: {topic} ({topic_type})'
+
     # ── Store events ──────────────────────────────────────────────────────
-    events_stored = _store_events(events, name_to_id, doc, source)
+    events_stored = _store_events(events, name_to_id, doc, source, subject_context=_subject_ctx)
 
     # ── Store fragments ───────────────────────────────────────────────────
-    fragments_stored = _store_fragments(fragments, name_to_id, doc, source)
+    fragments_stored = _store_fragments(fragments, name_to_id, doc, source, subject_context=_subject_ctx)
 
     # ── Store relations (inline — Sonar had full web context) ─────────────
-    relations_stored = _store_relations(relations, doc, source)
+    relations_stored = _store_relations(relations, doc, source, subject_context=_subject_ctx)
 
     # ── Finalise run ──────────────────────────────────────────────────────
     run.status = 'completed'
