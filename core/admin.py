@@ -5,6 +5,7 @@ from .models import (
     AttributeDef, PredicateDef, Assertion, Conflict, Relation,
     Taxonomy, TaxonomyNode, Classification,
     LLMCall, ScheduledSource,
+    PromptTemplate,
 )
 
 
@@ -156,6 +157,21 @@ class LLMCallAdmin(admin.ModelAdmin):
     readonly_fields = ['called_at', 'cost_usd', 'tokens_in', 'tokens_out']
     raw_id_fields = ['run', 'entity']
     date_hierarchy = 'called_at'
+
+
+@admin.register(PromptTemplate)
+class PromptTemplateAdmin(admin.ModelAdmin):
+    list_display = ['key', 'label', 'version', 'is_active', 'created_at']
+    list_filter = ['is_active', 'key']
+    search_fields = ['key', 'label', 'system_prompt']
+    readonly_fields = ['created_at', 'version']
+
+    actions = ['activate_selected']
+
+    @admin.action(description='Activate selected prompt version')
+    def activate_selected(self, request, queryset):
+        for pt in queryset:
+            pt.activate()
 
 
 @admin.register(ScheduledSource)

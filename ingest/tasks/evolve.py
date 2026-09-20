@@ -20,6 +20,7 @@ from django.utils import timezone
 from core.models import Assertion, Entity, Taxonomy, TaxonomyNode
 from ingest.ai import get_client
 from ingest.cost import log_call
+from ingest.prompts import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +160,7 @@ def evolve_taxonomy(self, entity_ids: list[str] | None = None):
         resp = get_client().chat.completions.create(
             model=model,
             messages=[
-                {'role': 'system', 'content': _SYSTEM},
+                {'role': 'system', 'content': get_prompt('evolve_taxonomy', _SYSTEM)},
                 {'role': 'user', 'content': user_msg},
             ],
             response_format={'type': 'json_object'},

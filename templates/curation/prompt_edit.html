@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Edit Prompt — {{ prompt.label }} — ForeSpace{% endblock %}
+{% block content %}
+
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;">
+  <a href="{% url 'curation:prompts_list' %}" style="font-size:13px;color:#888;">← Prompts</a>
+</div>
+
+<h1 style="font-size:20px;font-weight:700;color:#1a1a2e;margin-bottom:4px;">{{ prompt.label }}</h1>
+<p style="font-size:12px;color:#888;margin-bottom:20px;">
+  Key: <code style="background:#f3f4f6;padding:1px 5px;border-radius:3px;">{{ prompt.key }}</code>
+  &nbsp;·&nbsp; Currently active: v{{ prompt.version }}
+  {% if prompt.description %}&nbsp;·&nbsp; {{ prompt.description }}{% endif %}
+</p>
+
+<div class="grid2" style="grid-template-columns:2fr 1fr;align-items:start;">
+
+<!-- Edit form -->
+<div>
+  <form method="post">
+    {% csrf_token %}
+    <div class="card">
+      <h2>System Prompt</h2>
+      <label for="system_prompt">Edit the prompt text below. Save to activate a new version.</label>
+      <textarea id="system_prompt" name="system_prompt"
+        style="width:100%;height:480px;font-family:monospace;font-size:12px;line-height:1.5;
+               padding:10px;border:1px solid #ccc;border-radius:4px;resize:vertical;margin-bottom:12px;"
+      >{{ prompt.system_prompt }}</textarea>
+
+      <label for="notes">Notes (what changed and why)</label>
+      <input type="text" id="notes" name="notes" placeholder="e.g. Added clearer end_user examples" style="margin-bottom:14px;">
+
+      <div style="display:flex;gap:10px;align-items:center;">
+        <button type="submit" class="btn btn-primary">Save &amp; Activate v{{ prompt.version|add:1 }}</button>
+        <a href="{% url 'curation:prompts_list' %}" style="font-size:13px;color:#888;">Cancel</a>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- Version history -->
+<div>
+  <div class="card">
+    <h2>Version History</h2>
+    {% for h in history %}
+    <div style="padding:10px 0;border-bottom:1px solid #eee;{% if forloop.last %}border-bottom:none;{% endif %}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+        <span style="font-weight:600;font-size:13px;">v{{ h.version }}</span>
+        {% if h.is_active %}
+          <span style="background:#d1fae5;color:#065f46;padding:1px 7px;border-radius:8px;font-size:10px;font-weight:700;">ACTIVE</span>
+        {% endif %}
+        <span style="font-size:11px;color:#aaa;">{{ h.created_at|date:"d M Y H:i" }}</span>
+      </div>
+      {% if h.notes %}
+      <div style="font-size:12px;color:#666;">{{ h.notes }}</div>
+      {% else %}
+      <div style="font-size:12px;color:#bbb;font-style:italic;">No notes</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+</div>
+
+{% endblock %}

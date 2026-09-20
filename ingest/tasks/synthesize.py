@@ -20,6 +20,7 @@ from psycopg2.extras import DateTimeTZRange
 from core.models import Assertion, Document, Source
 from ingest.ai import get_client
 from ingest.cost import log_call
+from ingest.prompts import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ def synthesize_conflict(self, entity_id: str, attribute_key: str, assertion_ids:
         resp = get_client().chat.completions.create(
             model=model,
             messages=[
-                {'role': 'system', 'content': _SYSTEM},
+                {'role': 'system', 'content': get_prompt('synthesize_conflict', _SYSTEM)},
                 {'role': 'user', 'content': user_msg},
             ],
             max_tokens=400,

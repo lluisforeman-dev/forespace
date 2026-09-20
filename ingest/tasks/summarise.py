@@ -14,6 +14,7 @@ from django.conf import settings
 from core.models import EntitySummary, Event, KnowledgeFragment
 from ingest.ai import get_client
 from ingest.cost import log_call
+from ingest.prompts import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,7 @@ def synthesise_entity_summary(self, entity_id: str):
         resp = get_client().chat.completions.create(
             model=model,
             messages=[
-                {'role': 'system', 'content': _SYSTEM},
+                {'role': 'system', 'content': get_prompt('summarise_entity', _SYSTEM)},
                 {'role': 'user', 'content': user_msg},
             ],
             max_tokens=6000,

@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from core.models import Document, Entity, PredicateDef, Relation
 from ingest.ai import get_client
 from ingest.cost import log_call
+from ingest.prompts import get_prompt
 from ingest.tasks.resolve import resolve_mention
 
 logger = logging.getLogger(__name__)
@@ -109,7 +110,7 @@ def extract_relations(self, document_id: str):
         resp = get_client().chat.completions.create(
             model=model,
             messages=[
-                {'role': 'system', 'content': _SYSTEM},
+                {'role': 'system', 'content': get_prompt('relate_document', _SYSTEM)},
                 {'role': 'user', 'content': user_msg},
             ],
             response_format={'type': 'json_object'},
@@ -211,7 +212,7 @@ def extract_relations_sonar(self, document_id: str, entity_names: list[str]):
         resp = get_client().chat.completions.create(
             model=model,
             messages=[
-                {'role': 'system', 'content': _SYSTEM_SONAR},
+                {'role': 'system', 'content': get_prompt('relate_sonar', _SYSTEM_SONAR)},
                 {'role': 'user', 'content': user_msg},
             ],
             response_format={'type': 'json_object'},

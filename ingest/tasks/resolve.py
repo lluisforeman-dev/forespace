@@ -19,6 +19,7 @@ from django.utils.text import slugify
 
 from core.models import Entity, EntityAlias
 from core.normalize import normalize_name
+from ingest.prompts import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -270,7 +271,7 @@ def _llm_disambiguate(mention: str, mention_type: str, candidates: list) -> str 
             resp = client.chat.completions.create(
                 model=settings.AI_MODEL_FAST,
                 messages=[
-                    {'role': 'system', 'content': _LLM_RESOLVE_SYSTEM},
+                    {'role': 'system', 'content': get_prompt('resolve_entity', _LLM_RESOLVE_SYSTEM)},
                     {'role': 'user', 'content': user_msg},
                 ],
                 response_format={'type': 'json_object'},

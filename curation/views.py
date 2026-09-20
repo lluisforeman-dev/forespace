@@ -13,7 +13,7 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 
-from core.models import Assertion, Classification, Entity, EntitySummary, Event, KnowledgeFragment, Relation, Source, ScheduledSource, TaxonomyNode
+from core.models import Assertion, Classification, Entity, EntitySummary, Event, KnowledgeFragment, PromptTemplate, Relation, Source, ScheduledSource, TaxonomyNode
 from ingest.tasks.analytics import get_snapshot
 
 
@@ -766,3 +766,48 @@ def funding(request):
         'ftype': ftype,
         'title': 'Funding Intelligence',
     })
+
+
+@staff_member_required
+def prompts_list(request):
+    """List all active prompt templates."""
+    prompts = PromptTemplate.objects.filter(is_active=True).order_by('key')
+    return render(request, 'curation/prompts.html', {
+        'prompts': prompts,
+        'title': 'Prompt Templates',
+    })
+
+
+@staff_member_required
+def prompt_edit(request, key):
+    """Edit a prompt template — creates a new version, activates it."""
+    prompt = get_object_or_404(PromptTemplate, key=key, is_active=True)
+    history = PromptTemplate.objects.filter(key=key).order_by('-version')[:10]
+
+    if request.method == 'POST':
+        new_text = request.POST.get('system_prompt', '').strip()
+        notes = request.POST.get('notes', '').strip()
+        if not new_text:
+            messages.error(request, 'Prompt text cannot be empty.')
+        elif new_text == prompt.system_prompt:
+            messages.info(request, 'No changes detected.')
+        else:
+            new_version = PromptTemplate.objects.create(
+                key=key,
+                label=prompt.label,
+                description=prompt.description,
+                system_prompt=new_text,
+                version=prompt.version + 1,
+                is_active=False,
+                notes=notes,
+            )
+            new_version.activate()
+            messages.success(request, f'Prompt "{key}" updated to v{new_version.version}.')
+            return HttpResponseRedirect(reverse('curation:prompts_list'))
+
+    return render(request, 'curation/prompt_edit.html', {
+        'prompt': prompt,
+        'history': history,
+        'title': f'Edit Prompt — {prompt.label}',
+    })
+

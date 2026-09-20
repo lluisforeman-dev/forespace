@@ -25,6 +25,7 @@ from core.models import Assertion, AttributeDef, Document, Event, ExtractionRun,
 from ingest.ai import get_client
 from ingest.confidence import domain_trust, score as compute_score
 from ingest.cost import log_call
+from ingest.prompts import get_prompt
 from ingest.tasks.resolve import resolve_mention, _VALID_ENTITY_TYPES
 
 logger = logging.getLogger(__name__)
@@ -360,7 +361,7 @@ def _generate_search_angles(topic: str, entity_type: str) -> list[str]:
         resp = get_client().chat.completions.create(
             model=settings.AI_MODEL_FAST,
             messages=[
-                {'role': 'system', 'content': _ANGLES_SYSTEM},
+                {'role': 'system', 'content': get_prompt('research_angles', _ANGLES_SYSTEM)},
                 {'role': 'user', 'content': f'Entity: {topic}\nType: {entity_type}'},
             ],
             response_format={'type': 'json_object'},
@@ -1068,7 +1069,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         resp = get_client().chat.completions.create(
             model=model,
             messages=[
-                {'role': 'system', 'content': _SYSTEM},
+                {'role': 'system', 'content': get_prompt('research_main', _SYSTEM)},
                 {'role': 'user', 'content': user_msg},
             ],
             max_tokens=30000,

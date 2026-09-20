@@ -35,6 +35,7 @@ from django.utils import timezone
 from core.models import Assertion, Classification, Entity, Taxonomy, TaxonomyNode
 from ingest.ai import get_client
 from ingest.cost import log_call
+from ingest.prompts import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -94,14 +95,14 @@ Only use node paths from the allowed list. Return JSON: {"classifications": [...
 
 def _system_prompt_for_type(entity_type: str) -> str:
     if entity_type == 'funding_program':
-        return _SYSTEM_FUNDING_PROGRAM
+        return get_prompt('classify_funding_program', _SYSTEM_FUNDING_PROGRAM)
     if entity_type == 'person':
-        return _SYSTEM_PERSON
+        return get_prompt('classify_person', _SYSTEM_PERSON)
     if entity_type == 'program':
-        return _SYSTEM_PROGRAM
+        return get_prompt('classify_program', _SYSTEM_PROGRAM)
     if entity_type == 'end_user':
-        return _SYSTEM_END_USER
-    return _SYSTEM_COMPANY
+        return get_prompt('classify_end_user', _SYSTEM_END_USER)
+    return get_prompt('classify_company', _SYSTEM_COMPANY)
 
 
 def _profile_label(entity_type: str) -> str:

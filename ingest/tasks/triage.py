@@ -11,6 +11,7 @@ from django.conf import settings
 
 from core.models import Document
 from ingest.ai import get_client
+from ingest.prompts import get_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ def triage_document(self, document_id: str):
         resp = get_client().chat.completions.create(
             model=settings.AI_MODEL_FAST,
             messages=[
-                {'role': 'system', 'content': _SYSTEM},
+                {'role': 'system', 'content': get_prompt('triage', _SYSTEM)},
                 {'role': 'user', 'content': _USER.format(snippet=snippet)},
             ],
             response_format={'type': 'json_object'},

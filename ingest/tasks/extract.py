@@ -21,6 +21,7 @@ from core.normalize import normalize_name
 from ingest.ai import get_client
 from ingest.confidence import score as compute_score
 from ingest.cost import log_call
+from ingest.prompts import get_prompt
 from ingest.schemas import ExtractedClaim, ExtractionResult
 from ingest.tasks.resolve import resolve_mention, _add_alias
 
@@ -126,7 +127,7 @@ def extract_document(self, document_id: str):
         resp = get_client().chat.completions.create(
             model=model,
             messages=[
-                {'role': 'system', 'content': _SYSTEM},
+                {'role': 'system', 'content': get_prompt('extract_claims', _SYSTEM)},
                 {'role': 'user', 'content': user_msg},
             ],
             response_format={'type': 'json_object'},
