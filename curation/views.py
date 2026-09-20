@@ -814,6 +814,25 @@ def prompt_edit(request, key):
 
 
 @staff_member_required
+def summarise_all(request):
+    """Queue synthesise_entity_summary for every entity that has no summary yet."""
+    if request.method == 'POST':
+        from ingest.tasks.summarise import synthesise_entity_summary
+        skip_types = {'person', 'geography', 'document_node'}
+        no_summary_ids = list(
+            Entity.objects
+            .exclude(status='merged')
+            .exclude(entity_type__in=skip_types)
+            .exclude(id__in=EntitySummary.objects.values('entity_id'))
+            .values_list('id', flat=True)
+        )
+        for eid in no_summary_ids:
+            synthesise_entity_summary.apply_async(args=[str(eid)], countdown=1)
+        messages.success(request, f'Queued summarisation for {len(no_summary_ids)} entities without a description.')
+    return HttpResponseRedirect(reverse('curation:dashboard'))
+
+
+@staff_member_required
 def run_dedup_sweep(request):
     """Trigger a retrospective entity deduplication sweep."""
     if request.method == 'POST':

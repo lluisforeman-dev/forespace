@@ -76,6 +76,10 @@
 
 <!-- Maintenance actions -->
 <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+  <form method="post" action="{% url 'curation:summarise_all' %}" onsubmit="return confirm('Queue descriptions for all entities without one? This will use LLM world knowledge for pure-mention entities and may take a while.')">
+    {% csrf_token %}
+    <button class="btn btn-primary" style="font-size:12px;">&#128196; Summarise all entities</button>
+  </form>
   <form method="post" action="{% url 'curation:run_dedup_sweep' %}" onsubmit="return confirm('Run deduplication sweep? This will merge confirmed duplicates.')">
     {% csrf_token %}
     <button class="btn btn-primary" style="font-size:12px;">&#128260; Dedup sweep (live)</button>

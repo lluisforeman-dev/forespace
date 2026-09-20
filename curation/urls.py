@@ -24,6 +24,7 @@ urlpatterns = [
     path('taxonomy/evolve/', views.run_evolve_taxonomy, name='run_evolve_taxonomy'),
     path('prompts/', views.prompts_list, name='prompts_list'),
     path('prompts/<str:key>/edit/', views.prompt_edit, name='prompt_edit'),
+    path('summarise-all/', views.summarise_all, name='summarise_all'),
     path('dedup/', views.run_dedup_sweep, name='run_dedup_sweep'),
     path('search/', views.entity_search, name='entity_search'),
 ]
