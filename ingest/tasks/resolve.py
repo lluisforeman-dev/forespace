@@ -445,15 +445,6 @@ def _create_stub(
         )
 
     logger.info('Entity created: "%s" → %s', mention, entity.id)
-
-    # Queue alias enrichment for all resolvable entity types.
-    # Geography and document_node are skipped — no meaningful aliases.
-    if entity_type not in ('geography', 'document_node', 'event'):
-        enrich_entity_aliases.apply_async(
-            args=[str(entity.id), mention, entity_type],
-            countdown=5,  # slight delay so the stub is committed
-        )
-
     return str(entity.id)
 
 
@@ -480,18 +471,25 @@ Rules:
 Return JSON only: {"aliases": ["name1", "name2", ...]}"""
 
 
-def _fetch_aliases(canonical_name: str, entity_type: str) -> list[str]:
-    """Ask the LLM for known alternative names for this entity."""
+def _fetch_aliases(canonical_name: str, entity_type: str, context: str = '') -> list[str]:
+    """Ask the LLM for known alternative names for this entity.
+
+    *context* is optional additional text (e.g. entity overview from summarise stage)
+    that helps the LLM reason about obscure or ambiguous entities.
+    """
     try:
         from ingest.ai import get_client
         from ingest.cost import log_call
         from ingest.prompts import get_prompt
         client = get_client()
+        user_content = f'Organisation: "{canonical_name}" (type: {entity_type})'
+        if context:
+            user_content += f'\n\nContext:\n{context[:600]}'
         resp = client.chat.completions.create(
             model=settings.AI_MODEL_FAST,
             messages=[
                 {'role': 'system', 'content': get_prompt('alias_enrichment', _ALIAS_SYSTEM)},
-                {'role': 'user', 'content': f'Organisation: "{canonical_name}" (type: {entity_type})'},
+                {'role': 'user', 'content': user_content},
             ],
             response_format={'type': 'json_object'},
             max_tokens=300,
@@ -512,9 +510,9 @@ from celery import shared_task as _shared_task
 
 
 @_shared_task(bind=True, queue='extract', max_retries=1, default_retry_delay=60)
-def enrich_entity_aliases(self, entity_id: str, canonical_name: str, entity_type: str):
-    """Generate and register alternative names for a newly created entity."""
-    aliases = _fetch_aliases(canonical_name, entity_type)
+def enrich_entity_aliases(self, entity_id: str, canonical_name: str, entity_type: str, context: str = ''):
+    """Generate and register alternative names for an entity using its synthesised summary as context."""
+    aliases = _fetch_aliases(canonical_name, entity_type, context)
     if not aliases:
         return
 

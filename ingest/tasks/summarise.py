@@ -109,10 +109,11 @@ def synthesise_entity_summary(self, entity_id: str):
         logger.error('synthesise_entity_summary bad JSON entity=%s: %r', entity_id, raw[:200])
         return
 
-    EntitySummary.objects.update_or_create(
+    overview = data.get('overview', '')
+    _, created = EntitySummary.objects.update_or_create(
         entity=entity,
         defaults={
-            'overview':             data.get('overview', ''),
+            'overview':             overview,
             'challenges':           data.get('challenges', []),
             'strategic_bets':       data.get('strategic_bets', []),
             'competitive_position': data.get('competitive_position', ''),
@@ -120,3 +121,14 @@ def synthesise_entity_summary(self, entity_id: str):
         },
     )
     logger.info('synthesise_entity_summary: updated entity=%s (%d sources)', entity_id, len(events) + len(fragments))
+
+    # On first summary creation, trigger alias enrichment with the overview as context.
+    # Aliases are enriched here rather than at stub creation so the LLM has real evidence
+    # about the entity (not just its name) — critical for obscure or ambiguous organisations.
+    if created and entity.entity_type not in ('geography', 'document_node', 'event') and overview:
+        from ingest.tasks.resolve import enrich_entity_aliases
+        enrich_entity_aliases.apply_async(
+            args=[entity_id, entity.canonical_name, entity.entity_type],
+            kwargs={'context': overview},
+            countdown=2,
+        )
