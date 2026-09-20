@@ -74,6 +74,19 @@
 
 </div>
 
+<!-- Maintenance actions -->
+<div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+  <form method="post" action="{% url 'curation:run_dedup_sweep' %}" onsubmit="return confirm('Run deduplication sweep? This will merge confirmed duplicates.')">
+    {% csrf_token %}
+    <button class="btn btn-primary" style="font-size:12px;">&#128260; Dedup sweep (live)</button>
+  </form>
+  <form method="post" action="{% url 'curation:run_dedup_sweep' %}">
+    {% csrf_token %}
+    <input type="hidden" name="dry_run" value="1">
+    <button class="btn" style="background:#6c757d;color:#fff;font-size:12px;">&#128260; Dedup sweep (dry run)</button>
+  </form>
+</div>
+
 <!-- Stats -->
 <div class="stats">
   <div class="stat">

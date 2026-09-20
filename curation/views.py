@@ -811,3 +811,15 @@ def prompt_edit(request, key):
         'title': f'Edit Prompt — {prompt.label}',
     })
 
+
+
+@staff_member_required
+def run_dedup_sweep(request):
+    """Trigger a retrospective entity deduplication sweep."""
+    if request.method == 'POST':
+        from ingest.tasks.dedup import dedup_sweep
+        dry_run = request.POST.get('dry_run') == '1'
+        dedup_sweep.delay(dry_run=dry_run)
+        mode = 'dry run' if dry_run else 'live'
+        messages.success(request, f'Deduplication sweep queued ({mode}). Check worker logs for results.')
+    return HttpResponseRedirect(reverse('curation:dashboard'))
