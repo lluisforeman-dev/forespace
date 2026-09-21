@@ -829,7 +829,7 @@ def research_all(request):
             Entity.objects
             .exclude(status='merged')
             .exclude(entity_type='geography')
-            .exclude(space_relevance__lt=25)
+            .exclude(space_relevance__lt=50, space_relevance__isnull=False)
             .exclude(id__in=Event.objects.values('entity_id'))
             .only('id', 'canonical_name', 'entity_type')
         )
@@ -856,7 +856,7 @@ def summarise_all(request):
             Entity.objects
             .exclude(status='merged')
             .exclude(entity_type__in=skip_types)
-            .exclude(space_relevance__lt=25)
+            .exclude(space_relevance__lt=20, space_relevance__isnull=False)
             .exclude(id__in=EntitySummary.objects.values('entity_id'))
             .values_list('id', flat=True)
         )

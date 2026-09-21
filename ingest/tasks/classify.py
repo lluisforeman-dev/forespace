@@ -62,11 +62,12 @@ A company can have weighted membership across multiple nodes (weights sum to ~1.
 Only use node paths from the allowed list.
 
 Also score how space-relevant this entity is:
-  100 — directly in the space industry (launch, satellites, propulsion, EO, ground systems, space investors, etc.)
-   50 — somewhat related (dual-use tech, defence primes with space division, suppliers of components also used in space, end-users of space data)
-    0 — no meaningful space connection (crypto/DeFi, retail, pharma, oil & gas, consumer brand, general bank, etc.)
+  100 — core space industry (launch, satellites, propulsion, EO, ground systems, dedicated space investors, space agencies, etc.)
+   50 — adjacent / somewhat related (defence primes with a space division, dual-use tech suppliers, end-users of space data, VCs with notable space portfolio)
+   20 — very tangential (a general bank that financed one space deal, a consultancy with occasional space work)
+    0 — no meaningful space connection (crypto/DeFi, retail, pharma, oil & gas, consumer brand, unrelated tech, etc.)
 
-Return JSON: {"classifications": [...], "space_relevance": 0|50|100}"""
+Return JSON: {"classifications": [...], "space_relevance": 0|20|50|100}"""
 
 _SYSTEM_FUNDING_PROGRAM = """\
 You are a taxonomy classifier for a space-industry knowledge graph.
@@ -83,9 +84,10 @@ Only use node paths from the allowed list.
 
 Also score how space-relevant this person is:
   100 — works primarily in the space industry
-   50 — adjacent (dual-use research, defence, adjacent tech)
+   50 — adjacent (dual-use research, defence, adjacent tech with space application)
+   20 — very tangential
     0 — no meaningful space connection
-Return JSON: {"classifications": [...], "space_relevance": 0|50|100}"""
+Return JSON: {"classifications": [...], "space_relevance": 0|20|50|100}"""
 
 _SYSTEM_PROGRAM = """\
 You are a taxonomy classifier for a space-industry knowledge graph.

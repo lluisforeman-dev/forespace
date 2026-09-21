@@ -55,14 +55,15 @@ Rules:
 _WK_SKIP_TYPES = {'person', 'geography', 'document_node'}
 
 
-def _world_knowledge_summary(entity_id: str, entity) -> dict | None:
+def _world_knowledge_summary(entity_id: str, entity, brief: bool = False) -> dict | None:
     """Call LLM for a world-knowledge-based summary of an entity with no collected data.
 
+    brief=True: overview only, 1-2 sentences (for space_relevance=20 entities).
+    brief=False: full 4-field profile (for space_relevance=50 entities).
     Returns the parsed JSON dict on success, or None if the entity is unknown / skipped.
     """
     from core.models import Assertion
 
-    # Build hint from any accepted assertions already in the DB
     assertions = (
         Assertion.objects
         .filter(entity=entity, status='accepted')
@@ -75,13 +76,18 @@ def _world_knowledge_summary(entity_id: str, entity) -> dict | None:
         if val:
             hint_lines.append(f'  {a.attribute_key}: {val[:200]}')
 
-    hint = ''
-    if hint_lines:
-        hint = '\nKnown attributes:\n' + '\n'.join(hint_lines)
+    hint = '\nKnown attributes:\n' + '\n'.join(hint_lines) if hint_lines else ''
+
+    if brief:
+        instruction = 'Write a 1-2 sentence overview only. Return JSON: {"overview": "..."}. If unknown return {"overview": ""}.'
+        max_tokens = 120
+    else:
+        instruction = 'Write a profile based on your general knowledge.'
+        max_tokens = 600
 
     user_msg = (
         f'Entity: {entity.canonical_name} ({entity.get_entity_type_display()}){hint}\n\n'
-        f'Write a profile based on your general knowledge.'
+        f'{instruction}'
     )
 
     model = settings.AI_MODEL_FAST
@@ -94,7 +100,7 @@ def _world_knowledge_summary(entity_id: str, entity) -> dict | None:
                 {'role': 'user', 'content': user_msg},
             ],
             response_format={'type': 'json_object'},
-            max_tokens=600,
+            max_tokens=max_tokens,
             temperature=0,
         )
         log_call('synthesise_entity_summary_wk', model, resp,
@@ -127,27 +133,33 @@ def synthesise_entity_summary(self, entity_id: str):
     if entity.status == 'merged':
         return
 
+    # Condense input for adjacent entities (space_relevance=50): fewer sources, faster model
+    score = entity.space_relevance
+    condensed = score is not None and score < 100
+
     events = list(
         Event.objects
         .filter(entity=entity)
-        .order_by('date', 'created_at')[:25]
+        .order_by('date', 'created_at')[:10 if condensed else 25]
     )
     fragments = list(
         KnowledgeFragment.objects
         .filter(entity=entity)
-        .order_by('-date_of_information', '-created_at')[:30]
+        .order_by('-date_of_information', '-created_at')[:10 if condensed else 30]
     )
 
     if not events and not fragments:
         # No collected evidence — try world knowledge for eligible types
         if entity.entity_type in _WK_SKIP_TYPES:
             return
-        if entity.space_relevance is not None and entity.space_relevance < 25:
+        if entity.space_relevance is not None and entity.space_relevance < 20:
             return  # confirmed non-space — don't waste an LLM call
         # Skip if a summary already exists (don't overwrite evidence-based with WK)
         if EntitySummary.objects.filter(entity=entity).exists():
             return
-        data = _world_knowledge_summary(entity_id, entity)
+        # 20 = very tangential → 1-2 sentence overview only; 50+ = full 4-field profile
+        brief = entity.space_relevance is not None and entity.space_relevance <= 20
+        data = _world_knowledge_summary(entity_id, entity, brief=brief)
         if not data:
             return
         overview = data.get('overview', '')
@@ -193,7 +205,7 @@ def synthesise_entity_summary(self, entity_id: str):
         f'Synthesise a summary.'
     )
 
-    model = settings.AI_MODEL
+    model = settings.AI_MODEL_FAST if condensed else settings.AI_MODEL
     try:
         t0 = time.monotonic()
         resp = get_client().chat.completions.create(
@@ -202,7 +214,7 @@ def synthesise_entity_summary(self, entity_id: str):
                 {'role': 'system', 'content': get_prompt('summarise_entity', _SYSTEM)},
                 {'role': 'user', 'content': user_msg},
             ],
-            max_tokens=6000,
+            max_tokens=1500 if condensed else 6000,
             temperature=0,
         )
         log_call('synthesise_entity_summary', model, resp,
