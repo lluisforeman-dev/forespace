@@ -61,14 +61,12 @@ Given a company profile, assign it to nodes in each of the provided taxonomy fac
 A company can have weighted membership across multiple nodes (weights sum to ~1.0 per facet).
 Only use node paths from the allowed list.
 
-Also score how space-relevant this entity is (0–100):
-  100 — core space industry (launch, satellites, propulsion, ground systems, EO, etc.)
-   75 — primarily space but with significant adjacent activity (defence primes, dual-use tech)
-   50 — adjacent / partial (supplies components not exclusive to space, space investor, space data end-user)
-   25 — very tangential (e.g. a general VC that made one space investment, a bank that financed a launch)
-    0 — no meaningful space connection (crypto, retail, pharma, oil & gas, consumer brand, etc.)
+Also score how space-relevant this entity is:
+  100 — directly in the space industry (launch, satellites, propulsion, EO, ground systems, space investors, etc.)
+   50 — somewhat related (dual-use tech, defence primes with space division, suppliers of components also used in space, end-users of space data)
+    0 — no meaningful space connection (crypto/DeFi, retail, pharma, oil & gas, consumer brand, general bank, etc.)
 
-Return JSON: {"classifications": [...], "space_relevance": <0-100>}"""
+Return JSON: {"classifications": [...], "space_relevance": 0|50|100}"""
 
 _SYSTEM_FUNDING_PROGRAM = """\
 You are a taxonomy classifier for a space-industry knowledge graph.
@@ -83,11 +81,11 @@ Given a person's profile, classify their primary research or professional area
 under the research_area taxonomy facet.
 Only use node paths from the allowed list.
 
-Also score how space-relevant this person is (0–100):
+Also score how space-relevant this person is:
   100 — works primarily in the space industry
    50 — adjacent (dual-use research, defence, adjacent tech)
     0 — no meaningful space connection
-Return JSON: {"classifications": [...], "space_relevance": <0-100>}"""
+Return JSON: {"classifications": [...], "space_relevance": 0|50|100}"""
 
 _SYSTEM_PROGRAM = """\
 You are a taxonomy classifier for a space-industry knowledge graph.
