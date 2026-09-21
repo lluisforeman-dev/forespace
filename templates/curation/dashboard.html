@@ -228,13 +228,24 @@
   {% if recent_entities %}
   <table>
     <thead>
-      <tr><th>Name</th><th>Type</th><th>Status</th><th>When</th></tr>
+      <tr><th>Name</th><th>Type</th><th>Score</th><th>Status</th><th>When</th></tr>
     </thead>
     <tbody>
       {% for e in recent_entities %}
       <tr>
         <td><a href="{% url 'curation:entity_profile' e.id %}">{{ e.canonical_name }}</a></td>
         <td style="font-size:11px;color:#888">{{ e.get_entity_type_display }}</td>
+        <td style="font-size:11px">
+          {% if e.space_relevance is not None %}
+            <span style="padding:1px 6px;border-radius:8px;font-weight:700;
+              {% if e.space_relevance == 100 %}background:#d1fae5;color:#065f46;
+              {% elif e.space_relevance == 50 %}background:#dbeafe;color:#1e40af;
+              {% elif e.space_relevance == 20 %}background:#fef3c7;color:#92400e;
+              {% else %}background:#f3f4f6;color:#6b7280;{% endif %}">
+              {{ e.space_relevance }}
+            </span>
+          {% else %}<span style="color:#555">—</span>{% endif %}
+        </td>
         <td><span class="badge badge-{{ e.status }}">{{ e.status }}</span></td>
         <td style="font-size:11px;color:#888">{{ e.created_at|date:"H:i d/m" }}</td>
       </tr>
