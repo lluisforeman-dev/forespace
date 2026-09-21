@@ -54,17 +54,17 @@
       </h2>
       <p style="color:#888;font-size:13px">
         {{ entity.get_entity_type_display }} · created {{ entity.created_at|date:"Y-m-d" }}
-        {% if entity.space_relevance is not None %}
-          &nbsp;·&nbsp;
-          <span style="display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:700;
-            {% if entity.space_relevance == 100 %}background:#d1fae5;color:#065f46;
-            {% elif entity.space_relevance == 50 %}background:#dbeafe;color:#1e40af;
-            {% elif entity.space_relevance == 20 %}background:#fef3c7;color:#92400e;
-            {% else %}background:#f3f4f6;color:#6b7280;{% endif %}">
-            space {{ entity.space_relevance }}
-          </span>
+        &nbsp;·&nbsp;
+        {% if entity.space_relevance == 100 %}
+          <span style="display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:700;background:#d1fae5;color:#065f46;">space 100</span>
+        {% elif entity.space_relevance == 50 %}
+          <span style="display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:700;background:#dbeafe;color:#1e40af;">space 50</span>
+        {% elif entity.space_relevance == 20 %}
+          <span style="display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:700;background:#fef3c7;color:#92400e;">space 20</span>
+        {% elif entity.space_relevance == 0 %}
+          <span style="display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:700;background:#f3f4f6;color:#6b7280;">space 0</span>
         {% else %}
-          &nbsp;·&nbsp;<span style="font-size:12px;color:#bbb">unscored</span>
+          <span style="font-size:12px;color:#bbb;">unscored</span>
         {% endif %}
       </p>
     </div>
