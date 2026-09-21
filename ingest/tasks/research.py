@@ -1256,6 +1256,11 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
 
         evolve_taxonomy.apply_async(args=[entity_id_strs], countdown=60)
 
+        # Targeted dedup for all entities touched in this run (5 min delay so
+        # classify/summarise have time to populate alias data first).
+        from ingest.tasks.dedup import dedup_entities
+        dedup_entities.apply_async(args=[entity_id_strs], countdown=300)
+
         # Cascade: queue every discovered entity not recently researched,
         # sorted by accepted assertion count ascending — entities with the least
         # known information go first, naturally balancing coverage across the graph.

@@ -131,3 +131,23 @@ class EntityMerge(models.Model):
 
     def __str__(self):
         return f'{self.merged} → {self.kept}'
+
+
+class EntityNonMerge(models.Model):
+    """Records entity pairs confirmed to be different — skipped in all future dedup runs.
+
+    Pair is stored with entity_a.id < entity_b.id (lexicographic) so lookup is O(1).
+    This is the primary mechanism for keeping LLM dedup costs flat as the graph grows:
+    once a pair is decided, it is never re-checked.
+    """
+    entity_a = models.ForeignKey(Entity, on_delete=models.CASCADE, related_name='+')
+    entity_b = models.ForeignKey(Entity, on_delete=models.CASCADE, related_name='+')
+    decided_at = models.DateTimeField(auto_now_add=True)
+    method = models.CharField(max_length=50, default='auto:dedup_sweep')
+
+    class Meta:
+        db_table = 'entity_non_merge'
+        unique_together = [('entity_a', 'entity_b')]
+
+    def __str__(self):
+        return f'{self.entity_a} ≠ {self.entity_b}'
