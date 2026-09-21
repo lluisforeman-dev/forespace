@@ -318,13 +318,13 @@ def entity_profile(request, entity_id):
     relations_out = (
         Relation.objects
         .filter(subject=entity, superseded_at__isnull=True)
-        .select_related('object')
+        .select_related('object', 'document', 'document__source')
         .order_by('predicate')[:50]
     )
     relations_in = (
         Relation.objects
         .filter(object=entity, superseded_at__isnull=True)
-        .select_related('subject')
+        .select_related('subject', 'document', 'document__source')
         .order_by('predicate')[:50]
     )
 

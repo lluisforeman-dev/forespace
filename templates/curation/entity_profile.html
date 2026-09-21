@@ -273,13 +273,19 @@
 <div class="card">
   <h2>Relations (outgoing)</h2>
   <table>
-    <thead><tr><th>Predicate</th><th>Target</th><th>Confidence</th></tr></thead>
+    <thead><tr><th>Predicate</th><th>Target</th><th>Conf</th><th>Source</th></tr></thead>
     <tbody>
       {% for r in relations_out %}
       <tr>
         <td style="color:#6f42c1;font-size:12px">{{ r.predicate_id }}</td>
         <td><a href="{% url 'curation:entity_profile' r.object.id %}">{{ r.object }}</a></td>
         <td style="font-size:12px;color:#888">{{ r.confidence }}%</td>
+        <td style="font-size:11px">
+          {% if r.document %}
+            {% if r.document.url %}<a href="{{ r.document.url }}" target="_blank" style="color:#0066cc">{{ r.document.source.name|default:r.document.title|default:"source"|truncatechars:40 }}</a>{% else %}{{ r.document.source.name|default:"—" }}{% endif %}
+            {% if r.quote %}<div style="color:#888;font-style:italic;margin-top:2px">"{{ r.quote|truncatechars:120 }}"</div>{% endif %}
+          {% else %}—{% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>
@@ -291,13 +297,19 @@
 <div class="card">
   <h2>Relations (incoming)</h2>
   <table>
-    <thead><tr><th>Subject</th><th>Predicate</th><th>Confidence</th></tr></thead>
+    <thead><tr><th>Subject</th><th>Predicate</th><th>Conf</th><th>Source</th></tr></thead>
     <tbody>
       {% for r in relations_in %}
       <tr>
         <td><a href="{% url 'curation:entity_profile' r.subject.id %}">{{ r.subject }}</a></td>
         <td style="color:#6f42c1;font-size:12px">{{ r.predicate_id }}</td>
         <td style="font-size:12px;color:#888">{{ r.confidence }}%</td>
+        <td style="font-size:11px">
+          {% if r.document %}
+            {% if r.document.url %}<a href="{{ r.document.url }}" target="_blank" style="color:#0066cc">{{ r.document.source.name|default:r.document.title|default:"source" |truncatechars:40 }}</a>{% else %}{{ r.document.source.name|default:"—" }}{% endif %}
+            {% if r.quote %}<div style="color:#888;font-style:italic;margin-top:2px">"{{ r.quote|truncatechars:120 }}"</div>{% endif %}
+          {% else %}—{% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>
