@@ -573,11 +573,13 @@ def _is_same_story(desc_a: str, desc_b: str, title_a: str, title_b: str) -> bool
         return False
 
 
-def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source, subject_context: str = '') -> int:
-    """Persist extracted events, resolving participant entity names."""
+def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source, subject_context: str = '') -> tuple[int, set]:
+    """Persist extracted events, resolving participant entity names.
+    Returns (stored_count, entity_ids) where entity_ids includes all subjects and participants."""
     valid_types = {t[0] for t in Event.EVENT_TYPES}
     valid_sig = {s[0] for s in Event.SIGNIFICANCE}
     stored = 0
+    entity_ids: set = set()
 
     for ev in events:
         mention = (ev.get('subject_mention') or '').strip()
@@ -596,6 +598,7 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
                 entity_id = resolve_mention(mention, document_id=str(fallback_doc.id), entity_type=subject_type, subject_context=subject_context)
             except Exception:
                 continue
+        entity_ids.add(str(entity_id))
 
         event_type = ev.get('event_type', 'milestone')
         if event_type not in valid_types:
@@ -702,17 +705,19 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
                         continue
                 if pid != entity_id:
                     event_obj.participants.add(pid)
+                entity_ids.add(str(pid))
             stored += 1
         except Exception as e:
             logger.warning('_store_events: %s — %s', mention, e)
 
-    return stored
+    return stored, entity_ids
 
 
-def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source, subject_context: str = '') -> int:
-    """Persist knowledge fragments."""
+def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source, subject_context: str = '') -> tuple[int, set]:
+    """Persist knowledge fragments. Returns (stored_count, entity_ids)."""
     valid_cats = {c[0] for c in KnowledgeFragment.CATEGORIES}
     stored = 0
+    entity_ids: set = set()
 
     for frag in fragments:
         mention = (frag.get('subject_mention') or '').strip()
@@ -730,6 +735,7 @@ def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, 
                 entity_id = resolve_mention(mention, document_id=str(fallback_doc.id), entity_type=subject_type, subject_context=subject_context)
             except Exception:
                 continue
+        entity_ids.add(str(entity_id))
 
         category = frag.get('category', 'strategic')
         if category not in valid_cats:
@@ -753,18 +759,19 @@ def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, 
         except Exception as e:
             logger.warning('_store_fragments: %s — %s', mention, e)
 
-    return stored
+    return stored, entity_ids
 
 
-def _store_relations(relations: list, fallback_doc: Document, sonar_source: Source, subject_context: str = '') -> int:
-    """Persist inline-extracted relations from Sonar output."""
+def _store_relations(relations: list, fallback_doc: Document, sonar_source: Source, subject_context: str = '') -> tuple[int, set]:
+    """Persist inline-extracted relations from Sonar output. Returns (stored_count, entity_ids)."""
     valid_predicates = {p.key for p in PredicateDef.objects.all()}
     if not valid_predicates:
         logger.warning('_store_relations: no predicates — run seed_predicates first')
-        return 0
+        return 0, set()
 
     conf_map = {'high': 78, 'medium': 62, 'low': 45}
     stored = 0
+    entity_ids: set = set()
 
     for rel in relations:
         predicate = (rel.get('predicate') or '').strip()
@@ -829,11 +836,13 @@ def _store_relations(relations: list, fallback_doc: Document, sonar_source: Sour
                             'status': 'accepted' if confidence >= 65 else 'candidate',
                         },
                     )
+            entity_ids.add(str(subject_id))
+            entity_ids.add(str(object_id))
             stored += 1
         except Exception as e:
             logger.debug('_store_relations: %s →%s→ %s: %s', subject_mention, predicate, object_mention, e)
 
-    return stored
+    return stored, entity_ids
 
 
 @shared_task(bind=True, queue='extract', max_retries=2, default_retry_delay=30)
@@ -1195,13 +1204,13 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
     _subject_ctx = f'Researching: {topic} ({topic_type})'
 
     # ── Store events ──────────────────────────────────────────────────────
-    events_stored = _store_events(events, name_to_id, doc, source, subject_context=_subject_ctx)
+    events_stored, event_entity_ids = _store_events(events, name_to_id, doc, source, subject_context=_subject_ctx)
 
     # ── Store fragments ───────────────────────────────────────────────────
-    fragments_stored = _store_fragments(fragments, name_to_id, doc, source, subject_context=_subject_ctx)
+    fragments_stored, fragment_entity_ids = _store_fragments(fragments, name_to_id, doc, source, subject_context=_subject_ctx)
 
     # ── Store relations (inline — Sonar had full web context) ─────────────
-    relations_stored = _store_relations(relations, doc, source, subject_context=_subject_ctx)
+    relations_stored, relation_entity_ids = _store_relations(relations, doc, source, subject_context=_subject_ctx)
 
     # ── Finalise run ──────────────────────────────────────────────────────
     run.status = 'completed'
@@ -1228,17 +1237,8 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         adjudicate_assertions.delay(new_ids)
         refresh_entity_current.apply_async(countdown=5)
 
-    # Collect ALL touched entities: claims + event subjects + event participants + fragments + relations
-    all_entity_ids = set(entity_ids)
-    for ev_obj in Event.objects.filter(source=doc).prefetch_related('participants'):
-        all_entity_ids.add(str(ev_obj.entity_id))
-        for p in ev_obj.participants.all():
-            all_entity_ids.add(str(p.id))
-    for frag in KnowledgeFragment.objects.filter(source=doc).values_list('entity_id', flat=True):
-        all_entity_ids.add(str(frag))
-    for rel in Relation.objects.filter(document=doc).values_list('subject_id', 'object_id'):
-        all_entity_ids.add(str(rel[0]))
-        all_entity_ids.add(str(rel[1]))
+    # Collect ALL touched entities: claims + event subjects/participants + fragments + relation subjects/objects
+    all_entity_ids = set(entity_ids) | event_entity_ids | fragment_entity_ids | relation_entity_ids
     entity_id_strs = list(all_entity_ids)
 
     if entity_id_strs:

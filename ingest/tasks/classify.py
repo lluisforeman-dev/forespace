@@ -252,8 +252,9 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
 
     logger.info('classify_entity %s (%s): %d classifications, %d skipped', entity_id, entity.entity_type, created, skipped)
 
-    # Set space_relevance on the entity so the pipeline can filter non-space entities.
-    # Applies to types where the LLM was asked to score relevance (0–100).
+    # Update space_relevance — promote only, never reduce.
+    # New evidence (more assertions, new taxonomy hits) can reveal higher relevance;
+    # it should never reduce a score that was set from richer prior evidence.
     _relevance_types = {'company', 'investor', 'entity', 'university', 'person'}
     if entity.entity_type in _relevance_types:
         score = raw.get('space_relevance', None)
@@ -264,7 +265,7 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
         # If LLM gave no score but classified successfully, assume relevant
         if new_relevance is None and created > 0:
             new_relevance = 100
-        if new_relevance != entity.space_relevance:
+        if new_relevance is not None and (entity.space_relevance is None or new_relevance > entity.space_relevance):
             entity.space_relevance = new_relevance
             entity.save(update_fields=['space_relevance'])
-            logger.info('classify_entity %s: space_relevance=%s', entity_id, new_relevance)
+            logger.info('classify_entity %s: space_relevance promoted to %s', entity_id, new_relevance)

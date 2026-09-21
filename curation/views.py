@@ -847,6 +847,77 @@ def research_all(request):
 
 
 @staff_member_required
+def assess_all(request):
+    """Queue WK assessment + scoring for every entity that has no description yet.
+
+    Queues synthesise_entity_summary for entities without an EntitySummary, and
+    classify_entity for entities without a space_relevance score. No score filter —
+    every entity without a description gets assessed.
+    """
+    if request.method == 'POST':
+        from ingest.tasks.summarise import synthesise_entity_summary
+        from ingest.tasks.classify import classify_entity, _FACETS_FOR_TYPE
+
+        skip_types = {'geography', 'document_node'}
+        classifiable_types = set(_FACETS_FOR_TYPE.keys())
+
+        # Entities with no description at all
+        no_summary_ids = set(
+            Entity.objects
+            .exclude(status='merged')
+            .exclude(entity_type__in=skip_types)
+            .exclude(id__in=EntitySummary.objects.values('entity_id'))
+            .values_list('id', flat=True)
+        )
+
+        # Entities with no score yet (classifiable types only)
+        no_score_ids = set(
+            Entity.objects
+            .filter(space_relevance__isnull=True)
+            .exclude(status='merged')
+            .exclude(entity_type__in=skip_types)
+            .filter(entity_type__in=classifiable_types)
+            .values_list('id', flat=True)
+        )
+
+        for i, eid in enumerate(no_summary_ids):
+            synthesise_entity_summary.apply_async(args=[str(eid)], countdown=i)
+
+        # Classify entities that still have no score and weren't already queued for summarise
+        # (summarise WK path also scores, so only explicitly classify those not in no_summary_ids)
+        only_no_score = no_score_ids - no_summary_ids
+        for i, eid in enumerate(only_no_score):
+            classify_entity.apply_async(args=[str(eid)], countdown=i * 2)
+
+        messages.success(
+            request,
+            f'Queued assessment for {len(no_summary_ids)} entities without a description '
+            f'and scoring for {len(only_no_score)} additional unscored entities.'
+        )
+    return HttpResponseRedirect(reverse('curation:dashboard'))
+
+
+@staff_member_required
+def classify_all(request):
+    """Queue classify_entity for every entity with no space_relevance score yet."""
+    if request.method == 'POST':
+        from ingest.tasks.classify import classify_entity, _FACETS_FOR_TYPE
+        classifiable_types = set(_FACETS_FOR_TYPE.keys())
+        unscored = list(
+            Entity.objects
+            .filter(space_relevance__isnull=True)
+            .exclude(status='merged')
+            .exclude(entity_type__in=('geography', 'document_node'))
+            .filter(entity_type__in=classifiable_types)
+            .values_list('id', flat=True)
+        )
+        for i, eid in enumerate(unscored):
+            classify_entity.apply_async(args=[str(eid)], countdown=i * 2)
+        messages.success(request, f'Queued scoring for {len(unscored)} unscored entities.')
+    return HttpResponseRedirect(reverse('curation:dashboard'))
+
+
+@staff_member_required
 def summarise_all(request):
     """Queue synthesise_entity_summary for every entity that has no summary yet."""
     if request.method == 'POST':

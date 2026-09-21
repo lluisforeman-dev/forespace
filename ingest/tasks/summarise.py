@@ -27,8 +27,15 @@ Return JSON only (no markdown fences):
   "overview": "3-5 sentence prose overview — what the entity does, where it operates, what stage it is at",
   "challenges": ["specific challenge 1", "specific challenge 2", ...],
   "strategic_bets": ["key strategic choice 1", "key strategic choice 2", ...],
-  "competitive_position": "1-2 sentences on how this entity competes or differentiates in its market"
+  "competitive_position": "1-2 sentences on how this entity competes or differentiates in its market",
+  "space_relevance": 0|20|50|100
 }
+
+Space relevance (score based on the evidence provided):
+  100 — core space industry (launch, satellites, propulsion, EO, ground systems, space investors, agencies)
+   50 — adjacent / somewhat related (defence primes with space division, dual-use tech, space data end-users)
+   20 — very tangential (general bank that financed one space deal, occasional space work)
+    0 — no meaningful space connection
 
 Be specific and grounded in the evidence — do not invent facts not present in the input."""
 
@@ -157,19 +164,19 @@ def synthesise_entity_summary(self, entity_id: str):
     )
 
     if not events and not fragments:
-        # No collected evidence — initial world-knowledge assessment.
+        # No collected evidence — world-knowledge assessment.
         if entity.entity_type in _WK_SKIP_TYPES:
             return
-        if entity.space_relevance is not None and entity.space_relevance < 20:
-            return  # confirmed non-space — nothing to do
 
         already_scored = entity.space_relevance is not None
         already_summarised = EntitySummary.objects.filter(entity=entity).exists()
-        if already_scored and already_summarised:
-            return  # already fully assessed
 
-        # If already scored, use brief mode for 20-score entities on re-summarise
-        brief = already_scored and entity.space_relevance <= 20
+        # Skip only if confirmed non-space AND already described — nothing to add.
+        if already_scored and entity.space_relevance == 0 and already_summarised:
+            return
+
+        # Use brief mode for score=20 entities that already have a summary (just re-score)
+        brief = already_scored and entity.space_relevance is not None and entity.space_relevance <= 20 and already_summarised
         data = _world_knowledge_summary(entity_id, entity, brief=brief)
         if not data:
             return
@@ -187,34 +194,34 @@ def synthesise_entity_summary(self, entity_id: str):
         )
         logger.info('synthesise_entity_summary WK: entity=%s overview_len=%d', entity_id, len(overview))
 
-        # On first assessment: set space_relevance score and route to further research
-        if not already_scored:
-            score = data.get('space_relevance')
-            if score is not None:
-                try:
-                    score = max(0, min(100, int(score)))
-                except (TypeError, ValueError):
-                    score = None
-            if score is not None:
-                entity.space_relevance = score
-                entity.save(update_fields=['space_relevance'])
-                logger.info('synthesise_entity_summary WK: entity=%s space_relevance=%d', entity_id, score)
-                # Score >= 50: queue full research pipeline (condensed for 50, full for 100)
-                if score >= 50:
-                    from ingest.tasks.research import research_topic
-                    _TYPE_TO_TOPIC = {
-                        'company': 'company', 'investor': 'company', 'entity': 'company',
-                        'university': 'company', 'asset': 'company',
-                        'funding_program': 'funding_program', 'end_user': 'end_user',
-                        'program': 'question', 'facility': 'question',
-                        'person': 'person', 'event': 'question',
-                    }
-                    topic_type = _TYPE_TO_TOPIC.get(entity.entity_type, 'company')
-                    research_topic.apply_async(
-                        args=[entity.canonical_name, topic_type],
-                        kwargs={'cascade_depth': 0},
-                        countdown=120,
-                    )
+        # Promote space_relevance — never reduce, only increase.
+        # Re-assessment with new WK data can reveal higher relevance.
+        score = data.get('space_relevance')
+        if score is not None:
+            try:
+                score = max(0, min(100, int(score)))
+            except (TypeError, ValueError):
+                score = None
+        if score is not None and (entity.space_relevance is None or score > entity.space_relevance):
+            entity.space_relevance = score
+            entity.save(update_fields=['space_relevance'])
+            logger.info('synthesise_entity_summary WK: entity=%s space_relevance promoted to %d', entity_id, score)
+            # Newly promoted to 50+: queue research pipeline
+            if score >= 50 and not already_scored:
+                from ingest.tasks.research import research_topic
+                _TYPE_TO_TOPIC = {
+                    'company': 'company', 'investor': 'company', 'entity': 'company',
+                    'university': 'company', 'asset': 'company',
+                    'funding_program': 'funding_program', 'end_user': 'end_user',
+                    'program': 'question', 'facility': 'question',
+                    'person': 'person', 'event': 'question',
+                }
+                topic_type = _TYPE_TO_TOPIC.get(entity.entity_type, 'company')
+                research_topic.apply_async(
+                    args=[entity.canonical_name, topic_type],
+                    kwargs={'cascade_depth': 0},
+                    countdown=120,
+                )
 
         if created and overview:
             from ingest.tasks.resolve import enrich_entity_aliases
@@ -290,6 +297,20 @@ def synthesise_entity_summary(self, entity_id: str):
         },
     )
     logger.info('synthesise_entity_summary: updated entity=%s (%d sources)', entity_id, len(events) + len(fragments))
+
+    # Promote space_relevance from evidence — never reduce, only increase.
+    # Evidence-based synthesis has richer data than the initial WK assessment,
+    # so it may reveal a higher score.
+    ev_score = data.get('space_relevance')
+    if ev_score is not None:
+        try:
+            ev_score = max(0, min(100, int(ev_score)))
+        except (TypeError, ValueError):
+            ev_score = None
+    if ev_score is not None and (entity.space_relevance is None or ev_score > entity.space_relevance):
+        entity.space_relevance = ev_score
+        entity.save(update_fields=['space_relevance'])
+        logger.info('synthesise_entity_summary: space_relevance promoted to %d for entity=%s', ev_score, entity_id)
 
     # On first summary creation, trigger alias enrichment with the overview as context.
     # Aliases are enriched here rather than at stub creation so the LLM has real evidence
