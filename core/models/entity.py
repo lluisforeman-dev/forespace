@@ -37,6 +37,8 @@ class Entity(models.Model):
         on_delete=models.SET_NULL, related_name='redirected_from',
     )
     watchlist = models.BooleanField(default=False)  # priority=2× in scheduler
+    # 0 = confirmed non-space, 100 = confirmed space-relevant, null = unknown
+    space_relevance = models.SmallIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

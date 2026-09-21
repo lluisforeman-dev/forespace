@@ -142,6 +142,8 @@ def synthesise_entity_summary(self, entity_id: str):
         # No collected evidence — try world knowledge for eligible types
         if entity.entity_type in _WK_SKIP_TYPES:
             return
+        if entity.space_relevance == 0:
+            return  # confirmed non-space — don't waste an LLM call
         # Skip if a summary already exists (don't overwrite evidence-based with WK)
         if EntitySummary.objects.filter(entity=entity).exists():
             return

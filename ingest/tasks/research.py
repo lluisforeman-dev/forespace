@@ -1277,6 +1277,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             _Entity.objects
             .filter(id__in=entity_id_strs)
             .exclude(status='merged')
+            .exclude(space_relevance=0)   # skip confirmed non-space entities
             .annotate(assertion_count=Count(
                 'assertions',
                 filter=_Q(assertions__status='accepted'),
