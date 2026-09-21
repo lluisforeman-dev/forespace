@@ -60,9 +60,15 @@ You are a taxonomy classifier for a space-industry knowledge graph.
 Given a company profile, assign it to nodes in each of the provided taxonomy facets.
 A company can have weighted membership across multiple nodes (weights sum to ~1.0 per facet).
 Only use node paths from the allowed list.
-If the entity is clearly NOT related to the space industry (e.g. crypto/DeFi, retail, pharma, \
-consumer brand, oil & gas) set "space_relevant": false in the response.
-Return JSON: {"classifications": [...], "space_relevant": true|false}"""
+
+Also score how space-relevant this entity is (0–100):
+  100 — core space industry (launch, satellites, propulsion, ground systems, EO, etc.)
+   75 — primarily space but with significant adjacent activity (defence primes, dual-use tech)
+   50 — adjacent / partial (supplies components not exclusive to space, space investor, space data end-user)
+   25 — very tangential (e.g. a general VC that made one space investment, a bank that financed a launch)
+    0 — no meaningful space connection (crypto, retail, pharma, oil & gas, consumer brand, etc.)
+
+Return JSON: {"classifications": [...], "space_relevance": <0-100>}"""
 
 _SYSTEM_FUNDING_PROGRAM = """\
 You are a taxonomy classifier for a space-industry knowledge graph.
@@ -76,8 +82,12 @@ You are a taxonomy classifier for a space-industry knowledge graph.
 Given a person's profile, classify their primary research or professional area
 under the research_area taxonomy facet.
 Only use node paths from the allowed list.
-If the person has no connection to the space industry set "space_relevant": false.
-Return JSON: {"classifications": [...], "space_relevant": true|false}"""
+
+Also score how space-relevant this person is (0–100):
+  100 — works primarily in the space industry
+   50 — adjacent (dual-use research, defence, adjacent tech)
+    0 — no meaningful space connection
+Return JSON: {"classifications": [...], "space_relevance": <0-100>}"""
 
 _SYSTEM_PROGRAM = """\
 You are a taxonomy classifier for a space-industry knowledge graph.
@@ -243,18 +253,18 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
     logger.info('classify_entity %s (%s): %d classifications, %d skipped', entity_id, entity.entity_type, created, skipped)
 
     # Set space_relevance on the entity so the pipeline can filter non-space entities.
-    # Applies to types where the LLM was asked to judge relevance.
+    # Applies to types where the LLM was asked to score relevance (0–100).
     _relevance_types = {'company', 'investor', 'entity', 'university', 'person'}
     if entity.entity_type in _relevance_types:
-        explicit = raw.get('space_relevant', None)
-        if explicit is False:
-            new_relevance = 0
-        elif explicit is True or created > 0:
+        score = raw.get('space_relevance', None)
+        try:
+            new_relevance = max(0, min(100, int(score))) if score is not None else None
+        except (TypeError, ValueError):
+            new_relevance = None
+        # If LLM gave no score but classified successfully, assume relevant
+        if new_relevance is None and created > 0:
             new_relevance = 100
-        else:
-            new_relevance = None  # unknown — no classifications and no explicit signal
         if new_relevance != entity.space_relevance:
             entity.space_relevance = new_relevance
             entity.save(update_fields=['space_relevance'])
-            if new_relevance == 0:
-                logger.info('classify_entity %s: marked space_relevance=0 (non-space)', entity_id)
+            logger.info('classify_entity %s: space_relevance=%s', entity_id, new_relevance)
