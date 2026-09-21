@@ -103,6 +103,10 @@ def dashboard(request):
         .order_by('-id')
         .distinct()[:30]
     )
+    total_active = Entity.objects.exclude(status='merged').count()
+    with_summary = EntitySummary.objects.count()
+    with_score = Entity.objects.exclude(status='merged').exclude(space_relevance__isnull=True).count()
+
     ctx = {
         'stub_count': Entity.objects.filter(status='stub').count(),
         'candidate_count': Assertion.objects.filter(status='candidate').count(),
@@ -116,6 +120,9 @@ def dashboard(request):
         'worker_status': _worker_status(),
         'num_feeds': len(SPACE_NEWS_FEEDS),
         'title': 'ForeSpace',
+        'total_active': total_active,
+        'with_summary': with_summary,
+        'with_score': with_score,
     }
     return render(request, 'curation/dashboard.html', ctx)
 

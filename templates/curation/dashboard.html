@@ -99,6 +99,26 @@
   </form>
 </div>
 
+<!-- Assessment progress -->
+<div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:12px 20px;margin-bottom:20px;font-size:13px;display:flex;gap:32px;align-items:center;">
+  <span style="color:#555;font-weight:600;">Assessment progress</span>
+  <span>
+    <strong>{{ with_summary }}</strong> / {{ total_active }}
+    <span style="color:#888"> with description</span>
+    {% if total_active %}
+      <span style="color:#28a745;margin-left:4px">({% widthratio with_summary total_active 100 %}%)</span>
+    {% endif %}
+  </span>
+  <span>
+    <strong>{{ with_score }}</strong> / {{ total_active }}
+    <span style="color:#888"> scored</span>
+    {% if total_active %}
+      <span style="color:#17a2b8;margin-left:4px">({% widthratio with_score total_active 100 %}%)</span>
+    {% endif %}
+  </span>
+  <span style="color:#aaa;font-size:11px;">Refresh to update</span>
+</div>
+
 <!-- Stats -->
 <div class="stats">
   <div class="stat">
