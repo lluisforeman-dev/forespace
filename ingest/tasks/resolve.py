@@ -492,6 +492,13 @@ def _create_stub(
         )
 
     logger.info('Entity created: "%s" → %s', mention, entity.id)
+
+    # Initial assessment: world-knowledge description + space_relevance score.
+    # Fires once per new entity; routes to further research based on score.
+    if entity_type not in ('geography', 'document_node'):
+        from ingest.tasks.summarise import synthesise_entity_summary
+        synthesise_entity_summary.apply_async(args=[str(entity.id)], countdown=10)
+
     return str(entity.id)
 
 
