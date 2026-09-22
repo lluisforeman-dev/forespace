@@ -440,21 +440,18 @@ def entity_profile(request, entity_id):
 
     hq_city    = next((f for f in facts if f.attribute_id == 'headquarters_city'),    None)
     hq_country = next((f for f in facts if f.attribute_id == 'headquarters_country'), None)
-    # Fall back to candidate assertions for location fields (they rarely get adjudicated)
-    if not hq_city:
-        hq_city = (
-            all_assertions
-            .filter(attribute_id='headquarters_city', status='candidate', superseded_at__isnull=True)
-            .order_by('-confidence')
-            .first()
-        )
-    if not hq_country:
-        hq_country = (
-            all_assertions
-            .filter(attribute_id='headquarters_country', status='candidate', superseded_at__isnull=True)
-            .order_by('-confidence')
-            .first()
-        )
+    hq_address = next((f for f in facts if f.attribute_id == 'headquarters_address'), None)
+    # Fall back to candidate assertions for location fields (they rarely get adjudicated to accepted)
+    for attr_key in ('headquarters_city', 'headquarters_country', 'headquarters_address'):
+        already = {'headquarters_city': hq_city, 'headquarters_country': hq_country, 'headquarters_address': hq_address}[attr_key]
+        if already is None:
+            fb = (all_assertions
+                  .filter(attribute_id=attr_key, status='candidate', superseded_at__isnull=True)
+                  .order_by('-confidence').first())
+            if fb:
+                if attr_key == 'headquarters_city':    hq_city    = fb
+                elif attr_key == 'headquarters_country': hq_country = fb
+                elif attr_key == 'headquarters_address': hq_address = fb
     offices    = [r for r in relations_out if r.predicate_id == 'has_office_in']
 
     return render(request, 'curation/entity_profile.html', {
@@ -472,6 +469,7 @@ def entity_profile(request, entity_id):
         'participant_events':   participant_events,
         'hq_city':              hq_city,
         'hq_country':           hq_country,
+        'hq_address':           hq_address,
         'offices':              offices,
         'title':                entity.canonical_name,
     })
