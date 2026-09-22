@@ -61,7 +61,7 @@ Rules:
 
 Reply: {{"same": true, "confidence": "high"|"medium"|"low"}} or {{"same": false}}"""
 
-# L5 prompt — world-knowledge canonical name lookup
+# L5 prompt — world-knowledge canonical name lookup (organisations)
 _LLM_CANONICAL_USER = """\
 What is the single most widely-used canonical name for the following ORGANISATION in the space industry?
 This must be an organisation (company, agency, institute, consortium) — not a person, country, or product.
@@ -76,6 +76,22 @@ Rules:
 - Do not invent organisations.
 
 Reply: {{"canonical": "<name>", "confidence": "high"|"medium"|"low"}} or {{"canonical": null}} if unknown."""
+
+# L5 prompt — world-knowledge canonical name lookup (persons)
+_LLM_CANONICAL_PERSON = """\
+What is the full, canonical name for the following person in the space industry?
+
+Mention : "{mention}"
+
+Rules:
+- Reply with the most complete, commonly used form of their name \
+(e.g. "Roger Jové-Casulleras" not "Roger Jove", "José María" not "Jose Maria").
+- Include compound or hyphenated surnames where applicable.
+- If the mention is already the canonical form, return it as-is.
+- Only reply with high confidence if you are certain this is a real, known person.
+- Do not invent people.
+
+Reply: {{"canonical": "<full name>", "confidence": "high"|"medium"|"low"}} or {{"canonical": null}} if unknown."""
 
 # Rich prompt used when we have knowledge data for the candidate
 _LLM_RESOLVE_USER_WITH_CONTEXT = """\
@@ -251,9 +267,8 @@ def resolve_mention(
             return resolved
 
     # Level 5 — LLM world-knowledge canonical lookup
-    # Handles cases where string similarity is useless (acronyms, legal name variants)
-    # Skip for persons, and skip when heuristic says LLM is unlikely to know the entity.
-    if entity_type != 'person' and _should_call_l5(mention):
+    # Handles acronyms, legal name variants, and compound/diacritic person names.
+    if entity_type == 'person' or _should_call_l5(mention):
         canonical, found_id = _llm_known_entity(mention, entity_type, subject_context)
     else:
         canonical, found_id = None, None
@@ -443,7 +458,10 @@ def _llm_known_entity(mention: str, entity_type: str, subject_context: str = '')
         from ingest.cost import log_call
         client = get_client()
 
-        user_content = _LLM_CANONICAL_USER.format(mention=mention, entity_type=entity_type)
+        if entity_type == 'person':
+            user_content = _LLM_CANONICAL_PERSON.format(mention=mention)
+        else:
+            user_content = _LLM_CANONICAL_USER.format(mention=mention, entity_type=entity_type)
         if subject_context:
             user_content += f'\n\nDocument context: {subject_context}'
 
