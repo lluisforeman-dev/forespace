@@ -1014,7 +1014,7 @@ def fill_locations_all(request):
             .filter(entity_type__in=('company', 'investor', 'entity', 'university'))
             .exclude(status='merged')
             .exclude(id__in=Assertion.objects.filter(
-                attribute_key='headquarters_country',
+                attribute_id='headquarters_country',
                 status='accepted',
                 superseded_at__isnull=True,
             ).values('entity_id'))
