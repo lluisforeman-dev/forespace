@@ -109,8 +109,9 @@ RULES:
   These fields power geographic maps and funding charts — search every source for them.
   Do not skip these even if the document is primarily about something else.
   For EVERY office, facility, or operational presence (HQ and additional locations):
-  add a has_office_in relation → the city or country geography entity.
-  Qualifier office_type: "hq" for headquarters, "office" for branch offices, "facility" for production/test sites, "rd_center" for R&D labs.
+  add a has_office_in relation → the city geography entity.
+  Qualifiers MUST include office_type: "hq" | "office" | "facility" | "rd_center".
+  Include address (full street address) in qualifiers whenever findable.
   A company with offices in Madrid, London, and Houston gets THREE has_office_in relations.
 - ★ RESEARCH-CRITICAL: For ANY entity — companies, universities, research institutes, people,
   government agencies — extract publication_count and research_focus when findable.
@@ -857,28 +858,8 @@ def _store_relations(relations: list, fallback_doc: Document, sonar_source: Sour
     return stored, entity_ids
 
 
-def _geocode_hq_address(topic: str, assertion_ids: list, doc) -> None:
-    """
-    If a headquarters_address was just extracted, geocode it and update the
-    has_office_in(hq) relation's qualifiers with precise lat/lon.
-    Also updates the geography entity's coordinates for finer map placement.
-    """
+def _nominatim_geocode(address: str) -> tuple[float, float] | tuple[None, None]:
     import requests as _req
-    from django.db.models import Q
-    from core.models import Entity as _Entity
-    from core.normalize import normalize_name as _norm
-
-    addr_assertion = (
-        Assertion.objects
-        .filter(pk__in=assertion_ids, attribute_id='headquarters_address')
-        .exclude(value_text='')
-        .order_by('-confidence')
-        .first()
-    )
-    if not addr_assertion or not addr_assertion.value_text:
-        return
-
-    address = addr_assertion.value_text.strip()
     try:
         r = _req.get(
             'https://nominatim.openstreetmap.org/search',
@@ -887,16 +868,24 @@ def _geocode_hq_address(topic: str, assertion_ids: list, doc) -> None:
             timeout=5,
         )
         results = r.json()
-        if not results:
-            logger.debug('_geocode_hq_address: no result for "%s"', address)
-            return
-        lat = float(results[0]['lat'])
-        lon = float(results[0]['lon'])
+        if results:
+            return float(results[0]['lat']), float(results[0]['lon'])
     except Exception as exc:
-        logger.warning('_geocode_hq_address: %s', exc)
-        return
+        logger.debug('_nominatim_geocode "%s": %s', address, exc)
+    return None, None
 
-    # Update the has_office_in(hq) relation qualifiers with precise coords
+
+def _geocode_office_relations(topic: str, assertion_ids: list) -> None:
+    """
+    After a location research run:
+    - Geocode headquarters_address claim → store lat/lon on has_office_in(hq) qualifier
+    - Geocode address qualifier on every has_office_in relation that has one but lacks lat/lon
+    """
+    import time as _time
+    from django.db.models import Q
+    from core.models import Entity as _Entity
+    from core.normalize import normalize_name as _norm
+
     entity_norm = _norm(topic)
     entity = (
         _Entity.objects
@@ -907,28 +896,48 @@ def _geocode_hq_address(topic: str, assertion_ids: list, doc) -> None:
     if not entity:
         return
 
-    hq_rel = (
-        Relation.objects
-        .filter(subject=entity, predicate_id='has_office_in', superseded_at__isnull=True)
-        .filter(qualifiers__office_type='hq')
+    # 1. Geocode headquarters_address claim → HQ relation
+    addr_assertion = (
+        Assertion.objects
+        .filter(pk__in=assertion_ids, attribute_id='headquarters_address')
+        .exclude(value_text='')
+        .order_by('-confidence')
         .first()
     )
-    if hq_rel:
-        q = dict(hq_rel.qualifiers or {})
-        q['lat'] = lat
-        q['lon'] = lon
-        hq_rel.qualifiers = q
-        hq_rel.save(update_fields=['qualifiers'])
-        logger.info('_geocode_hq_address: "%s" → (%.5f, %.5f)', topic, lat, lon)
+    if addr_assertion and addr_assertion.value_text:
+        hq_rel = (
+            Relation.objects
+            .filter(subject=entity, predicate_id='has_office_in', superseded_at__isnull=True)
+            .filter(qualifiers__office_type='hq')
+            .first()
+        )
+        if hq_rel and not (hq_rel.qualifiers or {}).get('lat'):
+            lat, lon = _nominatim_geocode(addr_assertion.value_text)
+            if lat is not None:
+                q = dict(hq_rel.qualifiers or {})
+                q['lat'], q['lon'] = lat, lon
+                hq_rel.qualifiers = q
+                hq_rel.save(update_fields=['qualifiers'])
+                logger.info('geocoded HQ "%s" → (%.5f, %.5f)', topic, lat, lon)
+                _time.sleep(1.1)
 
-    # Also update the geography entity's coordinates with the more precise fix
-    if hq_rel:
-        geo = hq_rel.object
-        if geo.entity_type == 'geography':
-            # Only update if this is more precise (address beats city centroid)
-            geo.latitude = lat
-            geo.longitude = lon
-            geo.save(update_fields=['latitude', 'longitude'])
+    # 2. Geocode address qualifier on all other has_office_in relations
+    office_rels = (
+        Relation.objects
+        .filter(subject=entity, predicate_id='has_office_in', superseded_at__isnull=True)
+        .exclude(qualifiers__office_type='hq')
+    )
+    for rel in office_rels:
+        q = dict(rel.qualifiers or {})
+        if q.get('lat') or not q.get('address'):
+            continue  # already geocoded or no address to use
+        lat, lon = _nominatim_geocode(q['address'])
+        if lat is not None:
+            q['lat'], q['lon'] = lat, lon
+            rel.qualifiers = q
+            rel.save(update_fields=['qualifiers'])
+            logger.info('geocoded office "%s" → (%.5f, %.5f)', q['address'], lat, lon)
+            _time.sleep(1.1)
 
 
 @shared_task(bind=True, queue='extract', max_retries=2, default_retry_delay=30)
@@ -1148,14 +1157,15 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             f'Extract ALL of the following:\n'
             f'1. HEADQUARTERS — the primary registered or operational headquarters.\n'
             f'   Use claims: headquarters_city, headquarters_country, and headquarters_address.\n'
-            f'   headquarters_address should be the full street address including street, city, '
-            f'   postal code, and country (e.g. "350 Fifth Avenue, New York, NY 10118, US").\n'
-            f'   Be as specific as possible — street-level precision enables accurate map placement.\n'
-            f'2. ALL OFFICES, FACILITIES, AND SITES — every office, factory, R&D center, '
-            f'   launch site, ground station, or test facility.\n'
-            f'   For EACH location use a has_office_in relation → the most specific place name available '
-            f'   (prefer the city name over the country name).\n'
-            f'   Set qualifier office_type: "hq" | "office" | "facility" | "rd_center".\n'
+            f'   headquarters_address: full street address including street, city, postal code, '
+            f'   and country (e.g. "350 Fifth Avenue, New York, NY 10118, US").\n'
+            f'2. ALL OFFICES, FACILITIES, AND SITES — every additional office, factory, R&D center, '
+            f'   launch site, ground station, or test facility beyond the HQ.\n'
+            f'   For EACH location use a has_office_in relation → the city name.\n'
+            f'   Qualifiers MUST include:\n'
+            f'     office_type: "hq" | "office" | "facility" | "rd_center"\n'
+            f'     address: full street address if findable (same format as headquarters_address)\n'
+            f'   Example qualifiers: {{"office_type": "office", "address": "1 Angus Robertson Drive, Inverness IV2 7WG, UK"}}\n'
             f'3. If only a country is known (not a specific city), still extract it.\n\n'
             f'Focus ONLY on location data — do not extract funding, events, or other facts.\n\n'
             f'{_vocab_block()}'
@@ -1342,9 +1352,9 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         topic, accepted, events_stored, fragments_stored, relations_stored,
     )
 
-    # ── Geocode precise address if extracted (location runs) ─────────────
-    if topic_type == 'location' and new_ids:
-        _geocode_hq_address(topic, new_ids, doc)
+    # ── Geocode addresses from location runs ─────────────────────────────
+    if topic_type == 'location':
+        _geocode_office_relations(topic, new_ids)
 
     # ── Downstream tasks ─────────────────────────────────────────────────
     if new_ids:
