@@ -176,12 +176,16 @@ def question_research(request):
 
 @staff_member_required
 def stop_all_tasks(request):
-    """Purge all pending Celery tasks across every queue."""
+    """Flush all pending Celery tasks by deleting queue keys directly from Redis."""
     if request.method != 'POST':
         return HttpResponseRedirect(reverse('curation:dashboard'))
-    from config.celery import app as celery_app
-    discarded = celery_app.control.purge()
-    messages.warning(request, f'Stopped — {discarded} queued task(s) discarded. Running tasks will finish naturally.')
+    import redis as _redis
+    from django.conf import settings as _settings
+    r = _redis.from_url(_settings.CELERY_BROKER_URL)
+    discarded = sum(r.llen(q) for q in CELERY_QUEUES)
+    for q in CELERY_QUEUES:
+        r.delete(q)
+    messages.warning(request, f'Stopped — {discarded} queued task(s) flushed. Any task currently executing will still finish.')
     return HttpResponseRedirect(reverse('curation:dashboard'))
 
 

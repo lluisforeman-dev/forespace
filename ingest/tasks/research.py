@@ -1296,8 +1296,8 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         # Cascade: queue every discovered entity not recently researched,
         # sorted by accepted assertion count ascending — entities with the least
         # known information go first, naturally balancing coverage across the graph.
-        # end_user entities are leaf nodes — do not cascade from them.
-        if topic_type == 'end_user':
+        # end_user and location entities are leaf nodes — do not cascade from them.
+        if topic_type in ('end_user', 'location'):
             return {'accepted': accepted, 'rejected': rejected, 'events': events_stored, 'fragments': fragments_stored, 'relations': relations_stored}
         from django.db.models import Count
         cutoff = timezone.now() - timedelta(days=7)
