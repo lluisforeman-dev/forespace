@@ -4,7 +4,7 @@ services:
     runtime: python
     region: frankfurt
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: python manage.py flush_redis --settings=config.settings.prod; python manage.py migrate --settings=config.settings.prod && gunicorn config.wsgi:application --workers 3 --timeout 60
+    startCommand: python manage.py migrate --settings=config.settings.prod && gunicorn config.wsgi:application --workers 3 --timeout 60
     plan: free
     envVars:
       - key: DJANGO_SETTINGS_MODULE
