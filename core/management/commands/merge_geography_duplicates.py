@@ -11,7 +11,7 @@ Usage:
 import logging
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from core.models import Entity, EntityAlias, RelationAssertion
+from core.models import Entity, EntityAlias, Relation
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class Command(BaseCommand):
                 dup = Entity.objects.get(id=dup_id)
 
                 # Redirect relation assertions that reference the duplicate as object
-                ra_count = RelationAssertion.objects.filter(object_entity_id=dup_id).update(object_entity_id=keep_id)
+                ra_count = Relation.objects.filter(object_id=dup_id).update(object_id=keep_id)
 
                 # Redirect aliases
                 for alias in EntityAlias.objects.filter(entity_id=dup_id):

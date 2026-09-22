@@ -13,7 +13,7 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 
-from core.models import Assertion, Classification, Entity, EntityAlias, EntitySummary, Event, KnowledgeFragment, PromptTemplate, Relation, RelationAssertion, Source, ScheduledSource, TaxonomyNode
+from core.models import Assertion, Classification, Entity, EntityAlias, EntitySummary, Event, KnowledgeFragment, PromptTemplate, Relation, Source, ScheduledSource, TaxonomyNode
 from ingest.tasks.analytics import get_snapshot
 
 
@@ -1182,7 +1182,7 @@ def merge_geography_duplicates(request):
         with transaction.atomic():
             for keep_id, keep_name, dup_id, dup_name in pairs:
                 dup = Entity.objects.get(id=dup_id)
-                RelationAssertion.objects.filter(object_entity_id=dup_id).update(object_entity_id=keep_id)
+                Relation.objects.filter(object_id=dup_id).update(object_id=keep_id)
                 for alias in EntityAlias.objects.filter(entity_id=dup_id):
                     if not EntityAlias.objects.filter(entity_id=keep_id, normalized=alias.normalized).exists():
                         alias.entity_id = keep_id
