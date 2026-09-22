@@ -46,6 +46,21 @@ Rules:
 
 Reply: {{"same": true, "confidence": "high"|"medium"|"low"}} or {{"same": false}}"""
 
+# Person-specific prompt — handles compound surnames and accent/diacritic variants
+_LLM_RESOLVE_PERSON = """\
+Is the mention "{mention}" the same real person as "{candidate}"?
+
+Rules:
+- SAME if one is a shortened form of the other's full name, including compound or hyphenated surnames \
+(e.g. "Roger Jove" may be the informal form of "Roger Jové-Casulleras").
+- SAME if the only difference is diacritics or accents ("Jove" = "Jové").
+- SAME if one omits a second surname that the other includes (common in Spanish/Catalan names).
+- DIFFERENT if the given name (first name) differs — that is a different person.
+- DIFFERENT if both names are fully written out and share no surname tokens at all.
+- When uncertain reply false — a missed merge is safer than a wrong merge.
+
+Reply: {{"same": true, "confidence": "high"|"medium"|"low"}} or {{"same": false}}"""
+
 # L5 prompt — world-knowledge canonical name lookup
 _LLM_CANONICAL_USER = """\
 What is the single most widely-used canonical name for the following ORGANISATION in the space industry?
@@ -316,7 +331,9 @@ def _llm_disambiguate(mention: str, mention_type: str, candidates: list, subject
             candidate_name = candidate_entity.canonical_name if candidate_entity else alias_norm
 
             context = _entity_context_for_resolution(str(entity_id))
-            if context:
+            if mention_type == 'person':
+                user_msg = _LLM_RESOLVE_PERSON.format(mention=mention, candidate=candidate_name)
+            elif context:
                 user_msg = _LLM_RESOLVE_USER_WITH_CONTEXT.format(
                     mention=mention,
                     mention_type=mention_type,
