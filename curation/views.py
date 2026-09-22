@@ -864,7 +864,7 @@ def research_all(request):
             research_topic.apply_async(
                 args=[entity.canonical_name, topic_type],
                 kwargs={'cascade_depth': 0},
-                countdown=60 + i * 30,
+                countdown=i * 2,
             )
             queued += 1
         messages.success(request, f'Queued research for {queued} entities — full pipeline will run for each.')
