@@ -422,8 +422,7 @@ def entity_profile(request, entity_id):
     source_docs = list(
         Assertion.objects
         .filter(entity=entity, document__isnull=False)
-        .select_related('document__source')
-        .values('document__id', 'document__title', 'document__source__url', 'document__source__name')
+        .values('document__id', 'document__title', 'document__url', 'document__source__name')
         .distinct()[:8]
     )
 

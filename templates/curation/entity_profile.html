@@ -365,8 +365,8 @@
     <div style="margin-top:10px;display:flex;flex-direction:column;gap:4px">
       {% for doc in source_docs %}
       <div style="font-size:12px">
-        {% if doc.document__source__url %}
-          <a href="{{ doc.document__source__url }}" target="_blank" rel="noopener" style="color:#0066cc;font-weight:600">{{ doc.document__source__name|default:doc.document__source__url|truncatechars:60 }}</a>
+        {% if doc.document__url %}
+          <a href="{{ doc.document__url }}" target="_blank" rel="noopener" style="color:#0066cc;font-weight:600">{{ doc.document__source__name|default:doc.document__url|truncatechars:60 }}</a>
         {% else %}
           <span style="color:#888">{{ doc.document__source__name|default:"Unknown source" }}</span>
         {% endif %}
