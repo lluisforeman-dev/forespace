@@ -896,10 +896,31 @@ def assess_all(request):
         for i, eid in enumerate(only_no_score):
             classify_entity.apply_async(args=[str(eid)], countdown=i * 2)
 
+        # Stale WK summaries: entities that have events or fragments but whose summary
+        # was written from world knowledge (source_count=0) — re-synthesise from evidence.
+        from core.models import Event, KnowledgeFragment
+        stale_summary_ids = set(
+            EntitySummary.objects
+            .filter(source_count=0)
+            .exclude(entity__status='merged')
+            .exclude(entity__entity_type__in=skip_types)
+            .filter(
+                entity__id__in=(
+                    Event.objects.values('entity_id').union(
+                        KnowledgeFragment.objects.values('entity_id')
+                    )
+                )
+            )
+            .values_list('entity_id', flat=True)
+        ) - no_summary_ids  # don't double-queue
+        for i, eid in enumerate(stale_summary_ids):
+            synthesise_entity_summary.apply_async(args=[str(eid)], countdown=i)
+
         messages.success(
             request,
-            f'Queued assessment for {len(no_summary_ids)} entities without a description '
-            f'and scoring for {len(only_no_score)} additional unscored entities.'
+            f'Queued assessment for {len(no_summary_ids)} entities without a description, '
+            f'scoring for {len(only_no_score)} unscored entities, '
+            f'and re-synthesis for {len(stale_summary_ids)} entities with stale WK summaries.'
         )
     return HttpResponseRedirect(reverse('curation:dashboard'))
 
