@@ -225,7 +225,7 @@
 {% endif %}
 
 <!-- ── Location ── -->
-{% if hq_city or hq_country or offices %}
+{% if entity.entity_type in "company,investor,entity,university,facility" %}
 <div class="card">
   <h2>&#127759; Location</h2>
   {% if hq_city or hq_country %}
@@ -238,7 +238,7 @@
   </div>
   {% endif %}
   {% if offices %}
-  <div>
+  <div style="margin-bottom:10px">
     <span style="font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.5px">Offices &amp; Facilities</span>
     <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">
       {% for r in offices %}
@@ -248,6 +248,15 @@
       </span>
       {% endfor %}
     </div>
+  </div>
+  {% endif %}
+  {% if not hq_city and not hq_country and not offices %}
+  <div style="display:flex;align-items:center;justify-content:space-between">
+    <span style="color:#aaa;font-size:13px">No location data yet.</span>
+    <form method="post" action="{% url 'curation:fill_locations_all' %}" style="margin:0">
+      {% csrf_token %}
+      <button class="btn btn-sm" style="background:#fd7e14;color:#fff">&#127759; Look up location</button>
+    </form>
   </div>
   {% endif %}
 </div>
