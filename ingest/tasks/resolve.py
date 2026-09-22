@@ -402,12 +402,31 @@ def _llm_disambiguate(mention: str, mention_type: str, candidates: list, subject
     return None
 
 
+def _geocode_nominatim(place: str) -> tuple[float, float] | tuple[None, None]:
+    """Call Nominatim to get (lat, lon) for a place name. Returns (None, None) on failure."""
+    import requests as _req
+    try:
+        r = _req.get(
+            'https://nominatim.openstreetmap.org/search',
+            params={'q': place, 'format': 'json', 'limit': 1},
+            headers={'User-Agent': 'ForeSpace/1.0 (space-industry knowledge graph)'},
+            timeout=5,
+        )
+        results = r.json()
+        if results:
+            return float(results[0]['lat']), float(results[0]['lon'])
+    except Exception as exc:
+        logger.debug('Nominatim geocode "%s": %s', place, exc)
+    return None, None
+
+
 def _find_or_create_geography(mention: str, norm: str) -> str:
     """Find or create a geography entity (country, region, city).
 
     These are valid relation targets (has_office_in → London) but carry
     entity_type='geography' so they are excluded from company-focused views
-    and never auto-researched as companies.
+    and never auto-researched as companies. Coordinates are geocoded via
+    Nominatim on first creation.
     """
     alias = (
         EntityAlias.objects
@@ -417,6 +436,8 @@ def _find_or_create_geography(mention: str, norm: str) -> str:
     )
     if alias:
         return str(alias.entity_id)
+
+    lat, lon = _geocode_nominatim(mention)
 
     slug_base = slugify(mention)[:200] or 'geo'
     slug = slug_base
@@ -431,6 +452,8 @@ def _find_or_create_geography(mention: str, norm: str) -> str:
             canonical_name=mention,
             slug=slug,
             status='active',
+            latitude=lat,
+            longitude=lon,
         )
         EntityAlias.objects.create(
             entity=ent,
@@ -438,7 +461,7 @@ def _find_or_create_geography(mention: str, norm: str) -> str:
             alias_norm=norm,
             alias_kind='trading',
         )
-    logger.info('Geography entity created: "%s" → %s', mention, ent.id)
+    logger.info('Geography entity created: "%s" → %s (%.4f, %.4f)', mention, ent.id, lat or 0, lon or 0)
     return str(ent.id)
 
 

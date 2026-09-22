@@ -1105,6 +1105,15 @@ def map_data(request):
         ).exclude(value_text='').values('entity_id', 'value_text')
     }
 
+    # Build a lookup: place name → (lat, lon) from existing geography entities
+    from core.models import Entity as _GeoEntity
+    geo_coords = {
+        e.canonical_name: (float(e.latitude), float(e.longitude))
+        for e in _GeoEntity.objects.filter(
+            entity_type='geography', latitude__isnull=False
+        ).only('canonical_name', 'latitude', 'longitude')
+    }
+
     markers = []
     seen = set()
     for row in hq_rows:
@@ -1112,30 +1121,39 @@ def map_data(request):
         if eid in seen:
             continue
         seen.add(eid)
+        city    = city_rows.get(row['entity_id'], '')
+        country = row['value_text']
+        coords  = geo_coords.get(city) or geo_coords.get(country)
         markers.append({
             'id':      eid,
             'name':    row['entity__canonical_name'],
             'type':    row['entity__entity_type'],
-            'country': row['value_text'],
-            'city':    city_rows.get(row['entity_id'], ''),
+            'place':   city or country,
+            'lat':     coords[0] if coords else None,
+            'lon':     coords[1] if coords else None,
+            'country': country,
+            'city':    city,
         })
 
-    # Offices via has_office_in relation
+    # Offices via has_office_in relation — use geocoded coords from the geography entity
     office_rows = (
         Relation.objects
         .filter(predicate_id='has_office_in', superseded_at__isnull=True)
         .select_related('subject', 'object')
         .values('subject_id', 'subject__canonical_name', 'subject__entity_type',
-                'object__canonical_name', 'qualifiers')
+                'object__canonical_name', 'object__latitude', 'object__longitude', 'qualifiers')
     )
     for row in office_rows:
+        lat = float(row['object__latitude']) if row['object__latitude'] is not None else None
+        lon = float(row['object__longitude']) if row['object__longitude'] is not None else None
         office_type = (row['qualifiers'] or {}).get('office_type', 'office')
         markers.append({
-            'id':      str(row['subject_id']),
-            'name':    row['subject__canonical_name'],
-            'type':    row['subject__entity_type'],
-            'country': row['object__canonical_name'],
-            'city':    '',
+            'id':          str(row['subject_id']),
+            'name':        row['subject__canonical_name'],
+            'type':        row['subject__entity_type'],
+            'place':       row['object__canonical_name'],
+            'lat':         lat,
+            'lon':         lon,
             'office_type': office_type,
         })
 

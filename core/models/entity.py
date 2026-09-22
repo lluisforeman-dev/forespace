@@ -17,6 +17,7 @@ class Entity(models.Model):
         ('program', 'Program'),
         ('funding_program', 'Funding Program'),
         ('end_user', 'End User'),
+        ('geography', 'Geography'),
     ]
     STATUS_CHOICES = [
         ('active', 'Active'),
@@ -39,6 +40,9 @@ class Entity(models.Model):
     watchlist = models.BooleanField(default=False)  # priority=2× in scheduler
     # 0 = confirmed non-space, 100 = confirmed space-relevant, null = unknown
     space_relevance = models.SmallIntegerField(null=True, blank=True)
+    # Geocoded coordinates — populated for geography entities via Nominatim
+    latitude  = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
