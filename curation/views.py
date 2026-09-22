@@ -196,10 +196,14 @@ def stop_all_tasks(request):
     # Set pause flag — all research_topic tasks check this and bail immediately
     r.set(PAUSE_FLAG, '1')
 
-    # Flush Redis queues
+    # Flush queue lists AND ETA/scheduled task sorted sets
     discarded = sum(r.llen(q) for q in CELERY_QUEUES)
-    for q in CELERY_QUEUES:
-        r.delete(q)
+    keys_to_delete = list(CELERY_QUEUES)
+    # Celery stores ETA/countdown tasks in kombu binding keys and unacked structures
+    for pattern in ('_kombu.binding.*', 'unacked*', 'celery-task-meta-*'):
+        keys_to_delete.extend(k.decode() if isinstance(k, bytes) else k for k in r.keys(pattern))
+    for key in keys_to_delete:
+        r.delete(key)
 
     messages.warning(request, f'Stopped — {discarded} queued task(s) flushed. Workers are paused and will drop any prefetched tasks. Click Resume when ready.')
     return HttpResponseRedirect(reverse('curation:dashboard'))
