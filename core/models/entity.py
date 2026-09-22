@@ -40,9 +40,10 @@ class Entity(models.Model):
     watchlist = models.BooleanField(default=False)  # priority=2× in scheduler
     # 0 = confirmed non-space, 100 = confirmed space-relevant, null = unknown
     space_relevance = models.SmallIntegerField(null=True, blank=True)
-    # Geocoded coordinates — populated for geography entities via Nominatim
-    latitude  = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    # Geocoded HQ coordinates — set from headquarters_address (precise) or city/country (approx)
+    latitude           = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude          = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    has_street_address = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

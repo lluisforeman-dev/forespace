@@ -942,14 +942,21 @@ def _geocode_with_fallback(address: str) -> tuple[float, float] | tuple[None, No
 
 @shared_task(queue='extract')
 def geocode_all_offices():
-    """Geocode every has_office_in relation that has an address but no lat/lon yet."""
+    """
+    Two passes:
+    1. Geocode has_office_in relations that have an address qualifier but no lat/lon.
+    2. Geocode entities that have headquarters assertions but no lat/lon on the entity itself
+       (covers entities researched before has_office_in predicate existed).
+    Stores coords on both the relation qualifier AND directly on the entity.
+    """
     import time as _time
-    from core.models import Relation as _Rel
+    from core.models import Relation as _Rel, Entity as _Entity, Assertion as _Assertion
 
+    # Pass 1 — relations with address but no coords
     rels = list(
         _Rel.objects
         .filter(predicate_id='has_office_in', superseded_at__isnull=True)
-        .values('id', 'qualifiers')
+        .values('id', 'subject_id', 'qualifiers')
     )
     done = skipped = 0
     for row in rels:
@@ -963,8 +970,62 @@ def geocode_all_offices():
             continue
         q['lat'], q['lon'] = lat, lon
         _Rel.objects.filter(id=row['id']).update(qualifiers=q)
+        if q.get('office_type') == 'hq':
+            _Entity.objects.filter(id=row['subject_id'], latitude__isnull=True).update(
+                latitude=lat, longitude=lon, has_street_address=True,
+            )
         done += 1
-    logger.info('geocode_all_offices: %d geocoded, %d skipped', done, skipped)
+    logger.info('geocode_all_offices pass1: %d geocoded, %d skipped', done, skipped)
+
+    # Pass 2 — entities with headquarters assertions but no coords yet
+    addr_map = {
+        row['entity_id']: row['value_text']
+        for row in _Assertion.objects.filter(
+            attribute_key='headquarters_address', superseded_at__isnull=True,
+        ).exclude(value_text='').values('entity_id', 'value_text')
+    }
+    city_map = {
+        row['entity_id']: row['value_text']
+        for row in _Assertion.objects.filter(
+            attribute_key='headquarters_city', superseded_at__isnull=True,
+            status__in=('accepted', 'candidate'),
+        ).exclude(value_text='').values('entity_id', 'value_text')
+    }
+    country_map = {
+        row['entity_id']: row['value_text']
+        for row in _Assertion.objects.filter(
+            attribute_key='headquarters_country', superseded_at__isnull=True,
+            status__in=('accepted', 'candidate'),
+        ).exclude(value_text='').values('entity_id', 'value_text')
+    }
+
+    entities_needing_coords = _Entity.objects.filter(
+        latitude__isnull=True,
+        id__in=set(addr_map) | set(city_map) | set(country_map),
+    ).values_list('id', flat=True)
+
+    done2 = skipped2 = 0
+    for eid in entities_needing_coords:
+        address = addr_map.get(eid)
+        if address:
+            lat, lon = _geocode_with_fallback(address)
+            is_precise = True
+        else:
+            parts = [v for v in [city_map.get(eid), country_map.get(eid)] if v]
+            if not parts:
+                skipped2 += 1
+                continue
+            lat, lon = _nominatim_geocode(', '.join(parts))
+            is_precise = False
+            _time.sleep(1.1)
+        if lat is None:
+            skipped2 += 1
+            continue
+        _Entity.objects.filter(id=eid).update(
+            latitude=lat, longitude=lon, has_street_address=is_precise,
+        )
+        done2 += 1
+    logger.info('geocode_all_offices pass2: %d geocoded, %d skipped', done2, skipped2)
 
 
 def _nominatim_geocode(address: str) -> tuple[float, float] | tuple[None, None]:
@@ -1044,10 +1105,16 @@ def _geocode_office_relations(topic: str, assertion_ids: list) -> None:
         if geocode_query:
             lat, lon = _geocode_with_fallback(geocode_query) if addr_assertion else _nominatim_geocode(geocode_query)
             if lat is not None:
+                # Store on the relation qualifier
                 q = dict(hq_rel.qualifiers or {})
                 q['lat'], q['lon'] = lat, lon
                 hq_rel.qualifiers = q
                 hq_rel.save(update_fields=['qualifiers'])
+                # Also store directly on the entity so map_data doesn't need the relation
+                entity.latitude = lat
+                entity.longitude = lon
+                entity.has_street_address = bool(addr_assertion)
+                entity.save(update_fields=['latitude', 'longitude', 'has_street_address'])
                 logger.info('geocoded HQ "%s" via "%s" → (%.5f, %.5f)', topic, geocode_query, lat, lon)
                 _time.sleep(1.1)
 

@@ -1249,16 +1249,13 @@ def map_data(request):
         ).exclude(value_text='').values('entity_id', 'value_text')
     }
 
-    # Build a lookup: entity_id → {lat, lon, has_address} from geocoded HQ qualifier
-    hq_qualifier_data = {}
-    for rel in Relation.objects.filter(predicate_id='has_office_in', superseded_at__isnull=True).values('subject_id', 'qualifiers'):
-        q = rel['qualifiers'] or {}
-        if q.get('office_type') == 'hq' and q.get('lat') and q.get('lon'):
-            hq_qualifier_data[str(rel['subject_id'])] = {
-                'lat': float(q['lat']),
-                'lon': float(q['lon']),
-                'has_address': bool(q.get('address')),
-            }
+    # Fetch entity lat/lon (geocoded from headquarters_address or city/country)
+    entity_ids = [row['entity_id'] for row in hq_rows]
+    entity_coords = {
+        str(e['id']): (float(e['latitude']), float(e['longitude']), bool(e.get('has_street_address')))
+        for e in Entity.objects.filter(id__in=entity_ids, latitude__isnull=False)
+        .values('id', 'latitude', 'longitude', 'has_street_address')
+    }
 
     markers = []
     seen = set()
@@ -1269,15 +1266,15 @@ def map_data(request):
         seen.add(eid)
         city    = city_rows.get(row['entity_id'], '')
         country = row['value_text']
-        hq     = hq_qualifier_data.get(eid)
+        coords  = entity_coords.get(eid)
         markers.append({
             'id':          eid,
             'name':        row['entity__canonical_name'],
             'type':        row['entity__entity_type'],
             'place':       city or country,
-            'lat':         hq['lat'] if hq else None,
-            'lon':         hq['lon'] if hq else None,
-            'has_address': hq['has_address'] if hq else False,
+            'lat':         coords[0] if coords else None,
+            'lon':         coords[1] if coords else None,
+            'has_address': coords[2] if coords else False,
             'country':     country,
             'city':        city,
         })
