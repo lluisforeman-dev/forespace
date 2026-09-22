@@ -426,6 +426,14 @@ def entity_profile(request, entity_id):
         .distinct()[:8]
     )
 
+    # Events where this entity appears as a participant (not primary entity)
+    participant_events = list(
+        Event.objects
+        .filter(participants=entity)
+        .select_related('entity', 'source')
+        .order_by('-date', '-created_at')[:20]
+    )
+
     return render(request, 'curation/entity_profile.html', {
         'entity':               entity,
         'summary':              summary,
@@ -438,6 +446,7 @@ def entity_profile(request, entity_id):
         'relations_in':         relations_in,
         'classifications':      classifications,
         'source_docs':          source_docs,
+        'participant_events':   participant_events,
         'title':                entity.canonical_name,
     })
 

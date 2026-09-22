@@ -337,6 +337,29 @@
 </div>
 {% endif %}
 
+<!-- ── Participant events ── -->
+{% if participant_events %}
+<div class="card">
+  <h2>Appears in events (as participant)</h2>
+  <table>
+    <thead><tr><th>Date</th><th>Type</th><th>Event</th><th>Primary entity</th></tr></thead>
+    <tbody>
+      {% for ev in participant_events %}
+      <tr>
+        <td style="font-size:12px;color:#888;white-space:nowrap">{{ ev.date|default:"—" }}</td>
+        <td style="font-size:12px;color:#6f42c1">{{ ev.event_type }}</td>
+        <td>
+          {{ ev.title }}
+          {% if ev.source and ev.source.url %}<a href="{{ ev.source.url }}" target="_blank" style="color:#0066cc;font-size:11px;margin-left:6px">↗</a>{% endif %}
+        </td>
+        <td><a href="{% url 'curation:entity_profile' ev.entity.id %}">{{ ev.entity }}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 <!-- ── Classifications ── -->
 {% if classifications %}
 <div class="card">
