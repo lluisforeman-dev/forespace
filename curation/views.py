@@ -418,21 +418,7 @@ def entity_profile(request, entity_id):
     for frag in raw_fragments:
         fragments_by_category.setdefault(frag.category, []).append(frag)
 
-    # Provenance: which research runs and documents first brought this entity in
-    from django.db.models import Min
-    origin_run_ids = (
-        Assertion.objects
-        .filter(entity=entity, run__isnull=False)
-        .values('run_id')
-        .annotate(first_seen=Min('observed_at'))
-        .order_by('first_seen')[:5]
-    )
-    from core.models import ExtractionRun
-    origin_runs = list(
-        ExtractionRun.objects
-        .filter(pk__in=[r['run_id'] for r in origin_run_ids])
-        .order_by('started_at')
-    )
+    # Provenance: which source documents brought this entity in
     source_docs = list(
         Assertion.objects
         .filter(entity=entity, document__isnull=False)
@@ -452,7 +438,6 @@ def entity_profile(request, entity_id):
         'relations_out':        relations_out,
         'relations_in':         relations_in,
         'classifications':      classifications,
-        'origin_runs':          origin_runs,
         'source_docs':          source_docs,
         'title':                entity.canonical_name,
     })

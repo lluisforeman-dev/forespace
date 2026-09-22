@@ -54,18 +54,6 @@
       </h2>
       <p style="color:#888;font-size:13px">
         {{ entity.get_entity_type_display }} · created {{ entity.created_at|date:"Y-m-d" }}
-        {% if origin_runs %}
-          &nbsp;·&nbsp;
-          <span style="color:#aaa;">via
-          {% for run in origin_runs %}
-            {% if run.stats.topic %}
-              <span style="color:#6b7280;font-style:italic" title="{{ run.task }} · {{ run.started_at|date:'Y-m-d H:i' }}">{{ run.stats.topic|truncatechars:40 }}</span>{% if not forloop.last %}, {% endif %}
-            {% else %}
-              <span style="color:#6b7280;font-style:italic">{{ run.task }}</span>{% if not forloop.last %}, {% endif %}
-            {% endif %}
-          {% endfor %}
-          </span>
-        {% endif %}
         &nbsp;·&nbsp;
         {% if entity.space_relevance == 100 %}
           <span style="display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:700;background:#d1fae5;color:#065f46;">space 100</span>
