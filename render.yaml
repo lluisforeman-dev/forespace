@@ -52,7 +52,7 @@ services:
     runtime: python
     region: frankfurt
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: celery -A config worker -Q crawl,parse,triage,extract,resolve,adjudicate,project,analytics,analysis --loglevel=info --concurrency 2
+    startCommand: celery -A config worker -Q crawl,parse,triage,extract,resolve,adjudicate,project,analytics,analysis --loglevel=info --concurrency 2 --without-mingle --without-gossip
     plan: free
     envVars:
       - key: DJANGO_SETTINGS_MODULE
