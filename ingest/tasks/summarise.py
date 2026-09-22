@@ -265,7 +265,7 @@ def synthesise_entity_summary(self, entity_id: str):
             research_topic.apply_async(
                 args=[entity.canonical_name, topic_type],
                 kwargs={'cascade_depth': 0},
-                countdown=120,
+                countdown=0,
             )
 
         if created and overview:
