@@ -657,7 +657,13 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
                     date=date_val,
                 ).exclude(pk=event_obj.pk)
                 for candidate in same_day_candidates:
-                    if _is_same_story(candidate.description, description, candidate.title, title):
+                    # Exact amount match is near-certain proof of same event
+                    amount_match = (
+                        amount_usd is not None
+                        and candidate.amount_usd is not None
+                        and abs(candidate.amount_usd - amount_usd) < 1
+                    )
+                    if amount_match or _is_same_story(candidate.description, description, candidate.title, title):
                         # It's the same announcement — delete the row we just created
                         # and merge into the existing one instead.
                         event_obj.delete()
