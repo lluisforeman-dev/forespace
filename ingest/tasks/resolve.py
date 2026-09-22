@@ -150,12 +150,19 @@ def resolve_mention(
     document_id: str | None = None,
     entity_type: str = 'company',
     subject_context: str = '',
+    primary_entity_id: str | None = None,
+    primary_entity_norm: str | None = None,
 ) -> str:
     """Resolve a surface-form mention to an entity UUID. Creates a stub if needed.
 
     subject_context: optional hint about the document's primary subject, e.g.
         "Researching: SpaceX (company)" — passed to L4/L5 LLM prompts to help
         disambiguate mentions that share an acronym or name across domains.
+    primary_entity_id / primary_entity_norm: when set, a mention whose normalised form
+        contains the primary entity's normalised name as a contiguous substring is
+        resolved directly to the primary entity (e.g. "NASA's SpaceX Crew-15 mission"
+        → "Crew-15" when researching Crew-15).  Only applied when the primary name is
+        at least 4 chars and the mention is at most 6 words longer than the primary name.
     """
     if entity_type not in _VALID_ENTITY_TYPES:
         entity_type = 'company'
@@ -167,6 +174,19 @@ def resolve_mention(
     if norm in _GEOGRAPHIC_BLOCKLIST:
         logger.debug('resolve: geographic mention "%s" — finding/creating geography entity', mention)
         return _find_or_create_geography(mention, norm)
+
+    # Primary-entity shortcut: "NASA's SpaceX Crew-15 mission" → "Crew-15"
+    # If the mention is a longer description of the entity being researched, collapse it.
+    if (
+        primary_entity_id
+        and primary_entity_norm
+        and len(primary_entity_norm) >= 4
+        and primary_entity_norm in norm
+        and len(norm.split()) <= len(primary_entity_norm.split()) + 6
+    ):
+        _add_alias(primary_entity_id, mention, norm, document_id)
+        logger.info('resolve: primary-entity shortcut "%s" → %s', mention, primary_entity_id)
+        return primary_entity_id
 
     # Level 2a — exact canonical name (case-insensitive)
     ent = (

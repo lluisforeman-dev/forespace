@@ -573,7 +573,7 @@ def _is_same_story(desc_a: str, desc_b: str, title_a: str, title_b: str) -> bool
         return False
 
 
-def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source, subject_context: str = '') -> tuple[int, set]:
+def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source, subject_context: str = '', primary_entity_id: str | None = None, primary_entity_norm: str | None = None) -> tuple[int, set]:
     """Persist extracted events, resolving participant entity names.
     Returns (stored_count, entity_ids) where entity_ids includes all subjects and participants."""
     valid_types = {t[0] for t in Event.EVENT_TYPES}
@@ -595,7 +595,7 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
         entity_id = name_to_id.get(mention)
         if not entity_id:
             try:
-                entity_id = resolve_mention(mention, document_id=str(fallback_doc.id), entity_type=subject_type, subject_context=subject_context)
+                entity_id = resolve_mention(mention, document_id=str(fallback_doc.id), entity_type=subject_type, subject_context=subject_context, primary_entity_id=primary_entity_id, primary_entity_norm=primary_entity_norm)
             except Exception:
                 continue
         entity_ids.add(str(entity_id))
@@ -706,7 +706,7 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
                 pid = name_to_id.get(pname)
                 if not pid:
                     try:
-                        pid = resolve_mention(pname, document_id=str(fallback_doc.id), entity_type=ptype, subject_context=subject_context)
+                        pid = resolve_mention(pname, document_id=str(fallback_doc.id), entity_type=ptype, subject_context=subject_context, primary_entity_id=primary_entity_id, primary_entity_norm=primary_entity_norm)
                     except Exception:
                         continue
                 if pid != entity_id:
@@ -719,7 +719,7 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
     return stored, entity_ids
 
 
-def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source, subject_context: str = '') -> tuple[int, set]:
+def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source, subject_context: str = '', primary_entity_id: str | None = None, primary_entity_norm: str | None = None) -> tuple[int, set]:
     """Persist knowledge fragments. Returns (stored_count, entity_ids)."""
     valid_cats = {c[0] for c in KnowledgeFragment.CATEGORIES}
     stored = 0
@@ -738,7 +738,7 @@ def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, 
         entity_id = name_to_id.get(mention)
         if not entity_id:
             try:
-                entity_id = resolve_mention(mention, document_id=str(fallback_doc.id), entity_type=subject_type, subject_context=subject_context)
+                entity_id = resolve_mention(mention, document_id=str(fallback_doc.id), entity_type=subject_type, subject_context=subject_context, primary_entity_id=primary_entity_id, primary_entity_norm=primary_entity_norm)
             except Exception:
                 continue
         entity_ids.add(str(entity_id))
@@ -768,7 +768,7 @@ def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, 
     return stored, entity_ids
 
 
-def _store_relations(relations: list, fallback_doc: Document, sonar_source: Source, subject_context: str = '') -> tuple[int, set]:
+def _store_relations(relations: list, fallback_doc: Document, sonar_source: Source, subject_context: str = '', primary_entity_id: str | None = None, primary_entity_norm: str | None = None) -> tuple[int, set]:
     """Persist inline-extracted relations from Sonar output. Returns (stored_count, entity_ids)."""
     valid_predicates = {p.key for p in PredicateDef.objects.all()}
     if not valid_predicates:
@@ -808,10 +808,10 @@ def _store_relations(relations: list, fallback_doc: Document, sonar_source: Sour
         try:
             with transaction.atomic():
                 subject_id = resolve_mention(
-                    subject_mention, document_id=str(fallback_doc.id), entity_type=subject_type, subject_context=subject_context
+                    subject_mention, document_id=str(fallback_doc.id), entity_type=subject_type, subject_context=subject_context, primary_entity_id=primary_entity_id, primary_entity_norm=primary_entity_norm
                 )
                 object_id = resolve_mention(
-                    object_mention, document_id=str(fallback_doc.id), entity_type=object_type, subject_context=subject_context
+                    object_mention, document_id=str(fallback_doc.id), entity_type=object_type, subject_context=subject_context, primary_entity_id=primary_entity_id, primary_entity_norm=primary_entity_norm
                 )
 
                 existing = Relation.objects.filter(
@@ -1209,14 +1209,20 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
 
     _subject_ctx = f'Researching: {topic} ({topic_type})'
 
+    # Primary entity hint: collapse verbose mentions like "NASA's SpaceX Crew-15 mission"
+    # back to the topic entity (e.g. "Crew-15") in resolve_mention.
+    from core.normalize import normalize_name as _norm
+    _primary_id = name_to_id.get(topic)
+    _primary_norm = _norm(topic) if _primary_id else None
+
     # ── Store events ──────────────────────────────────────────────────────
-    events_stored, event_entity_ids = _store_events(events, name_to_id, doc, source, subject_context=_subject_ctx)
+    events_stored, event_entity_ids = _store_events(events, name_to_id, doc, source, subject_context=_subject_ctx, primary_entity_id=_primary_id, primary_entity_norm=_primary_norm)
 
     # ── Store fragments ───────────────────────────────────────────────────
-    fragments_stored, fragment_entity_ids = _store_fragments(fragments, name_to_id, doc, source, subject_context=_subject_ctx)
+    fragments_stored, fragment_entity_ids = _store_fragments(fragments, name_to_id, doc, source, subject_context=_subject_ctx, primary_entity_id=_primary_id, primary_entity_norm=_primary_norm)
 
     # ── Store relations (inline — Sonar had full web context) ─────────────
-    relations_stored, relation_entity_ids = _store_relations(relations, doc, source, subject_context=_subject_ctx)
+    relations_stored, relation_entity_ids = _store_relations(relations, doc, source, subject_context=_subject_ctx, primary_entity_id=_primary_id, primary_entity_norm=_primary_norm)
 
     # ── Finalise run ──────────────────────────────────────────────────────
     run.status = 'completed'
