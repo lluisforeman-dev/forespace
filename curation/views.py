@@ -864,8 +864,14 @@ def research_all(request):
             .exclude(id__in=Event.objects.values('entity_id'))
             .only('id', 'canonical_name', 'entity_type', 'space_relevance')
         )
+        from django.core.cache import cache
         queued = 0
+        skipped = 0
         for i, entity in enumerate(no_events):
+            lock_key = f'research_queued:{entity.id}'
+            if cache.get(lock_key):
+                skipped += 1
+                continue
             topic_type = _TYPE_TO_TOPIC.get(entity.entity_type, 'company')
             # Adjacent entities (score=50): narrow search to space-specific facts only
             if entity.space_relevance is not None and entity.space_relevance < 100 and topic_type == 'company':
@@ -875,8 +881,12 @@ def research_all(request):
                 kwargs={'cascade_depth': 0},
                 countdown=i * 2,
             )
+            cache.set(lock_key, 1, timeout=7200)  # 2h — task should complete by then
             queued += 1
-        messages.success(request, f'Queued research for {queued} entities — full pipeline will run for each.')
+        msg = f'Queued research for {queued} entities.'
+        if skipped:
+            msg += f' Skipped {skipped} already in queue.'
+        messages.success(request, msg)
     return HttpResponseRedirect(reverse('curation:dashboard'))
 
 
