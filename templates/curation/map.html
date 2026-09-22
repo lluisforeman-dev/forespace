@@ -32,11 +32,10 @@ fetch("{% url 'curation:map_data' %}")
   .then(r => r.json())
   .then(data => {
     let placed = 0, skipped = 0;
-    const jitter = () => (Math.random() - 0.5) * 0.6;
     data.markers.forEach(m => {
       if (m.lat == null || m.lon == null) { skipped++; return; }
       const color = TYPE_COLORS[m.type] || '#888';
-      const marker = L.circleMarker([m.lat + jitter(), m.lon + jitter()], {
+      const marker = L.circleMarker([m.lat, m.lon], {
         radius: 6, fillColor: color, color: '#fff',
         weight: 1.5, opacity: 1, fillOpacity: 0.85,
       });
