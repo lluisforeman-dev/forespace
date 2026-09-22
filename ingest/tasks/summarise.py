@@ -77,7 +77,7 @@ def _world_knowledge_summary(entity_id: str, entity, brief: bool = False) -> dic
     brief=False: full 4-field profile (for space_relevance=50 entities).
     Returns the parsed JSON dict on success, or None if the entity is unknown / skipped.
     """
-    from core.models import Assertion
+    from core.models import Assertion, Relation
 
     assertions = (
         Assertion.objects
@@ -91,7 +91,27 @@ def _world_knowledge_summary(entity_id: str, entity, brief: bool = False) -> dic
         if val:
             hint_lines.append(f'  {a.attribute_key}: {val[:200]}')
 
+    # Include relations as disambiguation context — critical for ambiguous names
+    # (e.g. "Orion" could be crypto or the NASA spacecraft; the relation context resolves it).
+    rel_lines = []
+    outgoing = (
+        Relation.objects
+        .filter(subject=entity, superseded_at__isnull=True)
+        .select_related('predicate', 'object')[:5]
+    )
+    for r in outgoing:
+        rel_lines.append(f'  → {r.predicate.key} {r.object.canonical_name}')
+    incoming = (
+        Relation.objects
+        .filter(object=entity, superseded_at__isnull=True)
+        .select_related('predicate', 'subject')[:5]
+    )
+    for r in incoming:
+        rel_lines.append(f'  ← {r.subject.canonical_name} {r.predicate.key} this entity')
+
     hint = '\nKnown attributes:\n' + '\n'.join(hint_lines) if hint_lines else ''
+    if rel_lines:
+        hint += '\nKnown relations (use these to disambiguate the correct entity):\n' + '\n'.join(rel_lines)
 
     if brief:
         instruction = 'Write a 1-2 sentence overview only. Return JSON: {"overview": "..."}. If unknown return {"overview": ""}.'
