@@ -497,7 +497,7 @@ _TYPE_TO_TOPIC = {
 }
 
 # topic_types that are valid for ExtractionRun.task naming
-_VALID_TOPIC_TYPES = {'company', 'news', 'question', 'space_angle', 'research', 'funding', 'funding_program', 'person', 'end_user'}
+_VALID_TOPIC_TYPES = {'company', 'news', 'question', 'space_angle', 'research', 'funding', 'funding_program', 'person', 'end_user', 'location'}
 
 
 def _synthesise_event_description(existing: str, new: str, title: str) -> str:
@@ -1064,6 +1064,22 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             f'{_vocab_block()}'
             f'{ctx}'
             f'{_seen_block(seen)}'
+        )
+    elif topic_type == 'location':
+        ctx = _entity_context_block(topic)
+        user_msg = (
+            f'Find the complete location profile for "{topic}" in the space industry.\n\n'
+            f'Extract ALL of the following:\n'
+            f'1. HEADQUARTERS — the primary registered or operational headquarters: city and country.\n'
+            f'   Use claims: headquarters_city and headquarters_country.\n'
+            f'2. ALL OFFICES, FACILITIES, AND SITES — every office, factory, R&D center, '
+            f'   launch site, ground station, or test facility.\n'
+            f'   For EACH location use a has_office_in relation → the city or country entity.\n'
+            f'   Set qualifier office_type: "hq" | "office" | "facility" | "rd_center".\n'
+            f'3. If only a country is known (not a specific city), still extract it.\n\n'
+            f'Focus ONLY on location data — do not extract funding, events, or other facts.\n\n'
+            f'{_vocab_block()}'
+            f'{ctx}'
         )
     else:  # question
         seen = _seen_urls_recent(days=14, limit=50)

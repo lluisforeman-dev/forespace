@@ -28,6 +28,7 @@ urlpatterns = [
     path('summarise-all/', views.summarise_all, name='summarise_all'),
     path('classify-all/', views.classify_all, name='classify_all'),
     path('assess-all/', views.assess_all, name='assess_all'),
+    path('fill-locations/', views.fill_locations_all, name='fill_locations_all'),
     path('dedup/', views.run_dedup_sweep, name='run_dedup_sweep'),
     path('search/', views.entity_search, name='entity_search'),
 ]

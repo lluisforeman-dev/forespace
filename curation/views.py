@@ -1003,6 +1003,46 @@ def summarise_all(request):
 
 
 @staff_member_required
+def fill_locations_all(request):
+    """Queue a focused location lookup for every org missing headquarters_country."""
+    if request.method == 'POST':
+        from ingest.tasks.research import research_topic
+        from django.core.cache import cache
+
+        missing = (
+            Entity.objects
+            .filter(entity_type__in=('company', 'investor', 'entity', 'university'))
+            .exclude(status='merged')
+            .exclude(id__in=Assertion.objects.filter(
+                attribute_key='headquarters_country',
+                status='accepted',
+                superseded_at__isnull=True,
+            ).values('entity_id'))
+            .only('id', 'canonical_name')
+        )
+
+        queued = skipped = 0
+        for i, entity in enumerate(missing):
+            lock_key = f'location_queued:{entity.id}'
+            if cache.get(lock_key):
+                skipped += 1
+                continue
+            research_topic.apply_async(
+                args=[entity.canonical_name, 'location'],
+                kwargs={'cascade_depth': 0},
+                countdown=i * 3,
+            )
+            cache.set(lock_key, 1, timeout=7200)
+            queued += 1
+
+        msg = f'Queued location lookup for {queued} organisations missing headquarters data.'
+        if skipped:
+            msg += f' Skipped {skipped} already in queue.'
+        messages.success(request, msg)
+    return HttpResponseRedirect(reverse('curation:dashboard'))
+
+
+@staff_member_required
 def run_dedup_sweep(request):
     """Trigger a retrospective entity deduplication sweep."""
     if request.method == 'POST':

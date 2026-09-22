@@ -88,6 +88,10 @@
     {% csrf_token %}
     <button class="btn" style="background:#17a2b8;color:#fff;font-size:12px;">&#127919; Score all entities</button>
   </form>
+  <form method="post" action="{% url 'curation:fill_locations_all' %}" onsubmit="return confirm('Queue a focused location lookup for all organisations missing headquarters data?')">
+    {% csrf_token %}
+    <button class="btn" style="background:#fd7e14;color:#fff;font-size:12px;">&#127759; Fill missing locations</button>
+  </form>
   <form method="post" action="{% url 'curation:run_dedup_sweep' %}" onsubmit="return confirm('Run deduplication sweep? This will merge confirmed duplicates.')">
     {% csrf_token %}
     <button class="btn btn-primary" style="font-size:12px;">&#128260; Dedup sweep (live)</button>
