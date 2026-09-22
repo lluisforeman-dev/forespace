@@ -30,5 +30,7 @@ urlpatterns = [
     path('assess-all/', views.assess_all, name='assess_all'),
     path('fill-locations/', views.fill_locations_all, name='fill_locations_all'),
     path('dedup/', views.run_dedup_sweep, name='run_dedup_sweep'),
+    path('map/', views.map_view, name='map'),
+    path('map/data/', views.map_data, name='map_data'),
     path('search/', views.entity_search, name='entity_search'),
 ]

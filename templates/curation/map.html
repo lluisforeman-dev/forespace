@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Map — ForeSpace{% endblock %}
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+  <h1 style="font-size:18px;font-weight:700;color:#1a1a2e">Space Industry Map</h1>
+  <span id="mapCount" style="font-size:13px;color:#888"></span>
+</div>
+
+<div class="card" style="padding:0;overflow:hidden">
+  <div id="map" style="height:600px;width:100%"></div>
+</div>
+
+<div style="margin-top:10px;font-size:12px;color:#aaa">
+  Showing headquarters and office locations. Run <strong>Fill missing locations</strong> from the dashboard to improve coverage.
+</div>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// Country name / ISO code → [lat, lon] centroids
+const CENTROIDS = {
+  'ES': [40.4, -3.7], 'Spain': [40.4, -3.7],
+  'US': [37.1, -95.7], 'USA': [37.1, -95.7], 'United States': [37.1, -95.7],
+  'GB': [51.5, -0.1], 'UK': [51.5, -0.1], 'United Kingdom': [51.5, -0.1],
+  'FR': [46.2, 2.2], 'France': [46.2, 2.2],
+  'DE': [51.2, 10.5], 'Germany': [51.2, 10.5],
+  'IT': [42.5, 12.6], 'Italy': [42.5, 12.6],
+  'NL': [52.1, 5.3], 'Netherlands': [52.1, 5.3],
+  'BE': [50.5, 4.5], 'Belgium': [50.5, 4.5],
+  'LU': [49.8, 6.1], 'Luxembourg': [49.8, 6.1],
+  'SE': [60.1, 18.6], 'Sweden': [60.1, 18.6],
+  'NO': [60.5, 8.5], 'Norway': [60.5, 8.5],
+  'FI': [61.9, 25.7], 'Finland': [61.9, 25.7],
+  'DK': [56.3, 9.5], 'Denmark': [56.3, 9.5],
+  'CH': [46.8, 8.2], 'Switzerland': [46.8, 8.2],
+  'AT': [47.5, 14.5], 'Austria': [47.5, 14.5],
+  'PL': [51.9, 19.1], 'Poland': [51.9, 19.1],
+  'CZ': [49.8, 15.5], 'Czech Republic': [49.8, 15.5],
+  'PT': [39.4, -8.2], 'Portugal': [39.4, -8.2],
+  'RO': [45.9, 24.9], 'Romania': [45.9, 24.9],
+  'GR': [39.1, 21.8], 'Greece': [39.1, 21.8],
+  'HU': [47.2, 19.5], 'Hungary': [47.2, 19.5],
+  'UA': [48.4, 31.2], 'Ukraine': [48.4, 31.2],
+  'IL': [31.0, 34.9], 'Israel': [31.0, 34.9],
+  'AE': [23.4, 53.8], 'UAE': [23.4, 53.8], 'United Arab Emirates': [23.4, 53.8],
+  'SA': [23.9, 45.1], 'Saudi Arabia': [23.9, 45.1],
+  'IN': [20.6, 78.9], 'India': [20.6, 78.9],
+  'CN': [35.9, 104.2], 'China': [35.9, 104.2],
+  'JP': [36.2, 138.3], 'Japan': [36.2, 138.3],
+  'KR': [35.9, 127.8], 'South Korea': [35.9, 127.8],
+  'AU': [-25.3, 133.8], 'Australia': [-25.3, 133.8],
+  'NZ': [-40.9, 174.9], 'New Zealand': [-40.9, 174.9],
+  'CA': [56.1, -106.3], 'Canada': [56.1, -106.3],
+  'BR': [-14.2, -51.9], 'Brazil': [-14.2, -51.9],
+  'AR': [-38.4, -63.6], 'Argentina': [-38.4, -63.6],
+  'ZA': [-30.6, 22.9], 'South Africa': [-30.6, 22.9],
+  'EG': [26.8, 30.8], 'Egypt': [26.8, 30.8],
+  'RU': [61.5, 105.3], 'Russia': [61.5, 105.3],
+  'SG': [1.35, 103.8], 'Singapore': [1.35, 103.8],
+  'LI': [47.1, 9.6], 'Liechtenstein': [47.1, 9.6],
+};
+
+// City → [lat, lon] (expand as needed)
+const CITIES = {
+  'Madrid': [40.42, -3.70], 'Barcelona': [41.39, 2.15],
+  'London': [51.51, -0.13], 'Paris': [48.85, 2.35],
+  'Berlin': [52.52, 13.40], 'Munich': [48.14, 11.58],
+  'Toulouse': [43.60, 1.44], 'Lyon': [45.75, 4.83],
+  'Rome': [41.90, 12.49], 'Milan': [45.46, 9.19],
+  'Amsterdam': [52.37, 4.90], 'Brussels': [50.85, 4.35],
+  'Stockholm': [59.33, 18.07], 'Oslo': [59.91, 10.75],
+  'Helsinki': [60.17, 24.94], 'Copenhagen': [55.68, 12.57],
+  'Zurich': [47.38, 8.54], 'Geneva': [46.20, 6.15],
+  'Vienna': [48.21, 16.37], 'Warsaw': [52.23, 21.01],
+  'Prague': [50.08, 14.44], 'Lisbon': [38.72, -9.14],
+  'Tel Aviv': [32.08, 34.78], 'Haifa': [32.82, 34.99],
+  'Dubai': [25.20, 55.27], 'Abu Dhabi': [24.47, 54.37],
+  'Tokyo': [35.69, 139.69], 'Osaka': [34.69, 135.50],
+  'Seoul': [37.57, 126.98], 'Beijing': [39.91, 116.39],
+  'Shanghai': [31.23, 121.47], 'Bangalore': [12.97, 77.59],
+  'New Delhi': [28.61, 77.21], 'Mumbai': [19.08, 72.88],
+  'Singapore': [1.35, 103.82], 'Sydney': [-33.87, 151.21],
+  'New York': [40.71, -74.01], 'Los Angeles': [34.05, -118.24],
+  'San Francisco': [37.77, -122.42], 'Seattle': [47.61, -122.33],
+  'Houston': [29.76, -95.37], 'Washington': [38.91, -77.04],
+  'Denver': [39.74, -104.98], 'Austin': [30.27, -97.74],
+  'Toronto': [43.65, -79.38], 'Montreal': [45.50, -73.57],
+  'Cape Canaveral': [28.39, -80.60], 'Vandenberg': [34.74, -120.57],
+  'Baikonur': [45.96, 63.31], 'Kourou': [5.16, -52.65],
+};
+
+const TYPE_COLORS = {
+  company: '#1a1a2e', investor: '#6f42c1', entity: '#0066cc',
+  university: '#28a745', facility: '#fd7e14', program: '#dc3545',
+  funding_program: '#20c997', end_user: '#6c757d', person: '#e83e8c',
+};
+
+const map = L.map('map').setView([30, 10], 2);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors', maxZoom: 18,
+}).addTo(map);
+
+function getCoords(marker) {
+  if (marker.city && CITIES[marker.city]) return CITIES[marker.city];
+  if (marker.country && CENTROIDS[marker.country]) return CENTROIDS[marker.country];
+  return null;
+}
+
+fetch("{% url 'curation:map_data' %}")
+  .then(r => r.json())
+  .then(data => {
+    let placed = 0;
+    const jitter = () => (Math.random() - 0.5) * 0.8;
+    data.markers.forEach(m => {
+      const coords = getCoords(m);
+      if (!coords) return;
+      const color = TYPE_COLORS[m.type] || '#888';
+      const marker = L.circleMarker([coords[0] + jitter(), coords[1] + jitter()], {
+        radius: 6, fillColor: color, color: '#fff',
+        weight: 1.5, opacity: 1, fillOpacity: 0.85,
+      });
+      const loc = [m.city, m.country].filter(Boolean).join(', ');
+      const officeLabel = m.office_type ? ` <span style="color:#888;font-size:11px">(${m.office_type})</span>` : '';
+      marker.bindPopup(
+        `<a href="/curation/entity/${m.id}/" style="font-weight:600;font-size:13px">${m.name}</a>${officeLabel}` +
+        `<br><span style="font-size:11px;color:#888">${m.type} · ${loc}</span>`
+      );
+      marker.addTo(map);
+      placed++;
+    });
+    document.getElementById('mapCount').textContent = `${placed} locations plotted`;
+  });
+</script>
+{% endblock %}

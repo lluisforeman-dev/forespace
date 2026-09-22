@@ -8,7 +8,7 @@ from urllib.parse import urlparse, quote
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib import messages
 from django.db import transaction
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
@@ -434,6 +434,10 @@ def entity_profile(request, entity_id):
         .order_by('-date', '-created_at')[:20]
     )
 
+    hq_city    = next((f for f in facts if f.attribute_id == 'headquarters_city'),    None)
+    hq_country = next((f for f in facts if f.attribute_id == 'headquarters_country'), None)
+    offices    = [r for r in relations_out if r.predicate_id == 'has_office_in']
+
     return render(request, 'curation/entity_profile.html', {
         'entity':               entity,
         'summary':              summary,
@@ -447,6 +451,9 @@ def entity_profile(request, entity_id):
         'classifications':      classifications,
         'source_docs':          source_docs,
         'participant_events':   participant_events,
+        'hq_city':              hq_city,
+        'hq_country':           hq_country,
+        'offices':              offices,
         'title':                entity.canonical_name,
     })
 
@@ -1052,6 +1059,67 @@ def run_dedup_sweep(request):
         mode = 'dry run' if dry_run else 'live'
         messages.success(request, f'Deduplication sweep queued ({mode}). Check worker logs for results.')
     return HttpResponseRedirect(reverse('curation:dashboard'))
+
+
+@staff_member_required
+def map_view(request):
+    return render(request, 'curation/map.html', {'title': 'Map'})
+
+
+@staff_member_required
+def map_data(request):
+    """JSON endpoint: all orgs with headquarters_country, plus has_office_in relations."""
+    import json as _json
+
+    # Entities with headquarters data
+    hq_rows = (
+        Assertion.objects
+        .filter(attribute_id='headquarters_country', status='accepted', superseded_at__isnull=True)
+        .select_related('entity')
+        .values('entity_id', 'entity__canonical_name', 'entity__entity_type', 'value_text')
+    )
+    city_rows = {
+        row['entity_id']: row['value_text']
+        for row in Assertion.objects.filter(
+            attribute_id='headquarters_city', status='accepted', superseded_at__isnull=True
+        ).values('entity_id', 'value_text')
+    }
+
+    markers = []
+    seen = set()
+    for row in hq_rows:
+        eid = str(row['entity_id'])
+        if eid in seen:
+            continue
+        seen.add(eid)
+        markers.append({
+            'id':      eid,
+            'name':    row['entity__canonical_name'],
+            'type':    row['entity__entity_type'],
+            'country': row['value_text'],
+            'city':    city_rows.get(row['entity_id'], ''),
+        })
+
+    # Offices via has_office_in relation
+    office_rows = (
+        Relation.objects
+        .filter(predicate_id='has_office_in', superseded_at__isnull=True)
+        .select_related('subject', 'object')
+        .values('subject_id', 'subject__canonical_name', 'subject__entity_type',
+                'object__canonical_name', 'qualifiers')
+    )
+    for row in office_rows:
+        office_type = (row['qualifiers'] or {}).get('office_type', 'office')
+        markers.append({
+            'id':      str(row['subject_id']),
+            'name':    row['subject__canonical_name'],
+            'type':    row['subject__entity_type'],
+            'country': row['object__canonical_name'],
+            'city':    '',
+            'office_type': office_type,
+        })
+
+    return JsonResponse({'markers': markers})
 
 
 @staff_member_required

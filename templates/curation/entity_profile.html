@@ -224,6 +224,35 @@
 </div>
 {% endif %}
 
+<!-- ── Location ── -->
+{% if hq_city or hq_country or offices %}
+<div class="card">
+  <h2>&#127759; Location</h2>
+  {% if hq_city or hq_country %}
+  <div style="margin-bottom:10px">
+    <span style="font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.5px">Headquarters</span>
+    <div style="margin-top:4px;font-size:15px;font-weight:600;color:#1a1a2e">
+      {% if hq_city %}{{ hq_city.value_text }}{% if hq_country %}, {% endif %}{% endif %}
+      {% if hq_country %}{{ hq_country.value_text }}{% endif %}
+    </div>
+  </div>
+  {% endif %}
+  {% if offices %}
+  <div>
+    <span style="font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.5px">Offices &amp; Facilities</span>
+    <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">
+      {% for r in offices %}
+      <span style="background:#f0f4ff;border:1px solid #d0d8f0;border-radius:4px;padding:3px 10px;font-size:12px">
+        {% with ot=r.qualifiers.office_type %}{% if ot %}<span style="color:#888;font-size:10px;margin-right:4px">{{ ot }}</span>{% endif %}{% endwith %}
+        <a href="{% url 'curation:entity_profile' r.object.id %}">{{ r.object }}</a>
+      </span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 <!-- ── What we know (accepted facts) ── -->
 {% if facts %}
 <div class="card">
