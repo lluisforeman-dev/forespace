@@ -909,17 +909,62 @@ def _parse_address_structured(address: str) -> dict | None:
     }
 
 
+def _llm_parse_address(address: str) -> dict | None:
+    """
+    Use AI_MODEL_FAST to parse any address string into structured fields.
+    Handles floor/unit qualifiers, non-English formats, and unusual layouts.
+    Returns dict with keys: street, postalcode, city, country (any may be None).
+    """
+    import json as _json
+    try:
+        resp = get_client().chat.completions.create(
+            model=settings.AI_MODEL_FAST,
+            messages=[{
+                'role': 'user',
+                'content': (
+                    'Parse this address into JSON with exactly these keys: '
+                    'street (street name and number only, no floor/unit/apartment), '
+                    'postalcode, city, country. Use null for missing fields. '
+                    'Return only valid JSON, no explanation.\n\n'
+                    f'Address: {address}'
+                ),
+            }],
+            response_format={'type': 'json_object'},
+            max_tokens=80,
+            temperature=0,
+        )
+        content = resp.choices[0].message.content
+        if content:
+            data = _json.loads(content)
+            return {
+                'street':     data.get('street') or None,
+                'postalcode': str(data.get('postalcode') or '').strip() or None,
+                'city':       data.get('city') or None,
+                'country':    data.get('country') or None,
+            }
+    except Exception as exc:
+        logger.debug('_llm_parse_address "%s": %s', address, exc)
+    return None
+
+
 def _geocode_with_fallback(address: str) -> tuple[float, float] | tuple[None, None]:
     """
-    1. Try Nominatim structured search (street + postalcode + city + country)
-       — language-agnostic, ignores floor/unit/apartment noise between street and postal code
-    2. Fall back to free-form full address if structured parse fails or returns no result
+    1. Try regex structured parse (postal code pivot, no tokens)
+    2. If that fails, try LLM parse (handles any language/format, ~80 tokens)
+    3. Send structured fields to Nominatim
+    4. Fall back to free-form Nominatim if still no result
     """
     import time as _time
     import requests as _req
 
+    # Step 1: regex parse
     parsed = _parse_address_structured(address)
-    if parsed and parsed.get('postalcode'):
+
+    # Step 2: LLM parse if regex couldn't find a postal code
+    if not (parsed and parsed.get('postalcode')):
+        parsed = _llm_parse_address(address)
+
+    if parsed and (parsed.get('postalcode') or parsed.get('city')):
         params = {k: v for k, v in parsed.items() if v}
         params.update({'format': 'json', 'limit': 1})
         try:
@@ -936,7 +981,7 @@ def _geocode_with_fallback(address: str) -> tuple[float, float] | tuple[None, No
             logger.debug('_geocode_with_fallback structured "%s": %s', address, exc)
         _time.sleep(1.1)
 
-    # Fallback: free-form
+    # Step 4: free-form fallback
     return _nominatim_geocode(address)
 
 
