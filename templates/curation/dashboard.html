@@ -261,6 +261,43 @@
 
 </div>
 
+<!-- Recently assessed -->
+<div class="card" style="margin-bottom:24px">
+  <h2 style="margin-bottom:12px">Recently assessed <span style="font-size:12px;color:#888;font-weight:400">(classify + summarise)</span></h2>
+  {% if recently_assessed %}
+  <table>
+    <thead>
+      <tr><th>Entity</th><th>Type</th><th>Score</th><th>Description</th><th>When</th></tr>
+    </thead>
+    <tbody>
+      {% for s in recently_assessed %}
+      <tr>
+        <td style="white-space:nowrap"><a href="{% url 'curation:entity_profile' s.entity.id %}">{{ s.entity.canonical_name|truncatechars:35 }}</a></td>
+        <td style="font-size:11px;color:#888">{{ s.entity.get_entity_type_display }}</td>
+        <td style="font-size:11px">
+          {% if s.entity.space_relevance == 100 %}
+            <span style="padding:1px 6px;border-radius:8px;font-weight:700;background:#d1fae5;color:#065f46;">100</span>
+          {% elif s.entity.space_relevance == 50 %}
+            <span style="padding:1px 6px;border-radius:8px;font-weight:700;background:#dbeafe;color:#1e40af;">50</span>
+          {% elif s.entity.space_relevance == 20 %}
+            <span style="padding:1px 6px;border-radius:8px;font-weight:700;background:#fef3c7;color:#92400e;">20</span>
+          {% elif s.entity.space_relevance == 0 %}
+            <span style="padding:1px 6px;border-radius:8px;font-weight:700;background:#f3f4f6;color:#6b7280;">0</span>
+          {% else %}
+            <span style="color:#bbb">—</span>
+          {% endif %}
+        </td>
+        <td style="font-size:12px;color:#555;max-width:400px">{{ s.overview|truncatechars:120 }}</td>
+        <td style="font-size:11px;color:#888;white-space:nowrap">{{ s.last_synthesised|date:"H:i d/m" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:#888;font-size:13px;">No assessments yet.</p>
+  {% endif %}
+</div>
+
 <!-- Connections -->
 <div class="grid2">
 
