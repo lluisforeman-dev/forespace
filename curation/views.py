@@ -13,7 +13,7 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 
-from core.models import Assertion, Classification, Entity, EntitySummary, Event, KnowledgeFragment, PromptTemplate, Relation, Source, ScheduledSource, TaxonomyNode
+from core.models import Assertion, Classification, Entity, EntityAlias, EntitySummary, Event, KnowledgeFragment, PromptTemplate, Relation, RelationAssertion, Source, ScheduledSource, TaxonomyNode
 from ingest.tasks.analytics import get_snapshot
 
 
@@ -176,16 +176,50 @@ def question_research(request):
 
 @staff_member_required
 def stop_all_tasks(request):
-    """Flush all pending Celery tasks by deleting queue keys directly from Redis."""
+    """
+    Flush all pending Celery tasks.
+
+    Two-step purge:
+    1. Delete queue keys from Redis so no new tasks can be dequeued.
+    2. Revoke all tasks currently reserved/prefetched by workers so they are
+       discarded rather than executed after the worker finishes its current job.
+    """
     if request.method != 'POST':
         return HttpResponseRedirect(reverse('curation:dashboard'))
+
     import redis as _redis
     from django.conf import settings as _settings
+    from config.celery import app as celery_app
+
+    # Step 1 — flush Redis queues
     r = _redis.from_url(_settings.CELERY_BROKER_URL)
     discarded = sum(r.llen(q) for q in CELERY_QUEUES)
     for q in CELERY_QUEUES:
         r.delete(q)
-    messages.warning(request, f'Stopped — {discarded} queued task(s) flushed. Any task currently executing will still finish.')
+
+    # Step 2 — revoke prefetched tasks held by workers
+    revoked = 0
+    try:
+        inspect = celery_app.control.inspect(timeout=2)
+        reserved = inspect.reserved() or {}
+        scheduled = inspect.scheduled() or {}
+        all_tasks = {}
+        for worker_tasks in list(reserved.values()) + list(scheduled.values()):
+            for t in worker_tasks:
+                task_id = t.get('id') or t.get('request', {}).get('id')
+                if task_id:
+                    all_tasks[task_id] = True
+        if all_tasks:
+            celery_app.control.revoke(list(all_tasks.keys()), terminate=False)
+            revoked = len(all_tasks)
+    except Exception:
+        pass  # inspect may time out if workers are busy; queue flush is the primary mechanism
+
+    msg = f'Stopped — {discarded} queued task(s) flushed'
+    if revoked:
+        msg += f', {revoked} prefetched task(s) revoked'
+    msg += '. Any task currently executing will still finish.'
+    messages.warning(request, msg)
     return HttpResponseRedirect(reverse('curation:dashboard'))
 
 
@@ -1113,6 +1147,59 @@ def fill_addresses_all(request):
         if skipped:
             msg += f' Skipped {skipped} already in queue.'
         messages.success(request, msg)
+    return HttpResponseRedirect(reverse('curation:dashboard'))
+
+
+@staff_member_required
+def merge_geography_duplicates(request):
+    """Merge geography entities whose coordinates are within 0.005° (~500m) of each other."""
+    if request.method == 'POST':
+        from ingest.tasks.resolve import _add_alias, _normalize_mention
+        from django.db import transaction
+
+        THRESHOLD = 0.005
+
+        rows = list(
+            Entity.objects
+            .filter(entity_type='geography', latitude__isnull=False, status='active')
+            .values_list('id', 'canonical_name', 'latitude', 'longitude')
+            .order_by('created_at')
+        )
+
+        merged_ids = set()
+        pairs = []
+        for i, (id1, name1, lat1, lon1) in enumerate(rows):
+            if id1 in merged_ids:
+                continue
+            for id2, name2, lat2, lon2 in rows[i + 1:]:
+                if id2 in merged_ids:
+                    continue
+                if abs(float(lat1) - float(lat2)) < THRESHOLD and abs(float(lon1) - float(lon2)) < THRESHOLD:
+                    pairs.append((id1, name1, id2, name2))
+                    merged_ids.add(id2)
+
+        count = 0
+        with transaction.atomic():
+            for keep_id, keep_name, dup_id, dup_name in pairs:
+                dup = Entity.objects.get(id=dup_id)
+                RelationAssertion.objects.filter(object_entity_id=dup_id).update(object_entity_id=keep_id)
+                for alias in EntityAlias.objects.filter(entity_id=dup_id):
+                    if not EntityAlias.objects.filter(entity_id=keep_id, normalized=alias.normalized).exists():
+                        alias.entity_id = keep_id
+                        alias.save(update_fields=['entity'])
+                    else:
+                        alias.delete()
+                norm = _normalize_mention(dup_name)
+                if not EntityAlias.objects.filter(entity_id=keep_id, normalized=norm).exists():
+                    _add_alias(str(keep_id), dup_name, norm, None)
+                dup.status = 'merged'
+                dup.save(update_fields=['status'])
+                count += 1
+
+        if count:
+            messages.success(request, f'Merged {count} duplicate geography entity pair(s).')
+        else:
+            messages.info(request, 'No duplicate geography entities found.')
     return HttpResponseRedirect(reverse('curation:dashboard'))
 
 

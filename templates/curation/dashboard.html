@@ -96,6 +96,10 @@
     {% csrf_token %}
     <button class="btn" style="background:#e67e22;color:#fff;font-size:12px;">&#128205; Fill missing addresses</button>
   </form>
+  <form method="post" action="{% url 'curation:merge_geography_duplicates' %}" onsubmit="return confirm('Merge geography entities within 500m of each other (same city, different language)?')">
+    {% csrf_token %}
+    <button class="btn" style="background:#20c997;color:#fff;font-size:12px;">&#127758; Merge geo duplicates</button>
+  </form>
   <form method="post" action="{% url 'curation:run_dedup_sweep' %}" onsubmit="return confirm('Run deduplication sweep? This will merge confirmed duplicates.')">
     {% csrf_token %}
     <button class="btn btn-primary" style="font-size:12px;">&#128260; Dedup sweep (live)</button>
