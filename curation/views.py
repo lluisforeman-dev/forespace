@@ -189,37 +189,32 @@ def stop_all_tasks(request):
 
     import redis as _redis
     from django.conf import settings as _settings
-    from config.celery import app as celery_app
+    from ingest.tasks.research import PAUSE_FLAG
 
-    # Step 1 — flush Redis queues
     r = _redis.from_url(_settings.CELERY_BROKER_URL)
+
+    # Set pause flag — all research_topic tasks check this and bail immediately
+    r.set(PAUSE_FLAG, '1')
+
+    # Flush Redis queues
     discarded = sum(r.llen(q) for q in CELERY_QUEUES)
     for q in CELERY_QUEUES:
         r.delete(q)
 
-    # Step 2 — revoke prefetched tasks held by workers
-    revoked = 0
-    try:
-        inspect = celery_app.control.inspect(timeout=2)
-        reserved = inspect.reserved() or {}
-        scheduled = inspect.scheduled() or {}
-        all_tasks = {}
-        for worker_tasks in list(reserved.values()) + list(scheduled.values()):
-            for t in worker_tasks:
-                task_id = t.get('id') or t.get('request', {}).get('id')
-                if task_id:
-                    all_tasks[task_id] = True
-        if all_tasks:
-            celery_app.control.revoke(list(all_tasks.keys()), terminate=False)
-            revoked = len(all_tasks)
-    except Exception:
-        pass  # inspect may time out if workers are busy; queue flush is the primary mechanism
+    messages.warning(request, f'Stopped — {discarded} queued task(s) flushed. Workers are paused and will drop any prefetched tasks. Click Resume when ready.')
+    return HttpResponseRedirect(reverse('curation:dashboard'))
 
-    msg = f'Stopped — {discarded} queued task(s) flushed'
-    if revoked:
-        msg += f', {revoked} prefetched task(s) revoked'
-    msg += '. Any task currently executing will still finish.'
-    messages.warning(request, msg)
+
+@staff_member_required
+def resume_tasks(request):
+    """Clear the pause flag so research tasks can run again."""
+    if request.method != 'POST':
+        return HttpResponseRedirect(reverse('curation:dashboard'))
+    import redis as _redis
+    from django.conf import settings as _settings
+    from ingest.tasks.research import PAUSE_FLAG
+    _redis.from_url(_settings.CELERY_BROKER_URL).delete(PAUSE_FLAG)
+    messages.success(request, 'Workers resumed — tasks will now execute normally.')
     return HttpResponseRedirect(reverse('curation:dashboard'))
 
 

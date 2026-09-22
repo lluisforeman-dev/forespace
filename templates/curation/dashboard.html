@@ -23,10 +23,16 @@
     </strong>
     <span style="font-size:12px;color:#999;margin-left:8px">Refresh to update</span>
   </div>
-  <form method="post" action="{% url 'curation:stop_all' %}" onsubmit="return confirm('Stop all queued tasks?')">
+  <form method="post" action="{% url 'curation:stop_all' %}" onsubmit="return confirm('Stop and pause all tasks? Workers will drop prefetched tasks too.')">
     {% csrf_token %}
     <button class="btn" style="background:#dc3545;color:#fff;font-size:13px;padding:8px 20px;">
-      &#9632; Stop all tasks
+      &#9632; Stop &amp; pause
+    </button>
+  </form>
+  <form method="post" action="{% url 'curation:resume_tasks' %}">
+    {% csrf_token %}
+    <button class="btn" style="background:#28a745;color:#fff;font-size:13px;padding:8px 20px;">
+      &#9654; Resume
     </button>
   </form>
 </div>

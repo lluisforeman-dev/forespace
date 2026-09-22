@@ -9,6 +9,7 @@ urlpatterns = [
     path('company-research/', views.company_research, name='company_research'),
     path('question-research/', views.question_research, name='question_research'),
     path('stop/', views.stop_all_tasks, name='stop_all'),
+    path('resume/', views.resume_tasks, name='resume_tasks'),
     path('ingest/', views.ingest_trigger, name='ingest_trigger'),
     path('stubs/', views.stubs, name='stubs'),
     path('stubs/<uuid:entity_id>/promote/', views.promote_stub, name='promote_stub'),
