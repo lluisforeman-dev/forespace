@@ -1249,13 +1249,47 @@ def map_data(request):
         ).exclude(value_text='').values('entity_id', 'value_text')
     }
 
-    # Fetch entity lat/lon (geocoded from headquarters_address or city/country)
-    entity_ids = [row['entity_id'] for row in hq_rows]
+    entity_ids = list({row['entity_id'] for row in hq_rows})
+
+    # Tier 1: entity.latitude set directly (geocoded street address)
     entity_coords = {
         str(e['id']): (float(e['latitude']), float(e['longitude']), bool(e.get('has_street_address')))
         for e in Entity.objects.filter(id__in=entity_ids, latitude__isnull=False)
         .values('id', 'latitude', 'longitude', 'has_street_address')
     }
+
+    # Tier 2: coords from has_office_in relations (geocoded qualifier or geography entity)
+    missing_ids = [eid for eid in entity_ids if str(eid) not in entity_coords]
+    if missing_ids:
+        for row in (
+            Relation.objects
+            .filter(subject_id__in=missing_ids, predicate_id='has_office_in', superseded_at__isnull=True)
+            .values('subject_id', 'qualifiers', 'object__latitude', 'object__longitude')
+        ):
+            sid = str(row['subject_id'])
+            if sid in entity_coords:
+                continue
+            q = row['qualifiers'] or {}
+            lat = q.get('lat') or (float(row['object__latitude']) if row['object__latitude'] is not None else None)
+            lon = q.get('lon') or (float(row['object__longitude']) if row['object__longitude'] is not None else None)
+            if lat is not None:
+                entity_coords[sid] = (lat, lon, bool(q.get('address') and q.get('lat')))
+
+    # Tier 3: geography entity matching headquarters_city (city centroid, instant, no geocoding)
+    missing_ids = [eid for eid in entity_ids if str(eid) not in entity_coords]
+    if missing_ids:
+        city_names_needed = {city_rows[eid] for eid in missing_ids if eid in city_rows}
+        if city_names_needed:
+            geo_city = {
+                e['canonical_name']: (float(e['latitude']), float(e['longitude']))
+                for e in Entity.objects.filter(
+                    entity_type='geography', canonical_name__in=city_names_needed, latitude__isnull=False,
+                ).values('canonical_name', 'latitude', 'longitude')
+            }
+            for eid in missing_ids:
+                city = city_rows.get(eid)
+                if city and city in geo_city:
+                    entity_coords[str(eid)] = (*geo_city[city], False)
 
     markers = []
     seen = set()

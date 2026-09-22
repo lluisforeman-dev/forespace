@@ -999,10 +999,21 @@ def geocode_all_offices():
         ).exclude(value_text='').values('entity_id', 'value_text')
     }
 
-    entities_needing_coords = _Entity.objects.filter(
-        latitude__isnull=True,
-        id__in=set(addr_map) | set(city_map) | set(country_map),
-    ).values_list('id', flat=True)
+    entities_needing_coords = list(
+        _Entity.objects.filter(
+            latitude__isnull=True,
+            id__in=set(addr_map) | set(city_map) | set(country_map),
+        ).values_list('id', flat=True)
+    )
+
+    # For city-only fallback: use existing geography entity coords — no Nominatim needed, instant
+    city_names = set(city_map.values())
+    geo_city_coords = {
+        row['canonical_name']: (float(row['latitude']), float(row['longitude']))
+        for row in _Entity.objects.filter(
+            entity_type='geography', canonical_name__in=city_names, latitude__isnull=False,
+        ).values('canonical_name', 'latitude', 'longitude')
+    }
 
     done2 = skipped2 = 0
     for eid in entities_needing_coords:
@@ -1010,14 +1021,21 @@ def geocode_all_offices():
         if address:
             lat, lon = _geocode_with_fallback(address)
             is_precise = True
-        else:
-            parts = [v for v in [city_map.get(eid), country_map.get(eid)] if v]
-            if not parts:
-                skipped2 += 1
-                continue
-            lat, lon = _nominatim_geocode(', '.join(parts))
-            is_precise = False
             _time.sleep(1.1)
+        else:
+            city = city_map.get(eid)
+            if city and city in geo_city_coords:
+                lat, lon = geo_city_coords[city]
+                is_precise = False
+            else:
+                # Last resort: Nominatim with city+country
+                parts = [v for v in [city_map.get(eid), country_map.get(eid)] if v]
+                if not parts:
+                    skipped2 += 1
+                    continue
+                lat, lon = _nominatim_geocode(', '.join(parts))
+                is_precise = False
+                _time.sleep(1.1)
         if lat is None:
             skipped2 += 1
             continue
