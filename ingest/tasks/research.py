@@ -858,6 +858,88 @@ def _store_relations(relations: list, fallback_doc: Document, sonar_source: Sour
     return stored, entity_ids
 
 
+def _parse_address_structured(address: str) -> dict | None:
+    """
+    Parse a free-form address into Nominatim structured fields.
+
+    Strategy: postal code is the universal pivot point in addresses worldwide.
+    Split on commas, find the chunk containing a 4-6 digit postal code, take
+    the first 1-2 chunks as street+number (dropping anything in between like
+    floor, unit, apartment — regardless of language), city from the postal
+    code chunk, country from the last chunk.
+
+    Returns dict with keys: street, postalcode, city, country (any may be None).
+    """
+    parts = [p.strip() for p in address.split(',') if p.strip()]
+    if not parts:
+        return None
+
+    postal_idx = None
+    postal_code = None
+    city_in_chunk = None
+
+    for i, part in enumerate(parts):
+        m = re.search(r'\b(\d{4,6})\b', part)
+        if m:
+            postal_idx = i
+            postal_code = m.group(1)
+            # city is the rest of this chunk after the postal code
+            city_in_chunk = part[m.end():].strip() or None
+            break
+
+    country = parts[-1] if len(parts) > 1 else None
+
+    if postal_idx is not None and postal_idx >= 1:
+        # Street = first chunk; number = second chunk if it's short (≤6 chars, likely "95" or "20A")
+        street_parts = [parts[0]]
+        if postal_idx >= 2 and len(parts[1]) <= 6:
+            street_parts.append(parts[1])
+        street = ' '.join(street_parts)
+    elif postal_idx == 0:
+        street = None
+    else:
+        # No postal code found — can't parse structurally
+        return None
+
+    return {
+        'street': street,
+        'postalcode': postal_code,
+        'city': city_in_chunk,
+        'country': country,
+    }
+
+
+def _geocode_with_fallback(address: str) -> tuple[float, float] | tuple[None, None]:
+    """
+    1. Try Nominatim structured search (street + postalcode + city + country)
+       — language-agnostic, ignores floor/unit/apartment noise between street and postal code
+    2. Fall back to free-form full address if structured parse fails or returns no result
+    """
+    import time as _time
+    import requests as _req
+
+    parsed = _parse_address_structured(address)
+    if parsed and parsed.get('postalcode'):
+        params = {k: v for k, v in parsed.items() if v}
+        params.update({'format': 'json', 'limit': 1})
+        try:
+            r = _req.get(
+                'https://nominatim.openstreetmap.org/search',
+                params=params,
+                headers={'User-Agent': 'ForeSpace/1.0 (space-industry knowledge graph)'},
+                timeout=5,
+            )
+            results = r.json()
+            if results:
+                return float(results[0]['lat']), float(results[0]['lon'])
+        except Exception as exc:
+            logger.debug('_geocode_with_fallback structured "%s": %s', address, exc)
+        _time.sleep(1.1)
+
+    # Fallback: free-form
+    return _nominatim_geocode(address)
+
+
 @shared_task(queue='extract')
 def geocode_all_offices():
     """Geocode every has_office_in relation that has an address but no lat/lon yet."""
@@ -875,14 +957,13 @@ def geocode_all_offices():
         if q.get('lat') or not q.get('address'):
             skipped += 1
             continue
-        lat, lon = _nominatim_geocode(q['address'])
+        lat, lon = _geocode_with_fallback(q['address'])
         if lat is None:
             skipped += 1
             continue
         q['lat'], q['lon'] = lat, lon
         _Rel.objects.filter(id=row['id']).update(qualifiers=q)
         done += 1
-        _time.sleep(1.1)
     logger.info('geocode_all_offices: %d geocoded, %d skipped', done, skipped)
 
 
@@ -961,7 +1042,7 @@ def _geocode_office_relations(topic: str, assertion_ids: list) -> None:
             geocode_query = ', '.join(parts)
 
         if geocode_query:
-            lat, lon = _nominatim_geocode(geocode_query)
+            lat, lon = _geocode_with_fallback(geocode_query) if addr_assertion else _nominatim_geocode(geocode_query)
             if lat is not None:
                 q = dict(hq_rel.qualifiers or {})
                 q['lat'], q['lon'] = lat, lon
@@ -980,7 +1061,7 @@ def _geocode_office_relations(topic: str, assertion_ids: list) -> None:
         q = dict(rel.qualifiers or {})
         if q.get('lat') or not q.get('address'):
             continue  # already geocoded or no address to use
-        lat, lon = _nominatim_geocode(q['address'])
+        lat, lon = _geocode_with_fallback(q['address'])
         if lat is not None:
             q['lat'], q['lon'] = lat, lon
             rel.qualifiers = q
