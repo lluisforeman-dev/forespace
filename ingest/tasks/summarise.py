@@ -226,6 +226,8 @@ def synthesise_entity_summary(self, entity_id: str):
         # This runs unconditionally (not just on score promotion) so entities
         # that were already scored by classify_entity before research ever ran
         # still get their research pipeline triggered here.
+        # Score=50 (adjacent) entities use 'space_angle' so Sonar focuses
+        # exclusively on their space-related activities and ignores the rest.
         effective_score = entity.space_relevance  # use post-promote value
         if effective_score is not None and effective_score >= 50:
             from ingest.tasks.research import research_topic
@@ -237,6 +239,9 @@ def synthesise_entity_summary(self, entity_id: str):
                 'person': 'person', 'event': 'question',
             }
             topic_type = _TYPE_TO_TOPIC.get(entity.entity_type, 'company')
+            # Adjacent entities: narrow search to space-specific facts only
+            if effective_score < 100 and topic_type == 'company':
+                topic_type = 'space_angle'
             research_topic.apply_async(
                 args=[entity.canonical_name, topic_type],
                 kwargs={'cascade_depth': 0},
