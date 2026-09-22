@@ -1069,6 +1069,56 @@ def fill_locations_all(request):
 
 
 @staff_member_required
+def fill_addresses_all(request):
+    """Queue a focused location lookup for every org that has city/country but no street address."""
+    if request.method == 'POST':
+        from ingest.tasks.research import research_topic
+        from django.core.cache import cache
+
+        # Orgs that have some location data but are missing a street address
+        has_location = Assertion.objects.filter(
+            attribute_id__in=('headquarters_city', 'headquarters_country'),
+            status__in=('accepted', 'candidate'),
+            superseded_at__isnull=True,
+        ).values('entity_id')
+        has_address = Assertion.objects.filter(
+            attribute_id='headquarters_address',
+            superseded_at__isnull=True,
+        ).values('entity_id')
+
+        missing = (
+            Entity.objects
+            .filter(
+                entity_type__in=('company', 'investor', 'entity', 'university', 'facility'),
+                id__in=has_location,
+            )
+            .exclude(status='merged')
+            .exclude(id__in=has_address)
+            .only('id', 'canonical_name')
+        )
+
+        queued = skipped = 0
+        for i, entity in enumerate(missing):
+            lock_key = f'address_queued:{entity.id}'
+            if cache.get(lock_key):
+                skipped += 1
+                continue
+            research_topic.apply_async(
+                args=[entity.canonical_name, 'location'],
+                kwargs={'cascade_depth': 0},
+                countdown=i * 3,
+            )
+            cache.set(lock_key, 1, timeout=7200)
+            queued += 1
+
+        msg = f'Queued address lookup for {queued} organisations.'
+        if skipped:
+            msg += f' Skipped {skipped} already in queue.'
+        messages.success(request, msg)
+    return HttpResponseRedirect(reverse('curation:dashboard'))
+
+
+@staff_member_required
 def run_dedup_sweep(request):
     """Trigger a retrospective entity deduplication sweep."""
     if request.method == 'POST':
