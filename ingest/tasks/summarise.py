@@ -221,22 +221,27 @@ def synthesise_entity_summary(self, entity_id: str):
             entity.space_relevance = wk_score
             entity.save(update_fields=['space_relevance'])
             logger.info('synthesise_entity_summary WK: entity=%s space_relevance promoted to %d', entity_id, wk_score)
-            # Newly promoted to 50+: queue research pipeline
-            if wk_score >= 50 and not already_scored:
-                from ingest.tasks.research import research_topic
-                _TYPE_TO_TOPIC = {
-                    'company': 'company', 'investor': 'company', 'entity': 'company',
-                    'university': 'company', 'asset': 'company',
-                    'funding_program': 'funding_program', 'end_user': 'end_user',
-                    'program': 'question', 'facility': 'question',
-                    'person': 'person', 'event': 'question',
-                }
-                topic_type = _TYPE_TO_TOPIC.get(entity.entity_type, 'company')
-                research_topic.apply_async(
-                    args=[entity.canonical_name, topic_type],
-                    kwargs={'cascade_depth': 0},
-                    countdown=120,
-                )
+
+        # Queue research for all 50+ entities with no collected data.
+        # This runs unconditionally (not just on score promotion) so entities
+        # that were already scored by classify_entity before research ever ran
+        # still get their research pipeline triggered here.
+        effective_score = entity.space_relevance  # use post-promote value
+        if effective_score is not None and effective_score >= 50:
+            from ingest.tasks.research import research_topic
+            _TYPE_TO_TOPIC = {
+                'company': 'company', 'investor': 'company', 'entity': 'company',
+                'university': 'company', 'asset': 'company',
+                'funding_program': 'funding_program', 'end_user': 'end_user',
+                'program': 'question', 'facility': 'question',
+                'person': 'person', 'event': 'question',
+            }
+            topic_type = _TYPE_TO_TOPIC.get(entity.entity_type, 'company')
+            research_topic.apply_async(
+                args=[entity.canonical_name, topic_type],
+                kwargs={'cascade_depth': 0},
+                countdown=120,
+            )
 
         if created and overview:
             from ingest.tasks.resolve import enrich_entity_aliases
