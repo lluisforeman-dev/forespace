@@ -1240,15 +1240,6 @@ def map_data(request):
         ).exclude(value_text='').values('entity_id', 'value_text')
     }
 
-    # Build a lookup: place name → (lat, lon) from existing geography entities
-    from core.models import Entity as _GeoEntity
-    geo_coords = {
-        e.canonical_name: (float(e.latitude), float(e.longitude))
-        for e in _GeoEntity.objects.filter(
-            entity_type='geography', latitude__isnull=False
-        ).only('canonical_name', 'latitude', 'longitude')
-    }
-
     # Build a lookup: entity_id → (lat, lon) from geocoded HQ address in has_office_in qualifier
     hq_qualifier_coords = {}
     for rel in Relation.objects.filter(predicate_id='has_office_in', superseded_at__isnull=True).values('subject_id', 'qualifiers'):
@@ -1265,8 +1256,7 @@ def map_data(request):
         seen.add(eid)
         city    = city_rows.get(row['entity_id'], '')
         country = row['value_text']
-        # Prefer: 1) geocoded street address from HQ qualifier, 2) geography entity centroid
-        coords = hq_qualifier_coords.get(eid) or geo_coords.get(city) or geo_coords.get(country)
+        coords  = hq_qualifier_coords.get(eid)
         markers.append({
             'id':      eid,
             'name':    row['entity__canonical_name'],

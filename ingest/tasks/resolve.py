@@ -402,64 +402,18 @@ def _llm_disambiguate(mention: str, mention_type: str, candidates: list, subject
     return None
 
 
-def _geocode_nominatim(place: str) -> tuple[float, float] | tuple[None, None]:
-    """Call Nominatim to get (lat, lon) for a place name. Returns (None, None) on failure."""
-    import requests as _req
-    try:
-        r = _req.get(
-            'https://nominatim.openstreetmap.org/search',
-            params={'q': place, 'format': 'json', 'limit': 1},
-            headers={'User-Agent': 'ForeSpace/1.0 (space-industry knowledge graph)'},
-            timeout=5,
-        )
-        results = r.json()
-        if results:
-            return float(results[0]['lat']), float(results[0]['lon'])
-    except Exception as exc:
-        logger.debug('Nominatim geocode "%s": %s', place, exc)
-    return None, None
-
-
 def _find_or_create_geography(mention: str, norm: str) -> str:
-    """Find or create a geography entity (country, region, city).
+    """Find or create a geography entity (city, country) as a relation target for has_office_in.
 
-    These are valid relation targets (has_office_in → London) but carry
-    entity_type='geography' so they are excluded from company-focused views
-    and never auto-researched as companies. Coordinates are geocoded via
-    Nominatim on first creation.
-
-    Dedup: after geocoding, if an existing geography entity is within 0.15°
-    of the returned coordinates (same city), add this name as an alias and
-    return the existing entity — prevents "Seville" vs "Sevilla" duplicates.
+    No geocoding — coordinates come from the address qualifier on the relation itself.
     """
-    # Level 1 — exact alias match
     alias = (
         EntityAlias.objects
-        .select_related('entity')
         .filter(alias_norm=norm, entity__entity_type='geography')
         .first()
     )
     if alias:
         return str(alias.entity_id)
-
-    lat, lon = _geocode_nominatim(mention)
-
-    # Level 2 — coordinate proximity (same place, different language/spelling)
-    # 0.005° ≈ 500m — catches alternate spellings of the same point but not adjacent cities
-    if lat is not None:
-        nearby = (
-            Entity.objects
-            .filter(
-                entity_type='geography',
-                latitude__range=(lat - 0.005, lat + 0.005),
-                longitude__range=(lon - 0.005, lon + 0.005),
-            )
-            .first()
-        )
-        if nearby:
-            _add_alias(str(nearby.id), mention, norm, None)
-            logger.info('Geography dedup: "%s" → existing "%s" (%.4f, %.4f)', mention, nearby.canonical_name, lat, lon)
-            return str(nearby.id)
 
     slug_base = slugify(mention)[:200] or 'geo'
     slug = slug_base
@@ -474,8 +428,6 @@ def _find_or_create_geography(mention: str, norm: str) -> str:
             canonical_name=mention,
             slug=slug,
             status='active',
-            latitude=lat,
-            longitude=lon,
         )
         EntityAlias.objects.create(
             entity=ent,
@@ -483,7 +435,7 @@ def _find_or_create_geography(mention: str, norm: str) -> str:
             alias_norm=norm,
             alias_kind='trading',
         )
-    logger.info('Geography entity created: "%s" → %s (%.4f, %.4f)', mention, ent.id, lat or 0, lon or 0)
+    logger.info('Geography entity created: "%s" → %s', mention, ent.id)
     return str(ent.id)
 
 
