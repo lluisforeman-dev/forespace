@@ -30,6 +30,7 @@ urlpatterns = [
     path('assess-all/', views.assess_all, name='assess_all'),
     path('fill-locations/', views.fill_locations_all, name='fill_locations_all'),
     path('fill-addresses/', views.fill_addresses_all, name='fill_addresses_all'),
+    path('geocode-offices/', views.geocode_offices, name='geocode_offices'),
     path('merge-geo-duplicates/', views.merge_geography_duplicates, name='merge_geography_duplicates'),
     path('dedup/', views.run_dedup_sweep, name='run_dedup_sweep'),
     path('map/', views.map_view, name='map'),

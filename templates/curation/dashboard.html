@@ -96,6 +96,10 @@
     {% csrf_token %}
     <button class="btn" style="background:#e67e22;color:#fff;font-size:12px;">&#128205; Fill missing addresses</button>
   </form>
+  <form method="post" action="{% url 'curation:geocode_offices' %}" onsubmit="return confirm('Geocode all office locations that have an address but no coordinates yet? This calls Nominatim and may take a while.')">
+    {% csrf_token %}
+    <button class="btn" style="background:#6f42c1;color:#fff;font-size:12px;">&#127757; Geocode offices</button>
+  </form>
   <form method="post" action="{% url 'curation:merge_geography_duplicates' %}" onsubmit="return confirm('Merge geography entities within 500m of each other (same city, different language)?')">
     {% csrf_token %}
     <button class="btn" style="background:#20c997;color:#fff;font-size:12px;">&#127758; Merge geo duplicates</button>
