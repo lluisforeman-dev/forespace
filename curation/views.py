@@ -1341,6 +1341,169 @@ def map_data(request):
     return JsonResponse({'markers': markers})
 
 
+_SUPPLY_PREDICATES = ['supplies', 'contracted_by', 'customer_of', 'manufactures', 'launches_for', 'launched_payload']
+
+_TIERS = ['raw_material', 'component', 'subsystem', 'system', 'integrator', 'operator', 'data_service', 'end_user']
+_TIER_LABELS = {
+    'raw_material': 'Raw Material',
+    'component':    'Component',
+    'subsystem':    'Subsystem',
+    'system':       'System',
+    'integrator':   'Integrator',
+    'operator':     'Operator',
+    'data_service': 'Data & Services',
+    'end_user':     'End User',
+}
+
+
+@staff_member_required
+def supply_chain(request):
+    """Supply chain view — entities by value chain tier and technology domain."""
+    from django.db.models import Count, Q
+
+    q        = request.GET.get('q', '').strip()
+    domain_f = request.GET.get('domain', '').strip()
+    tier_f   = request.GET.get('tier', '').strip()
+
+    def _assertion_map(key):
+        return {
+            row['entity_id']: row['value_text']
+            for row in Assertion.objects.filter(
+                attribute_id=key,
+                status__in=('accepted', 'candidate'),
+                superseded_at__isnull=True,
+            ).exclude(value_text='').values('entity_id', 'value_text')
+        }
+
+    tier_map    = _assertion_map('value_chain_tier')
+    domain_map  = _assertion_map('technology_domain')
+    product_map = _assertion_map('primary_product')
+    country_map = _assertion_map('headquarters_country')
+
+    entity_ids = set(tier_map) | set(domain_map) | set(product_map)
+
+    qs = (
+        Entity.objects
+        .filter(id__in=entity_ids, status__in=('active', 'stub'))
+        .exclude(entity_type__in=('geography', 'document_node'))
+    )
+    if q:
+        qs = qs.filter(Q(canonical_name__icontains=q) | Q(aliases__alias__icontains=q)).distinct()
+    if tier_f:
+        qs = qs.filter(id__in=[eid for eid, t in tier_map.items() if t == tier_f])
+    if domain_f:
+        qs = qs.filter(id__in=[eid for eid, d in domain_map.items() if domain_f.lower() in d.lower()])
+
+    entities = list(qs.order_by('canonical_name')[:300])
+    eids = [e.id for e in entities]
+
+    # Supply counts per entity
+    supply_out = {
+        str(r['subject_id']): r['n']
+        for r in Relation.objects.filter(
+            subject_id__in=eids, predicate_id__in=_SUPPLY_PREDICATES, superseded_at__isnull=True,
+        ).values('subject_id').annotate(n=Count('id'))
+    }
+    supply_in = {
+        str(r['object_id']): r['n']
+        for r in Relation.objects.filter(
+            object_id__in=eids, predicate_id__in=_SUPPLY_PREDICATES, superseded_at__isnull=True,
+        ).values('object_id').annotate(n=Count('id'))
+    }
+
+    for e in entities:
+        eid = str(e.id)
+        e.sc_tier    = tier_map.get(e.id)
+        e.sc_domain  = domain_map.get(e.id)
+        e.sc_product = product_map.get(e.id)
+        e.sc_country = country_map.get(e.id, '')
+        e.supply_out = supply_out.get(eid, 0)
+        e.supply_in  = supply_in.get(eid, 0)
+
+    # Group by tier for swimlane
+    by_tier = {tier: [] for tier in _TIERS}
+    ungrouped = []
+    for e in entities:
+        if e.sc_tier in by_tier:
+            by_tier[e.sc_tier].append(e)
+        else:
+            ungrouped.append(e)
+
+    all_domains = sorted({d for d in domain_map.values() if d})
+    tier_counts = {tier: len(lst) for tier, lst in by_tier.items()}
+
+    return render(request, 'curation/supply_chain.html', {
+        'entities':   entities,
+        'by_tier':    by_tier,
+        'ungrouped':  ungrouped,
+        'TIERS':      _TIERS,
+        'TIER_LABELS': _TIER_LABELS,
+        'tier_counts': tier_counts,
+        'all_domains': all_domains,
+        'domain_f':   domain_f,
+        'tier_f':     tier_f,
+        'q':          q,
+        'total':      len(entities),
+        'title':      'Supply Chain',
+    })
+
+
+@staff_member_required
+def supply_chain_entity(request, entity_id):
+    """JSON: upstream suppliers and downstream customers for one entity."""
+    from django.db.models import Q
+
+    entity = get_object_or_404(Entity, pk=entity_id)
+
+    upstream = list(
+        Relation.objects
+        .filter(object=entity, predicate_id__in=_SUPPLY_PREDICATES, superseded_at__isnull=True)
+        .select_related('subject')
+        .values('subject__id', 'subject__canonical_name', 'subject__entity_type', 'predicate_id', 'qualifiers')
+    )
+    downstream = list(
+        Relation.objects
+        .filter(subject=entity, predicate_id__in=_SUPPLY_PREDICATES, superseded_at__isnull=True)
+        .select_related('object')
+        .values('object__id', 'object__canonical_name', 'object__entity_type', 'predicate_id', 'qualifiers')
+    )
+
+    def _assertion_map(key, entity_ids):
+        return {
+            row['entity_id']: row['value_text']
+            for row in Assertion.objects.filter(
+                attribute_id=key, entity_id__in=entity_ids,
+                status__in=('accepted', 'candidate'), superseded_at__isnull=True,
+            ).exclude(value_text='').values('entity_id', 'value_text')
+        }
+
+    all_ids = [r['subject__id'] for r in upstream] + [r['object__id'] for r in downstream]
+    domains  = _assertion_map('technology_domain', all_ids)
+    products = _assertion_map('primary_product', all_ids)
+    tiers    = _assertion_map('value_chain_tier', all_ids)
+
+    def _enrich(rows, id_key, name_key, type_key):
+        return [
+            {
+                'id':       str(r[id_key]),
+                'name':     r[name_key],
+                'type':     r[type_key],
+                'predicate': r['predicate_id'],
+                'product':  (r['qualifiers'] or {}).get('product', ''),
+                'domain':   domains.get(r[id_key], ''),
+                'sc_product': products.get(r[id_key], ''),
+                'tier':     tiers.get(r[id_key], ''),
+            }
+            for r in rows
+        ]
+
+    return JsonResponse({
+        'entity': {'id': str(entity.id), 'name': entity.canonical_name},
+        'upstream':   _enrich(upstream,   'subject__id', 'subject__canonical_name', 'subject__entity_type'),
+        'downstream': _enrich(downstream, 'object__id',  'object__canonical_name',  'object__entity_type'),
+    })
+
+
 @staff_member_required
 def entity_search(request):
     """JSON autocomplete endpoint — returns entities matching the query string."""

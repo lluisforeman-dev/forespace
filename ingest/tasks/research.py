@@ -104,6 +104,10 @@ EXTRACTION RULES FOR RELATIONS:
 - Only use predicate keys from the allowed list below.
 
 RULES:
+- ★ SUPPLY CHAIN-CRITICAL: For any company, investor, or entity, ALWAYS extract if findable:
+  primary_product (what they make/sell), technology_domain (their tech area), value_chain_tier
+  (where in the chain: raw_material|component|subsystem|system|integrator|operator|data_service|end_user).
+  These three fields power the supply chain graph — extract them for EVERY organisation.
 - ★ MAP-CRITICAL: For any company, investor, or entity, ALWAYS extract if findable:
   headquarters_city, headquarters_country, employee_count, total_funding_usd, founding_year.
   These fields power geographic maps and funding charts — search every source for them.

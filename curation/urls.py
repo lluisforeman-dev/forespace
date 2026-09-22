@@ -36,5 +36,7 @@ urlpatterns = [
     path('dedup/', views.run_dedup_sweep, name='run_dedup_sweep'),
     path('map/', views.map_view, name='map'),
     path('map/data/', views.map_data, name='map_data'),
+    path('supply-chain/', views.supply_chain, name='supply_chain'),
+    path('supply-chain/entity/<uuid:entity_id>/', views.supply_chain_entity, name='supply_chain_entity'),
     path('search/', views.entity_search, name='entity_search'),
 ]
