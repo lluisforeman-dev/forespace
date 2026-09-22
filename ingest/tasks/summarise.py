@@ -182,32 +182,47 @@ def synthesise_entity_summary(self, entity_id: str):
             return
         overview = data.get('overview', '')
 
-        _, created = EntitySummary.objects.update_or_create(
-            entity=entity,
-            defaults={
-                'overview':             overview,
-                'challenges':           data.get('challenges', []),
-                'strategic_bets':       data.get('strategic_bets', []),
-                'competitive_position': data.get('competitive_position', ''),
-                'source_count':         0,
-            },
-        )
+        # Determine score first so we know how much detail to save.
+        wk_score = data.get('space_relevance')
+        if wk_score is not None:
+            try:
+                wk_score = max(0, min(100, int(wk_score)))
+            except (TypeError, ValueError):
+                wk_score = None
+
+        # Score-0 entities: save overview only — no challenges/bets.
+        # They have no space relevance so the detailed profile is noise.
+        if wk_score == 0:
+            _, created = EntitySummary.objects.update_or_create(
+                entity=entity,
+                defaults={
+                    'overview':             overview,
+                    'challenges':           [],
+                    'strategic_bets':       [],
+                    'competitive_position': '',
+                    'source_count':         0,
+                },
+            )
+        else:
+            _, created = EntitySummary.objects.update_or_create(
+                entity=entity,
+                defaults={
+                    'overview':             overview,
+                    'challenges':           data.get('challenges', []),
+                    'strategic_bets':       data.get('strategic_bets', []),
+                    'competitive_position': data.get('competitive_position', ''),
+                    'source_count':         0,
+                },
+            )
         logger.info('synthesise_entity_summary WK: entity=%s overview_len=%d', entity_id, len(overview))
 
         # Promote space_relevance — never reduce, only increase.
-        # Re-assessment with new WK data can reveal higher relevance.
-        score = data.get('space_relevance')
-        if score is not None:
-            try:
-                score = max(0, min(100, int(score)))
-            except (TypeError, ValueError):
-                score = None
-        if score is not None and (entity.space_relevance is None or score > entity.space_relevance):
-            entity.space_relevance = score
+        if wk_score is not None and (entity.space_relevance is None or wk_score > entity.space_relevance):
+            entity.space_relevance = wk_score
             entity.save(update_fields=['space_relevance'])
-            logger.info('synthesise_entity_summary WK: entity=%s space_relevance promoted to %d', entity_id, score)
+            logger.info('synthesise_entity_summary WK: entity=%s space_relevance promoted to %d', entity_id, wk_score)
             # Newly promoted to 50+: queue research pipeline
-            if score >= 50 and not already_scored:
+            if wk_score >= 50 and not already_scored:
                 from ingest.tasks.research import research_topic
                 _TYPE_TO_TOPIC = {
                     'company': 'company', 'investor': 'company', 'entity': 'company',
