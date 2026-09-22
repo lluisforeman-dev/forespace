@@ -54,6 +54,18 @@
       </h2>
       <p style="color:#888;font-size:13px">
         {{ entity.get_entity_type_display }} · created {{ entity.created_at|date:"Y-m-d" }}
+        {% if origin_runs %}
+          &nbsp;·&nbsp;
+          <span style="color:#aaa;">via
+          {% for run in origin_runs %}
+            {% if run.stats.topic %}
+              <span style="color:#6b7280;font-style:italic" title="{{ run.task }} · {{ run.started_at|date:'Y-m-d H:i' }}">{{ run.stats.topic|truncatechars:40 }}</span>{% if not forloop.last %}, {% endif %}
+            {% else %}
+              <span style="color:#6b7280;font-style:italic">{{ run.task }}</span>{% if not forloop.last %}, {% endif %}
+            {% endif %}
+          {% endfor %}
+          </span>
+        {% endif %}
         &nbsp;·&nbsp;
         {% if entity.space_relevance == 100 %}
           <span style="display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:700;background:#d1fae5;color:#065f46;">space 100</span>
@@ -354,6 +366,29 @@
       {% endfor %}
     </tbody>
   </table>
+</div>
+{% endif %}
+
+<!-- ── Source documents ── -->
+{% if source_docs %}
+<div class="card">
+  <details>
+    <summary style="cursor:pointer;font-size:13px;color:#888">Source documents — {{ source_docs|length }} document{{ source_docs|length|pluralize }}</summary>
+    <div style="margin-top:10px;display:flex;flex-direction:column;gap:4px">
+      {% for doc in source_docs %}
+      <div style="font-size:12px">
+        {% if doc.document__source__url %}
+          <a href="{{ doc.document__source__url }}" target="_blank" rel="noopener" style="color:#0066cc;font-weight:600">{{ doc.document__source__name|default:doc.document__source__url|truncatechars:60 }}</a>
+        {% else %}
+          <span style="color:#888">{{ doc.document__source__name|default:"Unknown source" }}</span>
+        {% endif %}
+        {% if doc.document__title %}
+          <span style="color:#aaa;margin-left:6px">— {{ doc.document__title|truncatechars:80 }}</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </details>
 </div>
 {% endif %}
 
