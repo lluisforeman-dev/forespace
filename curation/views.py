@@ -440,6 +440,21 @@ def entity_profile(request, entity_id):
 
     hq_city    = next((f for f in facts if f.attribute_id == 'headquarters_city'),    None)
     hq_country = next((f for f in facts if f.attribute_id == 'headquarters_country'), None)
+    # Fall back to candidate assertions for location fields (they rarely get adjudicated)
+    if not hq_city:
+        hq_city = (
+            all_assertions
+            .filter(attribute_id='headquarters_city', status='candidate', superseded_at__isnull=True)
+            .order_by('-confidence')
+            .first()
+        )
+    if not hq_country:
+        hq_country = (
+            all_assertions
+            .filter(attribute_id='headquarters_country', status='candidate', superseded_at__isnull=True)
+            .order_by('-confidence')
+            .first()
+        )
     offices    = [r for r in relations_out if r.predicate_id == 'has_office_in']
 
     return render(request, 'curation/entity_profile.html', {
@@ -1078,15 +1093,16 @@ def map_data(request):
     # Entities with headquarters data
     hq_rows = (
         Assertion.objects
-        .filter(attribute_id='headquarters_country', status='accepted', superseded_at__isnull=True)
+        .filter(attribute_id='headquarters_country', status__in=('accepted', 'candidate'), superseded_at__isnull=True)
+        .exclude(value_text='')
         .select_related('entity')
         .values('entity_id', 'entity__canonical_name', 'entity__entity_type', 'value_text')
     )
     city_rows = {
         row['entity_id']: row['value_text']
         for row in Assertion.objects.filter(
-            attribute_id='headquarters_city', status='accepted', superseded_at__isnull=True
-        ).values('entity_id', 'value_text')
+            attribute_id='headquarters_city', status__in=('accepted', 'candidate'), superseded_at__isnull=True
+        ).exclude(value_text='').values('entity_id', 'value_text')
     }
 
     markers = []
