@@ -858,6 +858,34 @@ def _store_relations(relations: list, fallback_doc: Document, sonar_source: Sour
     return stored, entity_ids
 
 
+@shared_task(queue='extract')
+def geocode_all_offices():
+    """Geocode every has_office_in relation that has an address but no lat/lon yet."""
+    import time as _time
+    from core.models import Relation as _Rel
+
+    rels = list(
+        _Rel.objects
+        .filter(predicate_id='has_office_in', superseded_at__isnull=True)
+        .values('id', 'qualifiers')
+    )
+    done = skipped = 0
+    for row in rels:
+        q = row['qualifiers'] or {}
+        if q.get('lat') or not q.get('address'):
+            skipped += 1
+            continue
+        lat, lon = _nominatim_geocode(q['address'])
+        if lat is None:
+            skipped += 1
+            continue
+        q['lat'], q['lon'] = lat, lon
+        _Rel.objects.filter(id=row['id']).update(qualifiers=q)
+        done += 1
+        _time.sleep(1.1)
+    logger.info('geocode_all_offices: %d geocoded, %d skipped', done, skipped)
+
+
 def _nominatim_geocode(address: str) -> tuple[float, float] | tuple[None, None]:
     import requests as _req
     try:

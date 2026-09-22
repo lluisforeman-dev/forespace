@@ -1152,38 +1152,11 @@ def fill_addresses_all(request):
 
 @staff_member_required
 def geocode_offices(request):
-    """Geocode all has_office_in relations that have an address but no lat/lon yet."""
+    """Queue a Celery task to geocode all has_office_in relations with an address but no coords."""
     if request.method == 'POST':
-        from ingest.tasks.research import _nominatim_geocode
-        import time as _time
-
-        rels = list(
-            Relation.objects
-            .filter(predicate_id='has_office_in', superseded_at__isnull=True)
-            .exclude(qualifiers__lat__isnull=False)
-            .values('id', 'qualifiers')
-        )
-
-        done = skipped = 0
-        for row in rels:
-            q = row['qualifiers'] or {}
-            if q.get('lat'):
-                skipped += 1
-                continue
-            address = q.get('address')
-            if not address:
-                skipped += 1
-                continue
-            lat, lon = _nominatim_geocode(address)
-            if lat is None:
-                skipped += 1
-                continue
-            q['lat'], q['lon'] = lat, lon
-            Relation.objects.filter(id=row['id']).update(qualifiers=q)
-            done += 1
-            _time.sleep(1.1)
-
-        messages.success(request, f'Geocoded {done} office location(s). {skipped} skipped (no address or already done).')
+        from ingest.tasks.research import geocode_all_offices
+        geocode_all_offices.delay()
+        messages.success(request, 'Geocoding offices queued — check map in a few minutes.')
     return HttpResponseRedirect(reverse('curation:dashboard'))
 
 
