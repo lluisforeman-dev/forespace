@@ -427,7 +427,12 @@ def _find_or_create_geography(mention: str, norm: str) -> str:
     entity_type='geography' so they are excluded from company-focused views
     and never auto-researched as companies. Coordinates are geocoded via
     Nominatim on first creation.
+
+    Dedup: after geocoding, if an existing geography entity is within 0.15°
+    of the returned coordinates (same city), add this name as an alias and
+    return the existing entity — prevents "Seville" vs "Sevilla" duplicates.
     """
+    # Level 1 — exact alias match
     alias = (
         EntityAlias.objects
         .select_related('entity')
@@ -438,6 +443,23 @@ def _find_or_create_geography(mention: str, norm: str) -> str:
         return str(alias.entity_id)
 
     lat, lon = _geocode_nominatim(mention)
+
+    # Level 2 — coordinate proximity (same place, different language/spelling)
+    # 0.005° ≈ 500m — catches alternate spellings of the same point but not adjacent cities
+    if lat is not None:
+        nearby = (
+            Entity.objects
+            .filter(
+                entity_type='geography',
+                latitude__range=(lat - 0.005, lat + 0.005),
+                longitude__range=(lon - 0.005, lon + 0.005),
+            )
+            .first()
+        )
+        if nearby:
+            _add_alias(str(nearby.id), mention, norm, None)
+            logger.info('Geography dedup: "%s" → existing "%s" (%.4f, %.4f)', mention, nearby.canonical_name, lat, lon)
+            return str(nearby.id)
 
     slug_base = slugify(mention)[:200] or 'geo'
     slug = slug_base
