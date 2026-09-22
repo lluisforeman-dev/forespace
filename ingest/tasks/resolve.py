@@ -134,6 +134,12 @@ _GEOGRAPHIC_BLOCKLIST = {
     'london', 'paris', 'berlin', 'madrid', 'rome', 'tokyo', 'beijing', 'washington',
     'brussels', 'geneva', 'amsterdam', 'stockholm', 'oslo', 'helsinki',
     'toulouse', 'munich', 'barcelona', 'milan', 'cape canaveral', 'houston',
+    'new york', 'los angeles', 'san francisco', 'seattle', 'boston', 'denver',
+    'austin', 'chicago', 'dallas', 'miami', 'toronto', 'montreal', 'vancouver',
+    'dubai', 'abu dhabi', 'tel aviv', 'singapore', 'sydney', 'melbourne',
+    'bangalore', 'mumbai', 'new delhi', 'shanghai', 'seoul', 'osaka',
+    'vienna', 'zurich', 'warsaw', 'prague', 'lisbon', 'copenhagen', 'helsinki',
+    'kyiv', 'istanbul', 'athens', 'bucharest', 'budapest', 'sofia',
 }
 
 _VALID_ENTITY_TYPES = {
@@ -141,6 +147,7 @@ _VALID_ENTITY_TYPES = {
     'facility', 'asset', 'person',
     'document_node', 'event', 'program',
     'funding_program',  # deployable funding instruments — grants, VC funds, loan programmes
+    'geography',        # cities, countries, regions — relation targets only, never researched
     'end_user',   # downstream consumers of space services (not space companies themselves)
     'geography',  # countries, regions, cities — relation targets only, never researched
 }
@@ -198,6 +205,10 @@ def resolve_mention(
     if entity_type not in _VALID_ENTITY_TYPES:
         entity_type = 'company'
     norm = normalize_name(mention)
+
+    # Explicit geography type — always route to geography handler, no stub creation.
+    if entity_type == 'geography':
+        return _find_or_create_geography(mention, norm)
 
     # Geographic blocklist — countries, regions, and cities get entity_type='geography'
     # so they can be relation targets (has_office_in → London) but are filtered from

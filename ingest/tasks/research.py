@@ -814,8 +814,10 @@ def _store_relations(relations: list, fallback_doc: Document, sonar_source: Sour
                 subject_id = resolve_mention(
                     subject_mention, document_id=str(fallback_doc.id), entity_type=subject_type, subject_context=subject_context, primary_entity_id=primary_entity_id, primary_entity_norm=primary_entity_norm
                 )
+                # has_office_in objects are always geographic — never create company stubs for cities
+                _obj_type = 'geography' if predicate == 'has_office_in' else object_type
                 object_id = resolve_mention(
-                    object_mention, document_id=str(fallback_doc.id), entity_type=object_type, subject_context=subject_context, primary_entity_id=primary_entity_id, primary_entity_norm=primary_entity_norm
+                    object_mention, document_id=str(fallback_doc.id), entity_type=_obj_type, subject_context=subject_context, primary_entity_id=primary_entity_id, primary_entity_norm=primary_entity_norm
                 )
 
                 existing = Relation.objects.filter(
@@ -1314,6 +1316,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             _Entity.objects
             .filter(id__in=entity_id_strs)
             .exclude(status='merged')
+            .exclude(entity_type='geography')  # cities/countries are relation targets, never researched
             .exclude(space_relevance__lt=50, space_relevance__isnull=False)  # Sonar for 50+, null, skip 0/20
             .annotate(assertion_count=Count(
                 'assertions',
