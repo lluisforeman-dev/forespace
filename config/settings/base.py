@@ -97,7 +97,8 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
 CELERY_TASK_TRACK_STARTED = True
-CELERY_RESULT_EXPIRES = 3600  # expire task results after 1 hour to keep Redis memory bounded
+CELERY_RESULT_EXPIRES = 3600   # expire stored results after 1 hour
+CELERY_TASK_EXPIRES = 3600     # discard queued tasks not picked up within 1 hour
 
 # --- AI — OpenRouter (same keys as astronode) ---
 AI_API_KEY = env('AI_API_KEY', default='')
