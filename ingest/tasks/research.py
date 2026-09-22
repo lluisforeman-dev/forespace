@@ -108,6 +108,10 @@ RULES:
   headquarters_city, headquarters_country, employee_count, total_funding_usd, founding_year.
   These fields power geographic maps and funding charts — search every source for them.
   Do not skip these even if the document is primarily about something else.
+  For EVERY office, facility, or operational presence (HQ and additional locations):
+  add a has_office_in relation → the city or country geography entity.
+  Qualifier office_type: "hq" for headquarters, "office" for branch offices, "facility" for production/test sites, "rd_center" for R&D labs.
+  A company with offices in Madrid, London, and Houston gets THREE has_office_in relations.
 - ★ RESEARCH-CRITICAL: For ANY entity — companies, universities, research institutes, people,
   government agencies — extract publication_count and research_focus when findable.
   For individual papers or presentations use event_type=publication with:

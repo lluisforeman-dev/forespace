@@ -102,6 +102,16 @@ PREDICATES = [
             'Qualifiers: service_type, contract_value_usd, date.'
         ),
     },
+    # ── Geography ─────────────────────────────────────────────────────────
+    {
+        'key': 'has_office_in',
+        'label': 'Has Office In',
+        'description': (
+            'Subject (organisation) has an office, facility, or operational presence in Object (city or country geography entity). '
+            'Use for ALL locations — headquarters and additional offices alike. '
+            'Qualifiers: office_type (hq|office|facility|rd_center), since.'
+        ),
+    },
     # ── Operations ────────────────────────────────────────────────────────
     {
         'key': 'launches_for',
