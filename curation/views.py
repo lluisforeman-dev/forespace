@@ -1250,12 +1250,16 @@ def map_data(request):
         ).exclude(value_text='').values('entity_id', 'value_text')
     }
 
-    # Build a lookup: entity_id → (lat, lon) from geocoded HQ address in has_office_in qualifier
-    hq_qualifier_coords = {}
+    # Build a lookup: entity_id → {lat, lon, has_address} from geocoded HQ qualifier
+    hq_qualifier_data = {}
     for rel in Relation.objects.filter(predicate_id='has_office_in', superseded_at__isnull=True).values('subject_id', 'qualifiers'):
         q = rel['qualifiers'] or {}
         if q.get('office_type') == 'hq' and q.get('lat') and q.get('lon'):
-            hq_qualifier_coords[str(rel['subject_id'])] = (float(q['lat']), float(q['lon']))
+            hq_qualifier_data[str(rel['subject_id'])] = {
+                'lat': float(q['lat']),
+                'lon': float(q['lon']),
+                'has_address': bool(q.get('address')),
+            }
 
     markers = []
     seen = set()
@@ -1266,19 +1270,20 @@ def map_data(request):
         seen.add(eid)
         city    = city_rows.get(row['entity_id'], '')
         country = row['value_text']
-        coords  = hq_qualifier_coords.get(eid)
+        hq     = hq_qualifier_data.get(eid)
         markers.append({
-            'id':      eid,
-            'name':    row['entity__canonical_name'],
-            'type':    row['entity__entity_type'],
-            'place':   city or country,
-            'lat':     coords[0] if coords else None,
-            'lon':     coords[1] if coords else None,
-            'country': country,
-            'city':    city,
+            'id':          eid,
+            'name':        row['entity__canonical_name'],
+            'type':        row['entity__entity_type'],
+            'place':       city or country,
+            'lat':         hq['lat'] if hq else None,
+            'lon':         hq['lon'] if hq else None,
+            'has_address': hq['has_address'] if hq else False,
+            'country':     country,
+            'city':        city,
         })
 
-    # Offices via has_office_in relation — use geocoded coords from the geography entity
+    # Offices via has_office_in relation
     office_rows = (
         Relation.objects
         .filter(predicate_id='has_office_in', superseded_at__isnull=True)
@@ -1288,10 +1293,8 @@ def map_data(request):
     )
     for row in office_rows:
         q = row['qualifiers'] or {}
-        # Prefer address-geocoded coords stored in qualifiers over city centroid
         lat = q.get('lat') or (float(row['object__latitude']) if row['object__latitude'] is not None else None)
         lon = q.get('lon') or (float(row['object__longitude']) if row['object__longitude'] is not None else None)
-        office_type = q.get('office_type', 'office')
         markers.append({
             'id':          str(row['subject_id']),
             'name':        row['subject__canonical_name'],
@@ -1299,7 +1302,8 @@ def map_data(request):
             'place':       row['object__canonical_name'],
             'lat':         lat,
             'lon':         lon,
-            'office_type': office_type,
+            'has_address': bool(q.get('address') and q.get('lat')),
+            'office_type': q.get('office_type', 'office'),
         })
 
     return JsonResponse({'markers': markers})
