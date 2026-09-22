@@ -1144,9 +1144,11 @@ def map_data(request):
                 'object__canonical_name', 'object__latitude', 'object__longitude', 'qualifiers')
     )
     for row in office_rows:
-        lat = float(row['object__latitude']) if row['object__latitude'] is not None else None
-        lon = float(row['object__longitude']) if row['object__longitude'] is not None else None
-        office_type = (row['qualifiers'] or {}).get('office_type', 'office')
+        q = row['qualifiers'] or {}
+        # Prefer address-geocoded coords stored in qualifiers over city centroid
+        lat = q.get('lat') or (float(row['object__latitude']) if row['object__latitude'] is not None else None)
+        lon = q.get('lon') or (float(row['object__longitude']) if row['object__longitude'] is not None else None)
+        office_type = q.get('office_type', 'office')
         markers.append({
             'id':          str(row['subject_id']),
             'name':        row['subject__canonical_name'],

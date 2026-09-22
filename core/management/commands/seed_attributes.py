@@ -45,6 +45,21 @@ ATTRIBUTES = [
         ),
     },
     {
+        'key': 'headquarters_address',
+        'entity_type': 'company',
+        'label': 'Headquarters Address',
+        'datatype': 'text',
+        'cardinality': 'single',
+        'is_projected': False,
+        'is_promoted': False,
+        'volatility_days': 730,
+        'description': (
+            'Full street address of the primary headquarters, e.g. "350 Fifth Avenue, New York, NY 10118, US". '
+            'Include street, city, postal code, and country when available. '
+            'Used for precise map geocoding — be as specific as possible.'
+        ),
+    },
+    {
         'key': 'employee_count',
         'entity_type': 'company',
         'label': 'Employee Count',
