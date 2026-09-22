@@ -1249,6 +1249,13 @@ def map_data(request):
         ).only('canonical_name', 'latitude', 'longitude')
     }
 
+    # Build a lookup: entity_id → (lat, lon) from geocoded HQ address in has_office_in qualifier
+    hq_qualifier_coords = {}
+    for rel in Relation.objects.filter(predicate_id='has_office_in', superseded_at__isnull=True).values('subject_id', 'qualifiers'):
+        q = rel['qualifiers'] or {}
+        if q.get('office_type') == 'hq' and q.get('lat') and q.get('lon'):
+            hq_qualifier_coords[str(rel['subject_id'])] = (float(q['lat']), float(q['lon']))
+
     markers = []
     seen = set()
     for row in hq_rows:
@@ -1258,7 +1265,8 @@ def map_data(request):
         seen.add(eid)
         city    = city_rows.get(row['entity_id'], '')
         country = row['value_text']
-        coords  = geo_coords.get(city) or geo_coords.get(country)
+        # Prefer: 1) geocoded street address from HQ qualifier, 2) geography entity centroid
+        coords = hq_qualifier_coords.get(eid) or geo_coords.get(city) or geo_coords.get(country)
         markers.append({
             'id':      eid,
             'name':    row['entity__canonical_name'],
