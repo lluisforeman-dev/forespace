@@ -896,29 +896,50 @@ def _geocode_office_relations(topic: str, assertion_ids: list) -> None:
     if not entity:
         return
 
-    # 1. Geocode headquarters_address claim → HQ relation
-    addr_assertion = (
-        Assertion.objects
-        .filter(pk__in=assertion_ids, attribute_id='headquarters_address')
-        .exclude(value_text='')
-        .order_by('-confidence')
+    # 1. Geocode HQ → try street address first, fall back to city + country
+    hq_rel = (
+        Relation.objects
+        .filter(subject=entity, predicate_id='has_office_in', superseded_at__isnull=True)
+        .filter(qualifiers__office_type='hq')
         .first()
     )
-    if addr_assertion and addr_assertion.value_text:
-        hq_rel = (
-            Relation.objects
-            .filter(subject=entity, predicate_id='has_office_in', superseded_at__isnull=True)
-            .filter(qualifiers__office_type='hq')
+    if hq_rel and not (hq_rel.qualifiers or {}).get('lat'):
+        addr_assertion = (
+            Assertion.objects
+            .filter(pk__in=assertion_ids, attribute_id='headquarters_address')
+            .exclude(value_text='')
+            .order_by('-confidence')
             .first()
         )
-        if hq_rel and not (hq_rel.qualifiers or {}).get('lat'):
-            lat, lon = _nominatim_geocode(addr_assertion.value_text)
+        city_assertion = (
+            Assertion.objects
+            .filter(pk__in=assertion_ids, attribute_id='headquarters_city')
+            .exclude(value_text='')
+            .order_by('-confidence')
+            .first()
+        )
+        country_assertion = (
+            Assertion.objects
+            .filter(pk__in=assertion_ids, attribute_id='headquarters_country')
+            .exclude(value_text='')
+            .order_by('-confidence')
+            .first()
+        )
+        geocode_query = None
+        if addr_assertion:
+            geocode_query = addr_assertion.value_text
+        elif city_assertion or country_assertion:
+            parts = [a.value_text for a in [city_assertion, country_assertion] if a]
+            geocode_query = ', '.join(parts)
+
+        if geocode_query:
+            lat, lon = _nominatim_geocode(geocode_query)
             if lat is not None:
                 q = dict(hq_rel.qualifiers or {})
                 q['lat'], q['lon'] = lat, lon
                 hq_rel.qualifiers = q
                 hq_rel.save(update_fields=['qualifiers'])
-                logger.info('geocoded HQ "%s" → (%.5f, %.5f)', topic, lat, lon)
+                logger.info('geocoded HQ "%s" via "%s" → (%.5f, %.5f)', topic, geocode_query, lat, lon)
                 _time.sleep(1.1)
 
     # 2. Geocode address qualifier on all other has_office_in relations
