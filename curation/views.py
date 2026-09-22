@@ -1070,6 +1070,7 @@ def fill_locations_all(request):
             Entity.objects
             .filter(entity_type__in=('company', 'investor', 'entity', 'university'))
             .exclude(status='merged')
+            .exclude(space_relevance__lt=50, space_relevance__isnull=False)
             .exclude(id__in=Assertion.objects.filter(
                 attribute_id='headquarters_country',
                 status='accepted',
@@ -1124,6 +1125,7 @@ def fill_addresses_all(request):
                 id__in=has_location,
             )
             .exclude(status='merged')
+            .exclude(space_relevance__lt=50, space_relevance__isnull=False)
             .exclude(id__in=has_address)
             .only('id', 'canonical_name')
         )
