@@ -312,3 +312,21 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
             entity.space_relevance = new_relevance
             entity.save(update_fields=['space_relevance'])
             logger.info('classify_entity %s: space_relevance promoted to %s', entity_id, new_relevance)
+
+            # Person entities skip WK summary so synthesise_entity_summary returns
+            # early without ever queuing research.  Trigger it here on first
+            # score promotion so space-relevant persons get their own research run.
+            if entity.entity_type == 'person' and new_relevance >= 50:
+                from core.models import Event, KnowledgeFragment
+                has_data = (
+                    Event.objects.filter(entity=entity).exists()
+                    or KnowledgeFragment.objects.filter(entity=entity).exists()
+                )
+                if not has_data:
+                    from ingest.tasks.research import research_topic
+                    research_topic.apply_async(
+                        args=[entity.canonical_name, 'person'],
+                        kwargs={'cascade_depth': 0},
+                        countdown=0,
+                    )
+                    logger.info('classify_entity %s: queued person research (no data, score=%d)', entity_id, new_relevance)
