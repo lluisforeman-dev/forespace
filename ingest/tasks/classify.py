@@ -213,11 +213,52 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
 
     # Build lookup restricted to the allowed facets
     valid_nodes: dict[tuple[str, str], TaxonomyNode] = {}
+    taxonomy_map: dict[str, object] = {}
     for node in TaxonomyNode.objects.filter(status='active', taxonomy__key__in=allowed_facets).select_related('taxonomy'):
         valid_nodes[(node.taxonomy.key, node.path)] = node
+        taxonomy_map[node.taxonomy.key] = node.taxonomy
+    # Also fetch taxonomies that may have no nodes yet
+    for t in Taxonomy.objects.filter(status='active', key__in=allowed_facets):
+        taxonomy_map.setdefault(t.key, t)
 
     from core.models import ExtractionRun
     run = ExtractionRun.objects.filter(pk=run_id).first() if run_id else None
+
+    import re as _re
+    _VALID_PATH = _re.compile(r'^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$')
+
+    def _try_expand(facet_key, node_path):
+        """Auto-create a taxonomy node if its parent exists and the path is valid.
+
+        Returns the new TaxonomyNode on success, None if expansion is not safe.
+        Only expands one level at a time — parent must already be in valid_nodes
+        (or be a root node on a known taxonomy).
+        """
+        if not _VALID_PATH.match(node_path):
+            return None
+        taxonomy = taxonomy_map.get(facet_key)
+        if not taxonomy:
+            return None
+        parts = node_path.split('.')
+        if len(parts) > 1:
+            parent_path = '.'.join(parts[:-1])
+            if (facet_key, parent_path) not in valid_nodes:
+                return None  # Parent missing — don't create orphan nodes
+        label = parts[-1].replace('_', ' ').title()
+        node, created_now = TaxonomyNode.objects.get_or_create(
+            taxonomy=taxonomy,
+            path=node_path,
+            defaults={
+                'label': label,
+                'definition': f'Auto-expanded during entity classification.',
+                'examples': [],
+                'status': 'active',
+            },
+        )
+        if created_now:
+            logger.info('classify: auto-expanded taxonomy %s/%s — "%s"', facet_key, node_path, label)
+        valid_nodes[(facet_key, node_path)] = node
+        return node
 
     conf_map = {'high': 85, 'medium': 65, 'low': 45}
     created = skipped = 0
@@ -232,6 +273,8 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
                 skipped += 1
                 continue
             node = valid_nodes.get((facet_key, node_path))
+            if not node:
+                node = _try_expand(facet_key, node_path)
             if not node:
                 logger.warning('classify: unknown node %s/%s for entity_type=%s', facet_key, node_path, entity.entity_type)
                 skipped += 1
