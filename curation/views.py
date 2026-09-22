@@ -844,11 +844,14 @@ def research_all(request):
             .exclude(entity_type='geography')
             .exclude(space_relevance__lt=50, space_relevance__isnull=False)
             .exclude(id__in=Event.objects.values('entity_id'))
-            .only('id', 'canonical_name', 'entity_type')
+            .only('id', 'canonical_name', 'entity_type', 'space_relevance')
         )
         queued = 0
         for i, entity in enumerate(no_events):
             topic_type = _TYPE_TO_TOPIC.get(entity.entity_type, 'company')
+            # Adjacent entities (score=50): narrow search to space-specific facts only
+            if entity.space_relevance is not None and entity.space_relevance < 100 and topic_type == 'company':
+                topic_type = 'space_angle'
             research_topic.apply_async(
                 args=[entity.canonical_name, topic_type],
                 kwargs={'cascade_depth': 0},
