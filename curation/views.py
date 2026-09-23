@@ -45,6 +45,17 @@ def _queue_lengths():
         return None
 
 
+def _per_queue_lengths():
+    """Return {queue_name: count} for all queues."""
+    try:
+        import redis
+        from django.conf import settings
+        r = redis.from_url(settings.CELERY_BROKER_URL)
+        return {q: r.llen(q) for q in CELERY_QUEUES}
+    except Exception:
+        return {q: 0 for q in CELERY_QUEUES}
+
+
 def _worker_status():
     """Ping Celery workers. Cached 60s so dashboard load stays fast."""
     from django.core.cache import cache
@@ -113,6 +124,17 @@ def dashboard(request):
     )
 
     from ingest.pause import paused_operations
+    ql = _per_queue_lengths()
+    # Operation → queues it uses (for "Running (N)" display)
+    op_queue_counts = {
+        'research':     ql.get('crawl', 0) + ql.get('triage', 0) + ql.get('parse', 0) + ql.get('extract', 0),
+        'supply_chain': ql.get('extract', 0) + ql.get('default', 0),
+        'summarise':    ql.get('extract', 0),
+        'classify':     ql.get('extract', 0),
+        'assess':       ql.get('extract', 0),
+        'locations':    ql.get('extract', 0),
+        'crawl':        ql.get('crawl', 0),
+    }
     ctx = {
         'stub_count': Entity.objects.filter(status='stub').count(),
         'candidate_count': Assertion.objects.filter(status='candidate').count(),
@@ -131,6 +153,7 @@ def dashboard(request):
         'with_score': with_score,
         'recently_assessed': recently_assessed,
         'paused_ops': paused_operations(),
+        'op_queue_counts': op_queue_counts,
     }
     return render(request, 'curation/dashboard.html', ctx)
 

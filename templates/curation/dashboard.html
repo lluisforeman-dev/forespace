@@ -103,7 +103,7 @@
   {% comment %}Research{% endcomment %}
   <tr>
     <td>Research all entities</td>
-    <td>{% if 'research' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% else %}<span class="op-status running"></span>Active{% endif %}</td>
+    <td>{% if 'research' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.research %}<span class="op-status running"></span>Running ({{ op_queue_counts.research }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
     <td><form method="post" action="{% url 'curation:research_all' %}" onsubmit="return confirm('Queue full research for all entities with no events?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
     <td>
       {% if 'research' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'research' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
@@ -114,7 +114,7 @@
   {% comment %}Assess{% endcomment %}
   <tr>
     <td>Assess all (score + describe)</td>
-    <td>{% if 'assess' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% else %}<span class="op-status running"></span>Active{% endif %}</td>
+    <td>{% if 'assess' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.assess %}<span class="op-status running"></span>Running ({{ op_queue_counts.assess }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
     <td><form method="post" action="{% url 'curation:assess_all' %}" onsubmit="return confirm('Assess all entities with no description?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
     <td>
       {% if 'assess' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'assess' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
@@ -125,7 +125,7 @@
   {% comment %}Classify{% endcomment %}
   <tr>
     <td>Score all entities (space_relevance)</td>
-    <td>{% if 'classify' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% else %}<span class="op-status running"></span>Active{% endif %}</td>
+    <td>{% if 'classify' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.classify %}<span class="op-status running"></span>Running ({{ op_queue_counts.classify }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
     <td><form method="post" action="{% url 'curation:classify_all' %}" onsubmit="return confirm('Score all unscored entities?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
     <td>
       {% if 'classify' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'classify' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
@@ -136,7 +136,7 @@
   {% comment %}Summarise{% endcomment %}
   <tr>
     <td>Summarise all entities</td>
-    <td>{% if 'summarise' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% else %}<span class="op-status running"></span>Active{% endif %}</td>
+    <td>{% if 'summarise' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.summarise %}<span class="op-status running"></span>Running ({{ op_queue_counts.summarise }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
     <td><form method="post" action="{% url 'curation:summarise_all' %}" onsubmit="return confirm('Queue summarise for all entities?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
     <td>
       {% if 'summarise' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'summarise' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
@@ -147,7 +147,7 @@
   {% comment %}Supply chain extract{% endcomment %}
   <tr>
     <td>Supply chain — extract outputs &amp; inputs</td>
-    <td>{% if 'supply_chain' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% else %}<span class="op-status running"></span>Active{% endif %}</td>
+    <td>{% if 'supply_chain' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.supply_chain %}<span class="op-status running"></span>Running ({{ op_queue_counts.supply_chain }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
     <td><form method="post" action="{% url 'curation:fill_supply_chain' %}" onsubmit="return confirm('Extract outputs/inputs for all score=100 entities missing them?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
     <td>
       {% if 'supply_chain' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'supply_chain' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
@@ -158,7 +158,7 @@
   {% comment %}Supply chain classify{% endcomment %}
   <tr>
     <td>Supply chain — classify tiers</td>
-    <td>{% if 'supply_chain' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% else %}<span class="op-status running"></span>Active{% endif %}</td>
+    <td>{% if 'supply_chain' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.supply_chain %}<span class="op-status running"></span>Running ({{ op_queue_counts.supply_chain }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
     <td><form method="post" action="{% url 'curation:classify_supply_chain_all' %}" onsubmit="return confirm('Re-classify tiers for all entities?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
     <td>&nbsp;</td>
   </tr>
@@ -166,7 +166,7 @@
   {% comment %}Locations{% endcomment %}
   <tr>
     <td>Fill missing locations</td>
-    <td>{% if 'locations' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% else %}<span class="op-status running"></span>Active{% endif %}</td>
+    <td>{% if 'locations' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.locations %}<span class="op-status running"></span>Running ({{ op_queue_counts.locations }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
     <td>
       <form method="post" action="{% url 'curation:fill_locations_all' %}" onsubmit="return confirm('Fill missing headquarters locations?')" style="display:inline">{% csrf_token %}<button class="op-btn start">Locations</button></form>
       <form method="post" action="{% url 'curation:fill_addresses_all' %}" onsubmit="return confirm('Fill missing street addresses?')" style="display:inline">{% csrf_token %}<button class="op-btn start">Addresses</button></form>
