@@ -986,38 +986,34 @@ def classify_supply_chain_all(request):
 
 @staff_member_required
 def fill_supply_chain(request):
-    """Queue research_topic for score=100 entities missing value_chain_tier."""
+    """Queue extract_supply_chain for score=100 entities missing outputs."""
     if request.method == 'POST':
-        from ingest.tasks.research import research_topic
+        from ingest.tasks.research import extract_supply_chain
         from django.core.cache import cache
 
-        has_tier = set(
+        _SC_TYPES = ('company', 'entity', 'university', 'facility')
+        has_output = set(
             Assertion.objects
-            .filter(attribute_id='value_chain_tier', superseded_at__isnull=True)
+            .filter(attribute_id='output', superseded_at__isnull=True)
             .values_list('entity_id', flat=True)
         )
         entities = list(
             Entity.objects
-            .filter(space_relevance=100)
+            .filter(space_relevance=100, entity_type__in=_SC_TYPES)
             .exclude(status='merged')
-            .exclude(entity_type__in=('geography', 'document_node'))
-            .exclude(id__in=has_tier)
-            .only('id', 'canonical_name', 'entity_type')
+            .exclude(id__in=has_output)
+            .only('id', 'canonical_name')
         )
         queued = skipped = 0
         for i, entity in enumerate(entities):
-            lock_key = f'sc_queued:{entity.id}'
+            lock_key = f'sc_extract:{entity.id}'
             if cache.get(lock_key):
                 skipped += 1
                 continue
-            research_topic.apply_async(
-                args=[entity.canonical_name, 'company'],
-                kwargs={'cascade_depth': 0},
-                countdown=i * 2,
-            )
+            extract_supply_chain.apply_async(args=[str(entity.id)], countdown=i * 3)
             cache.set(lock_key, 1, timeout=7200)
             queued += 1
-        msg = f'Queued supply chain research for {queued} entities.'
+        msg = f'Queued supply chain extraction for {queued} entities.'
         if skipped:
             msg += f' Skipped {skipped} already in queue.'
         messages.success(request, msg)

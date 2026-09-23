@@ -104,18 +104,6 @@ EXTRACTION RULES FOR RELATIONS:
 - Only use predicate keys from the allowed list below.
 
 RULES:
-- ★ SUPPLY CHAIN-CRITICAL: For any company, investor, facility or university (NOT for assets, missions, programs, or spacecraft), ALWAYS extract:
-  1. output — each specific product or service the organisation offers to the market.
-       ONE CLAIM PER OUTPUT. Be specific: "1N hydrazine monopropellant thruster",
-       "SAR imagery 1m resolution", "Falcon 9 launch service to LEO".
-       Extract EVERY distinct output you can find.
-  2. input — each specific product, component or service the organisation needs to source.
-       ONE CLAIM PER INPUT. Extract from sources AND infer from what they do:
-       a satellite manufacturer needs propulsion systems, avionics, solar panels, structures,
-       launch services even if no source explicitly states this. Be specific:
-       "reaction control thrusters", "star trackers", "carbon fibre panels", "launch to SSO".
-       Extract AND infer EVERY distinct input you can identify.
-  value_chain_tier is derived separately from outputs — do NOT extract it here.
 - ★ MAP-CRITICAL: For any company, investor, or entity, ALWAYS extract if findable:
   headquarters_city, headquarters_country, employee_count, total_funding_usd, founding_year.
   These fields power geographic maps and funding charts — search every source for them.
@@ -995,6 +983,76 @@ def _geocode_with_fallback(address: str) -> tuple[float, float] | tuple[None, No
 
     # Step 4: free-form fallback
     return _nominatim_geocode(address)
+
+
+_EXTRACT_SC_PROMPT = """\
+You are a supply chain analyst for the space industry.
+Search for information about the organisation below and return JSON with two keys:
+
+"outputs": list of specific products or services this organisation delivers to customers.
+  One string per item. Be specific: "1N hydrazine monopropellant thruster", "SAR imagery 1m resolution",
+  "Falcon 9 launch service to LEO", "optical ground station network access".
+
+"inputs": list of specific products, components or services this organisation needs to source.
+  One string per item. Extract from sources AND infer from what they do:
+  a satellite manufacturer needs propulsion systems, avionics, solar panels, structures, launch services.
+  Be specific: "reaction control thrusters", "star trackers", "carbon fibre panels", "launch services to SSO".
+
+Return only valid JSON: {{"outputs": [...], "inputs": [...]}}
+"""
+
+
+@shared_task(queue='extract')
+def extract_supply_chain(entity_id: str):
+    """Targeted search for what a company delivers (output) and needs (input)."""
+    import json as _json
+    from core.models import Entity as _Entity, Assertion as _Assertion
+    from django.utils import timezone
+    from psycopg2.extras import DateTimeTZRange
+
+    entity = _Entity.objects.filter(id=entity_id).first()
+    if not entity:
+        return
+
+    try:
+        resp = get_client().chat.completions.create(
+            model=settings.AI_MODEL,
+            messages=[
+                {'role': 'system', 'content': _EXTRACT_SC_PROMPT},
+                {'role': 'user', 'content': f'Organisation: {entity.canonical_name}'},
+            ],
+            response_format={'type': 'json_object'},
+            max_tokens=800,
+            temperature=0,
+        )
+        data = _json.loads(resp.choices[0].message.content)
+    except Exception as e:
+        logger.error('extract_supply_chain: LLM error for %s: %s', entity.canonical_name, e)
+        return
+
+    outputs = [s for s in data.get('outputs', []) if isinstance(s, str) and s.strip()]
+    inputs  = [s for s in data.get('inputs',  []) if isinstance(s, str) and s.strip()]
+
+    if not outputs and not inputs:
+        logger.info('extract_supply_chain: nothing extracted for %s', entity.canonical_name)
+        return
+
+    now = timezone.now()
+    for value, attr_key in [(v, 'output') for v in outputs] + [(v, 'input') for v in inputs]:
+        _Assertion.objects.create(
+            entity_id=entity_id,
+            attribute_id=attr_key,
+            value_text=value.strip(),
+            method='structured_api',
+            confidence=0.80,
+            status='candidate',
+            valid_range=DateTimeTZRange(now, None),
+        )
+
+    logger.info('extract_supply_chain: %s — %d outputs, %d inputs', entity.canonical_name, len(outputs), len(inputs))
+
+    if outputs:
+        classify_supply_chain.delay(entity_id)
 
 
 _CLASSIFY_SC_PROMPT = """\
