@@ -1418,6 +1418,11 @@ _SUPPLY_PREDICATES = ['supplies', 'contracted_by', 'customer_of', 'manufactures'
 
 _LEVELS = ['upstream', 'midstream', 'downstream']
 _LEVEL_LABELS = {'upstream': 'Upstream', 'midstream': 'Midstream', 'downstream': 'Downstream'}
+_ALL_LANES = ['upstream', 'midstream', 'downstream', 'pending']
+_LANE_LABELS = {
+    'upstream': 'Upstream', 'midstream': 'Midstream',
+    'downstream': 'Downstream', 'pending': 'Pending',
+}
 
 # Map old flat tiers to levels for backward compat
 _TIER_TO_LEVEL = {
@@ -1480,7 +1485,10 @@ def supply_chain(request):
     )
     if q:
         qs = qs.filter(Q(canonical_name__icontains=q) | Q(aliases__alias__icontains=q)).distinct()
-    if level_f:
+    if level_f == 'pending':
+        # Pending = has outputs/inputs but no tier
+        qs = qs.exclude(id__in=list(tier_map.keys()))
+    elif level_f:
         qs = qs.filter(id__in=[
             eid for eid, paths in tier_map.items()
             if any(_path_level(p) == level_f for p in paths)
@@ -1516,9 +1524,8 @@ def supply_chain(request):
         e.supply_out = supply_out.get(eid, 0)
         e.supply_in  = supply_in.get(eid, 0)
 
-    # Group by level (entity may appear in multiple lanes)
-    by_level = {level: [] for level in _LEVELS}
-    ungrouped = []
+    # Group by level — entities with no tier go into 'pending' lane
+    by_level = {lane: [] for lane in _ALL_LANES}
     for e in entities:
         placed = False
         seen = set()
@@ -1529,7 +1536,7 @@ def supply_chain(request):
                 seen.add(lvl)
                 placed = True
         if not placed:
-            ungrouped.append(e)
+            by_level['pending'].append(e)
 
     # All unique level2 categories for filter
     all_cats = sorted({
@@ -1538,14 +1545,13 @@ def supply_chain(request):
         for p in paths
         if len(p.split('.')) >= 2 and p.split('.')[0] in _LEVELS
     })
-    level_counts = {lvl: len(lst) for lvl, lst in by_level.items()}
+    level_counts = {lane: len(lst) for lane, lst in by_level.items()}
 
     return render(request, 'curation/supply_chain.html', {
         'entities':     entities,
         'by_level':     by_level,
-        'ungrouped':    ungrouped,
-        'LEVELS':       _LEVELS,
-        'LEVEL_LABELS': _LEVEL_LABELS,
+        'LANES':        _ALL_LANES,
+        'LANE_LABELS':  _LANE_LABELS,
         'level_counts': level_counts,
         'all_cats':     all_cats,
         'level_f':      level_f,

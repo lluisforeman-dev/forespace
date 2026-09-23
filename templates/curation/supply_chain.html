@@ -2,47 +2,49 @@
 {% block title %}Supply Chain — ForeSpace{% endblock %}
 {% block content %}
 <style>
-  .sc-header { display:flex; align-items:center; gap:16px; margin-bottom:20px; flex-wrap:wrap; }
+  .sc-header { display:flex; align-items:center; gap:16px; margin-bottom:16px; flex-wrap:wrap; }
   .sc-header h1 { margin:0; font-size:22px; font-weight:700; }
   .sc-total { color:#888; font-size:13px; }
 
-  .sc-filters { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px; }
+  .sc-filters { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
   .sc-filters input, .sc-filters select {
     padding:6px 12px; border:1px solid #ddd; border-radius:6px; font-size:13px; background:#fff;
   }
-  .sc-filters input { width:200px; }
+  .sc-filters input { width:220px; }
   .sc-filters button { padding:6px 16px; background:#1a1a2e; color:#fff; border:none; border-radius:6px; font-size:13px; cursor:pointer; }
   .sc-filters a.clear { font-size:12px; color:#888; align-self:center; }
 
-  /* Level pills */
-  .level-stats { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:24px; }
-  .level-pill {
-    padding:6px 16px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer;
-    border:2px solid transparent; transition:all .15s; text-decoration:none;
+  /* Lane pills */
+  .lane-stats { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; }
+  .lane-pill {
+    padding:5px 14px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer;
+    border:2px solid transparent; transition:all .15s; text-decoration:none; color:inherit;
   }
-  .level-pill:hover { border-color:currentColor; text-decoration:none; }
-  .level-pill.active { border-color:currentColor; }
-  .level-pill.l-upstream   { background:#dbeafe; color:#1e40af; }
-  .level-pill.l-midstream  { background:#ede9fe; color:#5b21b6; }
-  .level-pill.l-downstream { background:#d1fae5; color:#065f46; }
+  .lane-pill:hover { border-color:currentColor; text-decoration:none; }
+  .lane-pill.active { border-color:currentColor; }
+  .lane-pill.l-upstream   { background:#dbeafe; color:#1e40af; }
+  .lane-pill.l-midstream  { background:#ede9fe; color:#5b21b6; }
+  .lane-pill.l-downstream { background:#d1fae5; color:#065f46; }
+  .lane-pill.l-pending    { background:#f3f4f6; color:#6b7280; }
 
   /* Swimlane */
-  .swimlane { display:flex; gap:16px; overflow-x:auto; padding-bottom:12px; align-items:flex-start; }
+  .swimlane { display:flex; gap:14px; overflow-x:auto; padding-bottom:12px; align-items:flex-start; }
   .lane {
     min-width:260px; max-width:280px; flex-shrink:0;
     border:1px solid #e5e7eb; border-radius:10px; background:#fafafa;
   }
   .lane-header {
     padding:10px 14px; border-bottom:1px solid #e5e7eb;
-    font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
-    border-radius:10px 10px 0 0;
+    font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.6px;
+    border-radius:10px 10px 0 0; display:flex; justify-content:space-between; align-items:center;
   }
-  .lane-header .lane-count { font-weight:400; color:#aaa; margin-left:6px; }
-  .lane-body { padding:8px; display:flex; flex-direction:column; gap:6px; max-height:70vh; overflow-y:auto; }
+  .lane-count { font-weight:400; color:#aaa; }
+  .lane-body { padding:8px; display:flex; flex-direction:column; gap:6px; max-height:72vh; overflow-y:auto; }
 
-  .lane.l-upstream  .lane-header { background:#dbeafe; color:#1e40af; }
-  .lane.l-midstream .lane-header { background:#ede9fe; color:#5b21b6; }
+  .lane.l-upstream   .lane-header { background:#dbeafe; color:#1e40af; }
+  .lane.l-midstream  .lane-header { background:#ede9fe; color:#5b21b6; }
   .lane.l-downstream .lane-header { background:#d1fae5; color:#065f46; }
+  .lane.l-pending    .lane-header { background:#f3f4f6; color:#6b7280; }
 
   /* Entity card */
   .sc-card {
@@ -51,9 +53,19 @@
   }
   .sc-card:hover { box-shadow:0 2px 8px rgba(0,0,0,.10); border-color:#a5b4fc; }
   .sc-card-name { font-size:13px; font-weight:600; color:#1a1a2e; line-height:1.3; }
-  .sc-card-paths { margin-top:4px; display:flex; flex-direction:column; gap:2px; }
-  .sc-card-path { font-size:10px; color:#6366f1; font-family:monospace; }
-  .sc-card-meta { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
+
+  .sc-outputs { margin-top:5px; display:flex; flex-direction:column; gap:2px; }
+  .sc-output-item { font-size:11px; color:#374151; line-height:1.4; }
+  .sc-output-more { font-size:10px; color:#9ca3af; font-style:italic; }
+
+  .sc-tiers { margin-top:4px; display:flex; flex-wrap:wrap; gap:3px; }
+  .sc-tier-pill {
+    font-size:10px; padding:1px 7px; border-radius:8px; font-weight:500;
+    background:#ede9fe; color:#5b21b6; white-space:nowrap; max-width:200px;
+    overflow:hidden; text-overflow:ellipsis;
+  }
+
+  .sc-card-meta { display:flex; gap:5px; margin-top:6px; flex-wrap:wrap; }
   .sc-card .badge {
     font-size:10px; padding:2px 7px; border-radius:10px; font-weight:600;
     background:#f1f5f9; color:#475569;
@@ -64,33 +76,43 @@
 
   /* Chain panel */
   .chain-panel {
-    position:fixed; right:0; top:48px; bottom:0; width:420px; background:#fff;
+    position:fixed; right:0; top:48px; bottom:0; width:440px; background:#fff;
     border-left:1px solid #e5e7eb; box-shadow:-4px 0 20px rgba(0,0,0,.08);
     display:none; flex-direction:column; z-index:100;
   }
   .chain-panel.open { display:flex; }
   .chain-panel-header {
-    padding:16px 20px; border-bottom:1px solid #e5e7eb;
-    display:flex; justify-content:space-between; align-items:center;
+    padding:14px 18px; border-bottom:1px solid #e5e7eb;
+    display:flex; justify-content:space-between; align-items:center; flex-shrink:0;
   }
-  .chain-panel-header h2 { margin:0; font-size:15px; font-weight:700; }
+  .chain-panel-header h2 { margin:0; font-size:14px; font-weight:700; }
   .chain-panel-close { cursor:pointer; color:#888; font-size:20px; line-height:1; }
-  .chain-panel-body { flex:1; overflow-y:auto; padding:16px 20px; }
-  .chain-section { margin-bottom:20px; }
-  .chain-section h3 { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#888; margin-bottom:10px; }
-  .chain-row { display:flex; align-items:flex-start; gap:10px; padding:8px 0; border-bottom:1px solid #f3f4f6; }
-  .chain-row:last-child { border-bottom:none; }
-  .chain-row-name { font-size:13px; font-weight:600; color:#1a1a2e; }
-  .chain-row-sub { font-size:11px; color:#888; margin-top:2px; font-family:monospace; }
-  .chain-row-predicate {
-    font-size:10px; padding:2px 8px; border-radius:10px; background:#ede9fe; color:#5b21b6;
-    font-weight:600; white-space:nowrap; margin-top:3px;
-  }
-  .chain-empty { color:#aaa; font-size:13px; padding:12px 0; }
+  .chain-panel-body { flex:1; overflow-y:auto; padding:14px 18px; }
 
-  .ungrouped-section { margin-top:28px; }
-  .ungrouped-section h2 { font-size:14px; color:#888; font-weight:600; margin-bottom:12px; }
-  .ungrouped-grid { display:flex; flex-wrap:wrap; gap:8px; }
+  .chain-section { margin-bottom:20px; }
+  .chain-section h3 {
+    font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
+    color:#9ca3af; margin-bottom:8px; padding-bottom:4px; border-bottom:1px solid #f3f4f6;
+  }
+  .chain-row { padding:10px 0; border-bottom:1px solid #f9fafb; }
+  .chain-row:last-child { border-bottom:none; }
+  .chain-row-name { font-size:13px; font-weight:600; color:#1a1a2e; text-decoration:none; }
+  .chain-row-name:hover { color:#6366f1; }
+  .chain-row-predicate {
+    display:inline-block; font-size:10px; padding:1px 7px; border-radius:8px;
+    background:#ede9fe; color:#5b21b6; font-weight:600; margin-left:6px; white-space:nowrap;
+  }
+  .chain-row-outputs { margin-top:4px; display:flex; flex-direction:column; gap:2px; }
+  .chain-row-output  { font-size:11px; color:#374151; }
+  .chain-row-input   { font-size:11px; color:#6366f1; }
+  .chain-row-tier    { font-size:10px; color:#9ca3af; font-family:monospace; margin-top:2px; }
+  .chain-empty { color:#aaa; font-size:13px; padding:10px 0; }
+
+  .self-card { background:#f8faff; border:1px solid #c7d2fe; border-radius:8px; padding:12px 14px; margin-bottom:18px; }
+  .self-card-name { font-size:14px; font-weight:700; color:#1a1a2e; margin-bottom:6px; }
+  .self-card-section { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#9ca3af; margin-top:8px; margin-bottom:3px; }
+  .self-card-item { font-size:12px; color:#374151; margin-bottom:2px; }
+  .self-card-tier { font-size:11px; color:#5b21b6; font-family:monospace; }
 </style>
 
 <div class="sc-header">
@@ -112,76 +134,71 @@
   {% endif %}
 </form>
 
-<div class="level-stats">
-  {% for level in LEVELS %}
-    <a href="?level={{ level }}{% if q %}&q={{ q }}{% endif %}{% if cat_f %}&cat={{ cat_f }}{% endif %}"
-       class="level-pill l-{{ level }} {% if level_f == level %}active{% endif %}">
-      {{ LEVEL_LABELS|dictsort:level }}
-      {% for k, v in LEVEL_LABELS.items %}{% if k == level %}{{ v }}{% endif %}{% endfor %}
+<div class="lane-stats">
+  {% for lane in LANES %}
+    <a href="?level={{ lane }}{% if q %}&q={{ q }}{% endif %}{% if cat_f %}&cat={{ cat_f }}{% endif %}"
+       class="lane-pill l-{{ lane }} {% if level_f == lane %}active{% endif %}">
+      {% for k, v in LANE_LABELS.items %}{% if k == lane %}{{ v }}{% endif %}{% endfor %}
       <span style="font-weight:400;opacity:.7">
-        {% for k, v in level_counts.items %}{% if k == level %}{{ v }}{% endif %}{% endfor %}
+        {% for k, v in level_counts.items %}{% if k == lane %}{{ v }}{% endif %}{% endfor %}
       </span>
     </a>
   {% endfor %}
 </div>
 
 <div class="swimlane" id="swimlane">
-  {% for level in LEVELS %}
-    <div class="lane l-{{ level }}">
+  {% for lane in LANES %}
+    <div class="lane l-{{ lane }}">
       <div class="lane-header">
-        {% for k, v in LEVEL_LABELS.items %}{% if k == level %}{{ v }}{% endif %}{% endfor %}
+        <span>{% for k, v in LANE_LABELS.items %}{% if k == lane %}{{ v }}{% endif %}{% endfor %}</span>
         <span class="lane-count">
-          {% for k, v in level_counts.items %}{% if k == level %}{{ v }}{% endif %}{% endfor %}
+          {% for k, v in level_counts.items %}{% if k == lane %}{{ v }}{% endif %}{% endfor %}
         </span>
       </div>
       <div class="lane-body">
-        {% for lvl, entities in by_level.items %}{% if lvl == level %}{% for entity in entities %}
+        {% for lvl, entities in by_level.items %}{% if lvl == lane %}{% for entity in entities %}
           <div class="sc-card" onclick="loadChain('{{ entity.id }}', '{{ entity.canonical_name|escapejs }}')">
             <div class="sc-card-name">{{ entity.canonical_name }}</div>
+
             {% if entity.sc_outputs %}
-            <div class="sc-card-paths">
+            <div class="sc-outputs">
               {% for out in entity.sc_outputs|slice:":3" %}
-                <span class="sc-card-path" style="color:#374151">{{ out }}</span>
+                <div class="sc-output-item">· {{ out|truncatechars:70 }}</div>
               {% endfor %}
-              {% if entity.sc_outputs|length > 3 %}<span class="sc-card-path" style="color:#aaa">+{{ entity.sc_outputs|length|add:"-3" }} more</span>{% endif %}
-            </div>
-            {% elif entity.sc_tiers %}
-            <div class="sc-card-paths">
-              {% for path in entity.sc_tiers|slice:":2" %}<span class="sc-card-path">{{ path }}</span>{% endfor %}
+              {% if entity.sc_outputs|length > 3 %}
+                <div class="sc-output-more">+{{ entity.sc_outputs|length|add:"-3" }} more outputs</div>
+              {% endif %}
             </div>
             {% endif %}
+
+            {% if entity.sc_tiers %}
+            <div class="sc-tiers">
+              {% for tier in entity.sc_tiers|slice:":3" %}
+                <span class="sc-tier-pill" title="{{ tier }}">{{ tier }}</span>
+              {% endfor %}
+              {% if entity.sc_tiers|length > 3 %}
+                <span class="sc-tier-pill" style="background:#f3f4f6;color:#9ca3af">+{{ entity.sc_tiers|length|add:"-3" }}</span>
+              {% endif %}
+            </div>
+            {% endif %}
+
             <div class="sc-card-meta">
               {% if entity.sc_country %}<span class="badge country">{{ entity.sc_country }}</span>{% endif %}
-              {% if entity.supply_in %}<span class="badge customer">{{ entity.supply_in }} supplier{{ entity.supply_in|pluralize }}</span>{% endif %}
-              {% if entity.supply_out %}<span class="badge supply">{{ entity.supply_out }} customer{{ entity.supply_out|pluralize }}</span>{% endif %}
+              {% if entity.supply_in %}<span class="badge supply">{{ entity.supply_in }} supplier{{ entity.supply_in|pluralize }}</span>{% endif %}
+              {% if entity.supply_out %}<span class="badge customer">{{ entity.supply_out }} customer{{ entity.supply_out|pluralize }}</span>{% endif %}
             </div>
           </div>
         {% endfor %}{% endif %}{% endfor %}
 
-        {% for k, v in level_counts.items %}{% if k == level and v == 0 %}
-          <div style="padding:10px;color:#ccc;font-size:12px;text-align:center;">No data yet</div>
+        {% for k, v in level_counts.items %}{% if k == lane and v == 0 %}
+          <div style="padding:16px;color:#d1d5db;font-size:12px;text-align:center;">No data</div>
         {% endif %}{% endfor %}
       </div>
     </div>
   {% endfor %}
 </div>
 
-{% if ungrouped %}
-<div class="ungrouped-section">
-  <h2>Unclassified ({{ ungrouped|length }})</h2>
-  <div class="ungrouped-grid">
-    {% for e in ungrouped %}
-      <div class="sc-card" style="min-width:200px;max-width:260px;" onclick="loadChain('{{ e.id }}', '{{ e.canonical_name|escapejs }}')">
-        <div class="sc-card-name">{{ e.canonical_name }}</div>
-        {% if e.sc_tiers %}
-          <div class="sc-card-paths">{% for path in e.sc_tiers|slice:":2" %}<span class="sc-card-path">{{ path }}</span>{% endfor %}</div>
-        {% endif %}
-      </div>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-
+<!-- Chain panel -->
 <div class="chain-panel" id="chainPanel">
   <div class="chain-panel-header">
     <h2 id="chainPanelTitle">Supply Chain</h2>
@@ -194,9 +211,37 @@
 
 <script>
 const PREDICATE_LABELS = {
-  supplies: 'supplies →', contracted_by: 'contracted by →', customer_of: 'customer of →',
-  manufactures: 'manufactures →', launches_for: 'launches for →', launched_payload: 'launched payload →',
+  supplies: 'supplies', contracted_by: 'contracted by', customer_of: 'customer of',
+  manufactures: 'manufactures', launches_for: 'launches for', launched_payload: 'launched payload',
 };
+
+function truncate(s, n) {
+  return s && s.length > n ? s.slice(0, n) + '…' : (s || '');
+}
+
+function renderRows(rows) {
+  if (!rows.length) return '<div class="chain-empty">None on record.</div>';
+  return rows.map(r => {
+    const outputsHtml = (r.outputs || []).slice(0, 4).map(o =>
+      `<div class="chain-row-output">· ${truncate(o, 80)}</div>`
+    ).join('') + (r.outputs && r.outputs.length > 4 ? `<div class="chain-empty" style="font-size:10px;padding:2px 0">+${r.outputs.length - 4} more</div>` : '');
+    const inputsHtml = (r.inputs || []).slice(0, 3).map(i =>
+      `<div class="chain-row-input">↙ ${truncate(i, 80)}</div>`
+    ).join('');
+    const tiersHtml = (!outputsHtml && !inputsHtml)
+      ? (r.tiers || []).slice(0, 3).map(t => `<div class="chain-row-tier">${t}</div>`).join('')
+      : '';
+    return `<div class="chain-row">
+      <div>
+        <span><a href="/curation/entity/${r.id}/" class="chain-row-name">${r.name}</a>
+        <span class="chain-row-predicate">${PREDICATE_LABELS[r.predicate] || r.predicate}</span></span>
+        ${outputsHtml ? '<div class="chain-row-outputs">' + outputsHtml + '</div>' : ''}
+        ${inputsHtml ? '<div class="chain-row-outputs">' + inputsHtml + '</div>' : ''}
+        ${tiersHtml}
+      </div>
+    </div>`;
+  }).join('');
+}
 
 function loadChain(entityId, entityName) {
   document.getElementById('chainPanelTitle').textContent = entityName;
@@ -207,29 +252,16 @@ function loadChain(entityId, entityName) {
     .then(r => r.json())
     .then(data => {
       let html = '';
-      const renderSection = (title, rows) => {
-        html += `<div class="chain-section"><h3>${title}</h3>`;
-        if (!rows.length) {
-          html += '<div class="chain-empty">None found.</div>';
-        } else {
-          rows.forEach(r => {
-            const outsHtml = (r.outputs||[]).map(o=>`<div class="chain-row-sub">↗ ${o}</div>`).join('');
-            const insHtml  = (r.inputs||[]).map(i=>`<div class="chain-row-sub" style="color:#6366f1">↙ ${i}</div>`).join('');
-            const tiersHtml= (r.tiers||[]).map(t=>`<div class="chain-row-sub" style="font-family:monospace;color:#aaa">${t}</div>`).join('');
-            html += `<div class="chain-row">
-              <div style="flex:1">
-                <a href="/curation/entity/${r.id}/" class="chain-row-name">${r.name}</a>
-                ${outsHtml}${insHtml}${(!outsHtml && !insHtml) ? tiersHtml : ''}
-              </div>
-              <span class="chain-row-predicate">${PREDICATE_LABELS[r.predicate] || r.predicate}</span>
-            </div>`;
-          });
-        }
-        html += '</div>';
-      };
-      renderSection('Suppliers / Upstream', data.upstream);
-      renderSection('Customers / Downstream', data.downstream);
-      html += `<div style="margin-top:16px"><a href="/curation/entity/${entityId}/" style="font-size:13px;color:#6366f1">View full entity profile →</a></div>`;
+
+      // Self-card: show entity's own outputs, inputs, tiers
+      fetch(`/curation/supply-chain/entity/${entityId}/`)
+        .then(() => {}) // already fetched above
+        .catch(() => {});
+
+      // Sections
+      html += `<div class="chain-section"><h3>Suppliers / Upstream</h3>${renderRows(data.upstream)}</div>`;
+      html += `<div class="chain-section"><h3>Customers / Downstream</h3>${renderRows(data.downstream)}</div>`;
+      html += `<div style="margin-top:12px"><a href="/curation/entity/${entityId}/" style="font-size:12px;color:#6366f1">View full profile →</a></div>`;
       document.getElementById('chainPanelBody').innerHTML = html;
     })
     .catch(() => {
