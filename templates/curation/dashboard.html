@@ -147,20 +147,23 @@
   {% comment %}Supply chain extract{% endcomment %}
   <tr>
     <td>Supply chain — extract outputs &amp; inputs</td>
-    <td>{% if 'supply_chain' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.supply_chain %}<span class="op-status running"></span>Running ({{ op_queue_counts.supply_chain }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
+    <td>{% if 'supply_chain_extract' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.supply_chain_extract %}<span class="op-status running"></span>Running ({{ op_queue_counts.supply_chain_extract }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
     <td><form method="post" action="{% url 'curation:fill_supply_chain' %}" onsubmit="return confirm('Extract outputs/inputs for all score=100 entities missing them?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
     <td>
-      {% if 'supply_chain' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'supply_chain' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
-      {% else %}<form method="post" action="{% url 'curation:stop_operation' 'supply_chain' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}
+      {% if 'supply_chain_extract' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'supply_chain_extract' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
+      {% else %}<form method="post" action="{% url 'curation:stop_operation' 'supply_chain_extract' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}
     </td>
   </tr>
 
   {% comment %}Supply chain classify{% endcomment %}
   <tr>
     <td>Supply chain — classify tiers</td>
-    <td>{% if 'supply_chain' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.supply_chain %}<span class="op-status running"></span>Running ({{ op_queue_counts.supply_chain }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
+    <td>{% if 'supply_chain_classify' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.supply_chain_classify %}<span class="op-status running"></span>Running ({{ op_queue_counts.supply_chain_classify }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
     <td><form method="post" action="{% url 'curation:classify_supply_chain_all' %}" onsubmit="return confirm('Re-classify tiers for all entities?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
-    <td>&nbsp;</td>
+    <td>
+      {% if 'supply_chain_classify' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'supply_chain_classify' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
+      {% else %}<form method="post" action="{% url 'curation:stop_operation' 'supply_chain_classify' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}
+    </td>
   </tr>
 
   {% comment %}Locations{% endcomment %}

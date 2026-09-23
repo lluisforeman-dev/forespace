@@ -127,13 +127,14 @@ def dashboard(request):
     ql = _per_queue_lengths()
     # Operation → queues it uses (for "Running (N)" display)
     op_queue_counts = {
-        'research':     ql.get('crawl', 0) + ql.get('triage', 0) + ql.get('parse', 0) + ql.get('extract', 0),
-        'supply_chain': ql.get('extract', 0) + ql.get('default', 0),
-        'summarise':    ql.get('extract', 0),
-        'classify':     ql.get('extract', 0),
-        'assess':       ql.get('extract', 0),
-        'locations':    ql.get('extract', 0),
-        'crawl':        ql.get('crawl', 0),
+        'research':              ql.get('crawl', 0) + ql.get('triage', 0) + ql.get('parse', 0) + ql.get('extract', 0),
+        'supply_chain_extract':  ql.get('extract', 0),
+        'supply_chain_classify': ql.get('default', 0),
+        'summarise':             ql.get('extract', 0),
+        'classify':              ql.get('extract', 0),
+        'assess':                ql.get('extract', 0),
+        'locations':             ql.get('extract', 0),
+        'crawl':                 ql.get('crawl', 0),
     }
     ctx = {
         'stub_count': Entity.objects.filter(status='stub').count(),

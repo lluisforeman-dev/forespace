@@ -1012,7 +1012,7 @@ Return only valid JSON: {{"outputs": [...], "inputs": [...]}}
 @shared_task(queue='extract')
 def extract_supply_chain(entity_id: str):
     """Targeted search for what a company delivers (output) and needs (input)."""
-    if is_paused('supply_chain'):
+    if is_paused('supply_chain_extract'):
         return
     import json as _json
     from core.models import Entity as _Entity, Assertion as _Assertion
@@ -1129,7 +1129,7 @@ Outputs:
 @shared_task(queue='default')
 def classify_supply_chain(entity_id: str):
     """Derive value_chain_tier paths from existing output assertions. No web search."""
-    if is_paused('supply_chain'):
+    if is_paused('supply_chain_classify'):
         return
     import json as _json
     from core.models import Entity as _Entity, Assertion as _Assertion

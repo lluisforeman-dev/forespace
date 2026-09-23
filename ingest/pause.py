@@ -12,14 +12,15 @@ GLOBAL_FLAG = 'forespace:pause:global'
 
 # Named operation flags — each maps to one or more task functions
 OPERATIONS = {
-    'research':       'forespace:pause:research',
-    'supply_chain':   'forespace:pause:supply_chain',
-    'summarise':      'forespace:pause:summarise',
-    'classify':       'forespace:pause:classify',
-    'assess':         'forespace:pause:assess',
-    'locations':      'forespace:pause:locations',
-    'geocode':        'forespace:pause:geocode',
-    'crawl':          'forespace:pause:crawl',
+    'research':                'forespace:pause:research',
+    'supply_chain_extract':    'forespace:pause:supply_chain_extract',
+    'supply_chain_classify':   'forespace:pause:supply_chain_classify',
+    'summarise':               'forespace:pause:summarise',
+    'classify':                'forespace:pause:classify',
+    'assess':                  'forespace:pause:assess',
+    'locations':               'forespace:pause:locations',
+    'geocode':                 'forespace:pause:geocode',
+    'crawl':                   'forespace:pause:crawl',
 }
 
 # Keep backward-compat alias for old code that used PAUSE_FLAG
