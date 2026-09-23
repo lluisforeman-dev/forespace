@@ -1062,7 +1062,8 @@ Given the list of outputs below, assign one or more hierarchical tier paths in t
   LEVEL1: upstream | midstream | downstream
   LEVEL2: propulsion | structures | avionics | software | launch | comms |
           earth_observation | ground_segment | navigation | power | thermal |
-          manufacturing | services | data | finance | other
+          manufacturing | instruments | robotics | life_support | re_entry |
+          services | data | finance | testing | integration
   specifics: short free-text descriptor (e.g. electric_ion, heavy_lift, optical_imagery)
 
 Rules:

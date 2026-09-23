@@ -949,7 +949,7 @@ def research_all(request):
 
 @staff_member_required
 def classify_supply_chain_all(request):
-    """Queue classify_supply_chain for all SC-relevant entities with outputs but no tier."""
+    """Queue classify_supply_chain for entities with outputs but no tier, or with .other. tiers."""
     if request.method == 'POST':
         from ingest.tasks.research import classify_supply_chain
         from django.core.cache import cache
@@ -960,12 +960,19 @@ def classify_supply_chain_all(request):
             .filter(attribute_id='value_chain_tier', superseded_at__isnull=True)
             .values_list('entity_id', flat=True)
         )
+        # Entities whose tier still contains '.other.' — need reclassification
+        has_other_tier = set(
+            Assertion.objects
+            .filter(attribute_id='value_chain_tier', value_text__contains='.other.',
+                    superseded_at__isnull=True)
+            .values_list('entity_id', flat=True)
+        )
         has_output = set(
             Assertion.objects
             .filter(attribute_id='output', superseded_at__isnull=True)
             .values_list('entity_id', flat=True)
         )
-        to_classify = has_output - has_tier
+        to_classify = (has_output - has_tier) | (has_output & has_other_tier)
         entities = list(
             Entity.objects
             .filter(id__in=to_classify, entity_type__in=_SC_TYPES)
