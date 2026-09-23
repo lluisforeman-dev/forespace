@@ -1343,29 +1343,40 @@ def map_data(request):
 
 _SUPPLY_PREDICATES = ['supplies', 'contracted_by', 'customer_of', 'manufactures', 'launches_for', 'launched_payload']
 
-_TIERS = ['raw_material', 'component', 'subsystem', 'system', 'integrator', 'operator', 'data_service', 'end_user']
-_TIER_LABELS = {
-    'raw_material': 'Raw Material',
-    'component':    'Component',
-    'subsystem':    'Subsystem',
-    'system':       'System',
-    'integrator':   'Integrator',
-    'operator':     'Operator',
-    'data_service': 'Data & Services',
-    'end_user':     'End User',
+_LEVELS = ['upstream', 'midstream', 'downstream']
+_LEVEL_LABELS = {'upstream': 'Upstream', 'midstream': 'Midstream', 'downstream': 'Downstream'}
+
+# Map old flat tiers to levels for backward compat
+_TIER_TO_LEVEL = {
+    'raw_material': 'upstream', 'component': 'upstream', 'subsystem': 'upstream',
+    'system': 'midstream', 'integrator': 'midstream',
+    'operator': 'downstream', 'data_service': 'downstream', 'end_user': 'downstream',
 }
 
 
 @staff_member_required
 def supply_chain(request):
-    """Supply chain view — entities by value chain tier and technology domain."""
+    """Supply chain view — entities grouped by upstream/midstream/downstream."""
     from django.db.models import Count, Q
 
-    q        = request.GET.get('q', '').strip()
-    domain_f = request.GET.get('domain', '').strip()
-    tier_f   = request.GET.get('tier', '').strip()
+    q       = request.GET.get('q', '').strip()
+    level_f = request.GET.get('level', '').strip()
+    cat_f   = request.GET.get('cat', '').strip()
 
-    def _assertion_map(key):
+    def _multi_map(key):
+        result = {}
+        for row in Assertion.objects.filter(
+            attribute_id=key,
+            status__in=('accepted', 'candidate'),
+            superseded_at__isnull=True,
+        ).exclude(value_text='').values('entity_id', 'value_text'):
+            eid = row['entity_id']
+            if eid not in result:
+                result[eid] = []
+            result[eid].append(row['value_text'])
+        return result
+
+    def _single_map(key):
         return {
             row['entity_id']: row['value_text']
             for row in Assertion.objects.filter(
@@ -1375,12 +1386,17 @@ def supply_chain(request):
             ).exclude(value_text='').values('entity_id', 'value_text')
         }
 
-    tier_map    = _assertion_map('value_chain_tier')
-    domain_map  = _assertion_map('technology_domain')
-    product_map = _assertion_map('primary_product')
-    country_map = _assertion_map('headquarters_country')
+    tier_map    = _multi_map('value_chain_tier')
+    country_map = _single_map('headquarters_country')
 
-    entity_ids = set(tier_map) | set(domain_map) | set(product_map)
+    entity_ids = set(tier_map)
+
+    def _path_level(path):
+        """Return level1 from a path, supporting both new (upstream.x.y) and old (component) formats."""
+        parts = path.split('.')
+        if parts[0] in _LEVELS:
+            return parts[0]
+        return _TIER_TO_LEVEL.get(parts[0])
 
     qs = (
         Entity.objects
@@ -1389,15 +1405,20 @@ def supply_chain(request):
     )
     if q:
         qs = qs.filter(Q(canonical_name__icontains=q) | Q(aliases__alias__icontains=q)).distinct()
-    if tier_f:
-        qs = qs.filter(id__in=[eid for eid, t in tier_map.items() if t == tier_f])
-    if domain_f:
-        qs = qs.filter(id__in=[eid for eid, d in domain_map.items() if domain_f.lower() in d.lower()])
+    if level_f:
+        qs = qs.filter(id__in=[
+            eid for eid, paths in tier_map.items()
+            if any(_path_level(p) == level_f for p in paths)
+        ])
+    if cat_f:
+        qs = qs.filter(id__in=[
+            eid for eid, paths in tier_map.items()
+            if any(cat_f.lower() in p.lower() for p in paths)
+        ])
 
     entities = list(qs.order_by('canonical_name')[:300])
     eids = [e.id for e in entities]
 
-    # Supply counts per entity
     supply_out = {
         str(r['subject_id']): r['n']
         for r in Relation.objects.filter(
@@ -1413,38 +1434,48 @@ def supply_chain(request):
 
     for e in entities:
         eid = str(e.id)
-        e.sc_tier    = tier_map.get(e.id)
-        e.sc_domain  = domain_map.get(e.id)
-        e.sc_product = product_map.get(e.id)
+        e.sc_tiers   = tier_map.get(e.id, [])
         e.sc_country = country_map.get(e.id, '')
         e.supply_out = supply_out.get(eid, 0)
         e.supply_in  = supply_in.get(eid, 0)
 
-    # Group by tier for swimlane
-    by_tier = {tier: [] for tier in _TIERS}
+    # Group by level (entity may appear in multiple lanes)
+    by_level = {level: [] for level in _LEVELS}
     ungrouped = []
     for e in entities:
-        if e.sc_tier in by_tier:
-            by_tier[e.sc_tier].append(e)
-        else:
+        placed = False
+        seen = set()
+        for path in e.sc_tiers:
+            lvl = _path_level(path)
+            if lvl and lvl not in seen:
+                by_level[lvl].append(e)
+                seen.add(lvl)
+                placed = True
+        if not placed:
             ungrouped.append(e)
 
-    all_domains = sorted({d for d in domain_map.values() if d})
-    tier_counts = {tier: len(lst) for tier, lst in by_tier.items()}
+    # All unique level2 categories for filter
+    all_cats = sorted({
+        p.split('.')[1]
+        for paths in tier_map.values()
+        for p in paths
+        if len(p.split('.')) >= 2 and p.split('.')[0] in _LEVELS
+    })
+    level_counts = {lvl: len(lst) for lvl, lst in by_level.items()}
 
     return render(request, 'curation/supply_chain.html', {
-        'entities':   entities,
-        'by_tier':    by_tier,
-        'ungrouped':  ungrouped,
-        'TIERS':      _TIERS,
-        'TIER_LABELS': _TIER_LABELS,
-        'tier_counts': tier_counts,
-        'all_domains': all_domains,
-        'domain_f':   domain_f,
-        'tier_f':     tier_f,
-        'q':          q,
-        'total':      len(entities),
-        'title':      'Supply Chain',
+        'entities':     entities,
+        'by_level':     by_level,
+        'ungrouped':    ungrouped,
+        'LEVELS':       _LEVELS,
+        'LEVEL_LABELS': _LEVEL_LABELS,
+        'level_counts': level_counts,
+        'all_cats':     all_cats,
+        'level_f':      level_f,
+        'cat_f':        cat_f,
+        'q':            q,
+        'total':        len(entities),
+        'title':        'Supply Chain',
     })
 
 
@@ -1478,21 +1509,26 @@ def supply_chain_entity(request, entity_id):
         }
 
     all_ids = [r['subject__id'] for r in upstream] + [r['object__id'] for r in downstream]
-    domains  = _assertion_map('technology_domain', all_ids)
-    products = _assertion_map('primary_product', all_ids)
-    tiers    = _assertion_map('value_chain_tier', all_ids)
+
+    tiers_multi = {}
+    for row in Assertion.objects.filter(
+        attribute_id='value_chain_tier', entity_id__in=all_ids,
+        status__in=('accepted', 'candidate'), superseded_at__isnull=True,
+    ).exclude(value_text='').values('entity_id', 'value_text'):
+        eid = row['entity_id']
+        if eid not in tiers_multi:
+            tiers_multi[eid] = []
+        tiers_multi[eid].append(row['value_text'])
 
     def _enrich(rows, id_key, name_key, type_key):
         return [
             {
-                'id':       str(r[id_key]),
-                'name':     r[name_key],
-                'type':     r[type_key],
+                'id':        str(r[id_key]),
+                'name':      r[name_key],
+                'type':      r[type_key],
                 'predicate': r['predicate_id'],
-                'product':  (r['qualifiers'] or {}).get('product', ''),
-                'domain':   domains.get(r[id_key], ''),
-                'sc_product': products.get(r[id_key], ''),
-                'tier':     tiers.get(r[id_key], ''),
+                'product':   (r['qualifiers'] or {}).get('product', ''),
+                'tiers':     tiers_multi.get(r[id_key], []),
             }
             for r in rows
         ]

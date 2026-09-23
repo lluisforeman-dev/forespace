@@ -10,31 +10,26 @@
   .sc-filters input, .sc-filters select {
     padding:6px 12px; border:1px solid #ddd; border-radius:6px; font-size:13px; background:#fff;
   }
-  .sc-filters input { width:220px; }
+  .sc-filters input { width:200px; }
   .sc-filters button { padding:6px 16px; background:#1a1a2e; color:#fff; border:none; border-radius:6px; font-size:13px; cursor:pointer; }
   .sc-filters a.clear { font-size:12px; color:#888; align-self:center; }
 
-  /* Tier stats bar */
-  .tier-stats { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:24px; }
-  .tier-stat {
-    padding:6px 14px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer;
-    border:2px solid transparent; transition:all .15s;
+  /* Level pills */
+  .level-stats { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:24px; }
+  .level-pill {
+    padding:6px 16px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer;
+    border:2px solid transparent; transition:all .15s; text-decoration:none;
   }
-  .tier-stat:hover { border-color: currentColor; }
-  .tier-stat.active { border-color: currentColor; }
-  .tier-stat.t-raw_material   { background:#fef3c7; color:#92400e; }
-  .tier-stat.t-component      { background:#dbeafe; color:#1e40af; }
-  .tier-stat.t-subsystem      { background:#ede9fe; color:#5b21b6; }
-  .tier-stat.t-system         { background:#d1fae5; color:#065f46; }
-  .tier-stat.t-integrator     { background:#fee2e2; color:#991b1b; }
-  .tier-stat.t-operator       { background:#fce7f3; color:#9d174d; }
-  .tier-stat.t-data_service   { background:#f0fdf4; color:#14532d; }
-  .tier-stat.t-end_user       { background:#f1f5f9; color:#334155; }
+  .level-pill:hover { border-color:currentColor; text-decoration:none; }
+  .level-pill.active { border-color:currentColor; }
+  .level-pill.l-upstream   { background:#dbeafe; color:#1e40af; }
+  .level-pill.l-midstream  { background:#ede9fe; color:#5b21b6; }
+  .level-pill.l-downstream { background:#d1fae5; color:#065f46; }
 
   /* Swimlane */
-  .swimlane { display:flex; gap:14px; overflow-x:auto; padding-bottom:12px; align-items:flex-start; }
+  .swimlane { display:flex; gap:16px; overflow-x:auto; padding-bottom:12px; align-items:flex-start; }
   .lane {
-    min-width:220px; max-width:240px; flex-shrink:0;
+    min-width:260px; max-width:280px; flex-shrink:0;
     border:1px solid #e5e7eb; border-radius:10px; background:#fafafa;
   }
   .lane-header {
@@ -45,28 +40,31 @@
   .lane-header .lane-count { font-weight:400; color:#aaa; margin-left:6px; }
   .lane-body { padding:8px; display:flex; flex-direction:column; gap:6px; max-height:70vh; overflow-y:auto; }
 
+  .lane.l-upstream  .lane-header { background:#dbeafe; color:#1e40af; }
+  .lane.l-midstream .lane-header { background:#ede9fe; color:#5b21b6; }
+  .lane.l-downstream .lane-header { background:#d1fae5; color:#065f46; }
+
   /* Entity card */
   .sc-card {
     background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:10px 12px;
     cursor:pointer; transition:box-shadow .15s, border-color .15s;
-    position:relative;
   }
   .sc-card:hover { box-shadow:0 2px 8px rgba(0,0,0,.10); border-color:#a5b4fc; }
-  .sc-card .sc-card-name { font-size:13px; font-weight:600; color:#1a1a2e; line-height:1.3; }
-  .sc-card .sc-card-domain { font-size:11px; color:#6366f1; margin-top:3px; }
-  .sc-card .sc-card-product { font-size:11px; color:#555; margin-top:2px; line-height:1.3; }
-  .sc-card .sc-card-meta { display:flex; gap:8px; margin-top:6px; flex-wrap:wrap; }
+  .sc-card-name { font-size:13px; font-weight:600; color:#1a1a2e; line-height:1.3; }
+  .sc-card-paths { margin-top:4px; display:flex; flex-direction:column; gap:2px; }
+  .sc-card-path { font-size:10px; color:#6366f1; font-family:monospace; }
+  .sc-card-meta { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
   .sc-card .badge {
     font-size:10px; padding:2px 7px; border-radius:10px; font-weight:600;
     background:#f1f5f9; color:#475569;
   }
-  .sc-card .badge.supply { background:#dbeafe; color:#1e40af; }
+  .sc-card .badge.supply   { background:#dbeafe; color:#1e40af; }
   .sc-card .badge.customer { background:#d1fae5; color:#065f46; }
-  .sc-card .badge.country { background:#fef9c3; color:#92400e; }
+  .sc-card .badge.country  { background:#fef9c3; color:#92400e; }
 
   /* Chain panel */
   .chain-panel {
-    position:fixed; right:0; top:48px; bottom:0; width:400px; background:#fff;
+    position:fixed; right:0; top:48px; bottom:0; width:420px; background:#fff;
     border-left:1px solid #e5e7eb; box-shadow:-4px 0 20px rgba(0,0,0,.08);
     display:none; flex-direction:column; z-index:100;
   }
@@ -80,13 +78,10 @@
   .chain-panel-body { flex:1; overflow-y:auto; padding:16px 20px; }
   .chain-section { margin-bottom:20px; }
   .chain-section h3 { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#888; margin-bottom:10px; }
-  .chain-row {
-    display:flex; align-items:flex-start; gap:10px; padding:8px 0;
-    border-bottom:1px solid #f3f4f6;
-  }
+  .chain-row { display:flex; align-items:flex-start; gap:10px; padding:8px 0; border-bottom:1px solid #f3f4f6; }
   .chain-row:last-child { border-bottom:none; }
   .chain-row-name { font-size:13px; font-weight:600; color:#1a1a2e; }
-  .chain-row-sub { font-size:11px; color:#888; margin-top:2px; }
+  .chain-row-sub { font-size:11px; color:#888; margin-top:2px; font-family:monospace; }
   .chain-row-predicate {
     font-size:10px; padding:2px 8px; border-radius:10px; background:#ede9fe; color:#5b21b6;
     font-weight:600; white-space:nowrap; margin-top:3px;
@@ -100,98 +95,90 @@
 
 <div class="sc-header">
   <h1>Supply Chain</h1>
-  <span class="sc-total">{{ total }} entit{{ total|pluralize:"y,ies" }} with supply chain data</span>
+  <span class="sc-total">{{ total }} entit{{ total|pluralize:"y,ies" }}</span>
 </div>
 
 <form method="get" class="sc-filters">
   <input name="q" value="{{ q }}" placeholder="Search entities…">
-  <select name="domain">
-    <option value="">All technology domains</option>
-    {% for d in all_domains %}
-      <option value="{{ d }}" {% if d == domain_f %}selected{% endif %}>{{ d }}</option>
+  <select name="cat">
+    <option value="">All categories</option>
+    {% for c in all_cats %}
+      <option value="{{ c }}" {% if c == cat_f %}selected{% endif %}>{{ c }}</option>
     {% endfor %}
   </select>
   <button type="submit">Filter</button>
-  {% if q or domain_f or tier_f %}
-    <a href="{% url 'curation:supply_chain' %}" class="clear">Clear filters</a>
+  {% if q or level_f or cat_f %}
+    <a href="{% url 'curation:supply_chain' %}" class="clear">Clear</a>
   {% endif %}
 </form>
 
-<div class="tier-stats">
-  {% for tier in TIERS %}
-    <a href="?tier={{ tier }}{% if q %}&q={{ q }}{% endif %}{% if domain_f %}&domain={{ domain_f }}{% endif %}"
-       class="tier-stat t-{{ tier }} {% if tier_f == tier %}active{% endif %}">
-      {{ TIER_LABELS|dictsort:tier }}{{ tier_counts|dictsort:tier }}
-      {% for k, v in TIER_LABELS.items %}{% if k == tier %}{{ v }}{% endif %}{% endfor %}
+<div class="level-stats">
+  {% for level in LEVELS %}
+    <a href="?level={{ level }}{% if q %}&q={{ q }}{% endif %}{% if cat_f %}&cat={{ cat_f }}{% endif %}"
+       class="level-pill l-{{ level }} {% if level_f == level %}active{% endif %}">
+      {{ LEVEL_LABELS|dictsort:level }}
+      {% for k, v in LEVEL_LABELS.items %}{% if k == level %}{{ v }}{% endif %}{% endfor %}
       <span style="font-weight:400;opacity:.7">
-        {% for k, v in tier_counts.items %}{% if k == tier %}{{ v }}{% endif %}{% endfor %}
+        {% for k, v in level_counts.items %}{% if k == level %}{{ v }}{% endif %}{% endfor %}
       </span>
     </a>
   {% endfor %}
 </div>
 
 <div class="swimlane" id="swimlane">
-  {% for tier in TIERS %}
-    {% with lane_entities=by_tier|dictsort:tier %}
-    <div class="lane">
-      <div class="lane-header t-{{ tier }}" style="
-        {% if tier == 'raw_material' %}background:#fef3c7;color:#92400e;
-        {% elif tier == 'component' %}background:#dbeafe;color:#1e40af;
-        {% elif tier == 'subsystem' %}background:#ede9fe;color:#5b21b6;
-        {% elif tier == 'system' %}background:#d1fae5;color:#065f46;
-        {% elif tier == 'integrator' %}background:#fee2e2;color:#991b1b;
-        {% elif tier == 'operator' %}background:#fce7f3;color:#9d174d;
-        {% elif tier == 'data_service' %}background:#f0fdf4;color:#14532d;
-        {% elif tier == 'end_user' %}background:#f1f5f9;color:#334155;
-        {% endif %}
-      ">
-        {% for k, v in TIER_LABELS.items %}{% if k == tier %}{{ v }}{% endif %}{% endfor %}
+  {% for level in LEVELS %}
+    <div class="lane l-{{ level }}">
+      <div class="lane-header">
+        {% for k, v in LEVEL_LABELS.items %}{% if k == level %}{{ v }}{% endif %}{% endfor %}
         <span class="lane-count">
-          {% for k, v in tier_counts.items %}{% if k == tier %}{{ v }}{% endif %}{% endfor %}
+          {% for k, v in level_counts.items %}{% if k == level %}{{ v }}{% endif %}{% endfor %}
         </span>
       </div>
       <div class="lane-body">
-        {% for e in by_tier.items %}
-          {% if e.0 == tier %}
-            {% for entity in e.1 %}
-              <div class="sc-card" onclick="loadChain('{{ entity.id }}', '{{ entity.canonical_name|escapejs }}')">
-                <div class="sc-card-name">{{ entity.canonical_name }}</div>
-                {% if entity.sc_domain %}<div class="sc-card-domain">{{ entity.sc_domain }}</div>{% endif %}
-                {% if entity.sc_product %}<div class="sc-card-product">{{ entity.sc_product|truncatechars:60 }}</div>{% endif %}
-                <div class="sc-card-meta">
-                  {% if entity.sc_country %}<span class="badge country">{{ entity.sc_country }}</span>{% endif %}
-                  {% if entity.supply_in %}<span class="badge customer">{{ entity.supply_in }} supplier{{ entity.supply_in|pluralize }}</span>{% endif %}
-                  {% if entity.supply_out %}<span class="badge supply">{{ entity.supply_out }} customer{{ entity.supply_out|pluralize }}</span>{% endif %}
-                </div>
-              </div>
-            {% endfor %}
-          {% endif %}
-        {% endfor %}
-        {% for k, v in tier_counts.items %}{% if k == tier and v == 0 %}
+        {% for e in by_level|dictsort:level %}{% if e.0 == level %}{% for entity in e.1 %}
+          <div class="sc-card" onclick="loadChain('{{ entity.id }}', '{{ entity.canonical_name|escapejs }}')">
+            <div class="sc-card-name">{{ entity.canonical_name }}</div>
+            {% if entity.sc_tiers %}
+            <div class="sc-card-paths">
+              {% for path in entity.sc_tiers|slice:":3" %}
+                <span class="sc-card-path">{{ path }}</span>
+              {% endfor %}
+              {% if entity.sc_tiers|length > 3 %}
+                <span class="sc-card-path" style="color:#aaa">+{{ entity.sc_tiers|length|add:"-3" }} more</span>
+              {% endif %}
+            </div>
+            {% endif %}
+            <div class="sc-card-meta">
+              {% if entity.sc_country %}<span class="badge country">{{ entity.sc_country }}</span>{% endif %}
+              {% if entity.supply_in %}<span class="badge customer">{{ entity.supply_in }} supplier{{ entity.supply_in|pluralize }}</span>{% endif %}
+              {% if entity.supply_out %}<span class="badge supply">{{ entity.supply_out }} customer{{ entity.supply_out|pluralize }}</span>{% endif %}
+            </div>
+          </div>
+        {% endfor %}{% endif %}{% endfor %}
+        {% for k, v in level_counts.items %}{% if k == level and v == 0 %}
           <div style="padding:10px;color:#ccc;font-size:12px;text-align:center;">No data yet</div>
         {% endif %}{% endfor %}
       </div>
     </div>
-    {% endwith %}
   {% endfor %}
 </div>
 
 {% if ungrouped %}
 <div class="ungrouped-section">
-  <h2>Entities with domain/product data but no tier assigned ({{ ungrouped|length }})</h2>
+  <h2>Unclassified ({{ ungrouped|length }})</h2>
   <div class="ungrouped-grid">
     {% for e in ungrouped %}
       <div class="sc-card" style="min-width:200px;max-width:260px;" onclick="loadChain('{{ e.id }}', '{{ e.canonical_name|escapejs }}')">
         <div class="sc-card-name">{{ e.canonical_name }}</div>
-        {% if e.sc_domain %}<div class="sc-card-domain">{{ e.sc_domain }}</div>{% endif %}
-        {% if e.sc_product %}<div class="sc-card-product">{{ e.sc_product|truncatechars:60 }}</div>{% endif %}
+        {% if e.sc_tiers %}
+          <div class="sc-card-paths">{% for path in e.sc_tiers|slice:":2" %}<span class="sc-card-path">{{ path }}</span>{% endfor %}</div>
+        {% endif %}
       </div>
     {% endfor %}
   </div>
 </div>
 {% endif %}
 
-<!-- Chain panel -->
 <div class="chain-panel" id="chainPanel">
   <div class="chain-panel-header">
     <h2 id="chainPanelTitle">Supply Chain</h2>
@@ -204,12 +191,8 @@
 
 <script>
 const PREDICATE_LABELS = {
-  supplies: 'supplies →',
-  contracted_by: 'contracted by →',
-  customer_of: 'customer of →',
-  manufactures: 'manufactures →',
-  launches_for: 'launches for →',
-  launched_payload: 'launched payload →',
+  supplies: 'supplies →', contracted_by: 'contracted by →', customer_of: 'customer of →',
+  manufactures: 'manufactures →', launches_for: 'launches for →', launched_payload: 'launched payload →',
 };
 
 function loadChain(entityId, entityName) {
@@ -221,41 +204,27 @@ function loadChain(entityId, entityName) {
     .then(r => r.json())
     .then(data => {
       let html = '';
-
-      if (data.upstream.length) {
-        html += '<div class="chain-section"><h3>Suppliers / Upstream</h3>';
-        data.upstream.forEach(r => {
-          html += `<div class="chain-row">
-            <div style="flex:1">
-              <a href="/curation/entity/${r.id}/" class="chain-row-name">${r.name}</a>
-              <div class="chain-row-sub">${r.sc_product || r.domain || r.type}</div>
-              ${r.product ? `<div class="chain-row-sub">Product: ${r.product}</div>` : ''}
-            </div>
-            <span class="chain-row-predicate">${PREDICATE_LABELS[r.predicate] || r.predicate}</span>
-          </div>`;
-        });
+      const renderSection = (title, rows) => {
+        html += `<div class="chain-section"><h3>${title}</h3>`;
+        if (!rows.length) {
+          html += '<div class="chain-empty">None found.</div>';
+        } else {
+          rows.forEach(r => {
+            const tiersHtml = (r.tiers || []).map(t => `<div class="chain-row-sub">${t}</div>`).join('');
+            html += `<div class="chain-row">
+              <div style="flex:1">
+                <a href="/curation/entity/${r.id}/" class="chain-row-name">${r.name}</a>
+                ${tiersHtml}
+                ${r.product ? `<div class="chain-row-sub">product: ${r.product}</div>` : ''}
+              </div>
+              <span class="chain-row-predicate">${PREDICATE_LABELS[r.predicate] || r.predicate}</span>
+            </div>`;
+          });
+        }
         html += '</div>';
-      } else {
-        html += '<div class="chain-section"><h3>Suppliers / Upstream</h3><div class="chain-empty">No upstream connections found.</div></div>';
-      }
-
-      if (data.downstream.length) {
-        html += '<div class="chain-section"><h3>Customers / Downstream</h3>';
-        data.downstream.forEach(r => {
-          html += `<div class="chain-row">
-            <div style="flex:1">
-              <a href="/curation/entity/${r.id}/" class="chain-row-name">${r.name}</a>
-              <div class="chain-row-sub">${r.sc_product || r.domain || r.type}</div>
-              ${r.product ? `<div class="chain-row-sub">Product: ${r.product}</div>` : ''}
-            </div>
-            <span class="chain-row-predicate">${PREDICATE_LABELS[r.predicate] || r.predicate}</span>
-          </div>`;
-        });
-        html += '</div>';
-      } else {
-        html += '<div class="chain-section"><h3>Customers / Downstream</h3><div class="chain-empty">No downstream connections found.</div></div>';
-      }
-
+      };
+      renderSection('Suppliers / Upstream', data.upstream);
+      renderSection('Customers / Downstream', data.downstream);
       html += `<div style="margin-top:16px"><a href="/curation/entity/${entityId}/" style="font-size:13px;color:#6366f1">View full entity profile →</a></div>`;
       document.getElementById('chainPanelBody').innerHTML = html;
     })
@@ -264,10 +233,7 @@ function loadChain(entityId, entityName) {
     });
 }
 
-function closePanel() {
-  document.getElementById('chainPanel').classList.remove('open');
-}
-
+function closePanel() { document.getElementById('chainPanel').classList.remove('open'); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
 </script>
 {% endblock %}
