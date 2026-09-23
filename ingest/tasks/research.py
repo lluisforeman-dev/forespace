@@ -999,6 +999,7 @@ def geocode_all_offices():
     Stores coords on both the relation qualifier AND directly on the entity.
     """
     import time as _time
+    from django.db import close_old_connections as _close_old_connections
     from core.models import Relation as _Rel, Entity as _Entity, Assertion as _Assertion
 
     # Pass 1 — relations with address but no coords
@@ -1018,6 +1019,7 @@ def geocode_all_offices():
             skipped += 1
             continue
         q['lat'], q['lon'] = lat, lon
+        _close_old_connections()
         _Rel.objects.filter(id=row['id']).update(qualifiers=q)
         if q.get('office_type') == 'hq':
             _Entity.objects.filter(id=row['subject_id'], latitude__isnull=True).update(
@@ -1088,6 +1090,7 @@ def geocode_all_offices():
         if lat is None:
             skipped2 += 1
             continue
+        _close_old_connections()
         _Entity.objects.filter(id=eid).update(
             latitude=lat, longitude=lon, has_street_address=is_precise,
         )
