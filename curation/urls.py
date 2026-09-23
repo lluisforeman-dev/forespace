@@ -26,6 +26,7 @@ urlpatterns = [
     path('prompts/', views.prompts_list, name='prompts_list'),
     path('prompts/<str:key>/edit/', views.prompt_edit, name='prompt_edit'),
     path('research-all/', views.research_all, name='research_all'),
+    path('fill-supply-chain/', views.fill_supply_chain, name='fill_supply_chain'),
     path('summarise-all/', views.summarise_all, name='summarise_all'),
     path('classify-all/', views.classify_all, name='classify_all'),
     path('assess-all/', views.assess_all, name='assess_all'),

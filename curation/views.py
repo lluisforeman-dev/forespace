@@ -948,6 +948,46 @@ def research_all(request):
 
 
 @staff_member_required
+def fill_supply_chain(request):
+    """Queue research_topic for score=100 entities missing value_chain_tier."""
+    if request.method == 'POST':
+        from ingest.tasks.research import research_topic
+        from django.core.cache import cache
+
+        has_tier = set(
+            Assertion.objects
+            .filter(attribute_id='value_chain_tier', superseded_at__isnull=True)
+            .values_list('entity_id', flat=True)
+        )
+        entities = list(
+            Entity.objects
+            .filter(space_relevance=100)
+            .exclude(status='merged')
+            .exclude(entity_type__in=('geography', 'document_node'))
+            .exclude(id__in=has_tier)
+            .only('id', 'canonical_name', 'entity_type')
+        )
+        queued = skipped = 0
+        for i, entity in enumerate(entities):
+            lock_key = f'sc_queued:{entity.id}'
+            if cache.get(lock_key):
+                skipped += 1
+                continue
+            research_topic.apply_async(
+                args=[entity.canonical_name, 'company'],
+                kwargs={'cascade_depth': 0},
+                countdown=i * 2,
+            )
+            cache.set(lock_key, 1, timeout=7200)
+            queued += 1
+        msg = f'Queued supply chain research for {queued} entities.'
+        if skipped:
+            msg += f' Skipped {skipped} already in queue.'
+        messages.success(request, msg)
+    return HttpResponseRedirect(reverse('curation:dashboard'))
+
+
+@staff_member_required
 def assess_all(request):
     """Queue WK assessment + scoring for every entity that has no description yet.
 
