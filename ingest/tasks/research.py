@@ -1077,7 +1077,7 @@ Outputs:
 """
 
 
-@shared_task(queue='extract')
+@shared_task(queue='default')
 def classify_supply_chain(entity_id: str):
     """Derive value_chain_tier paths from existing output assertions. No web search."""
     import json as _json
