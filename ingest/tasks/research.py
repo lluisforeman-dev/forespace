@@ -1032,20 +1032,20 @@ def geocode_all_offices():
     addr_map = {
         row['entity_id']: row['value_text']
         for row in _Assertion.objects.filter(
-            attribute_key='headquarters_address', superseded_at__isnull=True,
+            attribute_id='headquarters_address', superseded_at__isnull=True,
         ).exclude(value_text='').values('entity_id', 'value_text')
     }
     city_map = {
         row['entity_id']: row['value_text']
         for row in _Assertion.objects.filter(
-            attribute_key='headquarters_city', superseded_at__isnull=True,
+            attribute_id='headquarters_city', superseded_at__isnull=True,
             status__in=('accepted', 'candidate'),
         ).exclude(value_text='').values('entity_id', 'value_text')
     }
     country_map = {
         row['entity_id']: row['value_text']
         for row in _Assertion.objects.filter(
-            attribute_key='headquarters_country', superseded_at__isnull=True,
+            attribute_id='headquarters_country', superseded_at__isnull=True,
             status__in=('accepted', 'candidate'),
         ).exclude(value_text='').values('entity_id', 'value_text')
     }
