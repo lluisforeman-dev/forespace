@@ -960,11 +960,21 @@ def classify_supply_chain_all(request):
             .filter(attribute_id='value_chain_tier', superseded_at__isnull=True)
             .values_list('entity_id', flat=True)
         )
-        # Entities whose tier still contains '.other.' — need reclassification
+        # Old-vocab tiers (flat or containing old level2 values) — need reclassification
+        _OLD_LEVEL2 = (
+            'propulsion', 'structures', 'avionics', 'software', 'launch', 'comms',
+            'earth_observation', 'ground_segment', 'navigation', 'power', 'thermal',
+            'manufacturing', 'instruments', 'robotics', 'life_support', 're_entry',
+            'services', 'data', 'finance', 'testing', 'integration', '.other.',
+        )
+        from django.db.models import Q as _Q
+        old_vocab_q = _Q()
+        for _old in _OLD_LEVEL2:
+            old_vocab_q |= _Q(value_text__contains=f'.{_old}.')
         has_other_tier = set(
             Assertion.objects
-            .filter(attribute_id='value_chain_tier', value_text__contains='.other.',
-                    superseded_at__isnull=True)
+            .filter(attribute_id='value_chain_tier', superseded_at__isnull=True)
+            .filter(old_vocab_q)
             .values_list('entity_id', flat=True)
         )
         has_output = set(
@@ -1423,12 +1433,15 @@ def map_data(request):
 
 _SUPPLY_PREDICATES = ['supplies', 'contracted_by', 'customer_of', 'manufactures', 'launches_for', 'launched_payload']
 
-_LEVELS = ['upstream', 'midstream', 'downstream']
-_LEVEL_LABELS = {'upstream': 'Upstream', 'midstream': 'Midstream', 'downstream': 'Downstream'}
-_ALL_LANES = ['upstream', 'midstream', 'downstream', 'pending']
+_LEVELS = ['upstream', 'midstream', 'downstream', 'institutional', 'other']
+_LEVEL_LABELS = {
+    'upstream': 'Upstream', 'midstream': 'Midstream', 'downstream': 'Downstream',
+    'institutional': 'Institutional', 'other': 'Other',
+}
+_ALL_LANES = ['upstream', 'midstream', 'downstream', 'institutional', 'other', 'pending']
 _LANE_LABELS = {
-    'upstream': 'Upstream', 'midstream': 'Midstream',
-    'downstream': 'Downstream', 'pending': 'Pending',
+    'upstream': 'Upstream', 'midstream': 'Midstream', 'downstream': 'Downstream',
+    'institutional': 'Institutional', 'other': 'Other', 'pending': 'Pending',
 }
 
 # Map old flat tiers to levels for backward compat

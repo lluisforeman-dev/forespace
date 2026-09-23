@@ -1058,19 +1058,46 @@ def extract_supply_chain(entity_id: str):
 _CLASSIFY_SC_PROMPT = """\
 You are classifying a space-industry organisation into supply chain tier paths based on its outputs.
 
-Given the list of outputs below, assign one or more hierarchical tier paths in the format LEVEL1.LEVEL2.specifics:
-  LEVEL1: upstream | midstream | downstream
-  LEVEL2: propulsion | structures | avionics | software | launch | comms |
-          earth_observation | ground_segment | navigation | power | thermal |
-          manufacturing | instruments | robotics | life_support | re_entry |
-          services | data | finance | testing | integration
-  specifics: short free-text descriptor (e.g. electric_ion, heavy_lift, optical_imagery)
+Use the format LEVEL1.LEVEL2.specifics where LEVEL1.LEVEL2 must be one of the valid combinations below.
+specifics is a short snake_case free-text descriptor of the specific product or service (e.g. ion_thrusters, heavy_lift, optical_imagery).
+
+Valid LEVEL1.LEVEL2 combinations:
+  upstream.satellites          — complete satellite platforms (commercial, military, scientific)
+  upstream.spacecraft          — crewed capsules, cargo vessels, deep-space probes
+  upstream.payloads            — instruments, sensors, telescopes, science packages
+  upstream.robotics            — rovers, landers, robotic arms, autonomous systems
+  upstream.habitats            — space stations, orbital modules, surface bases
+  upstream.components          — subsystem hardware: propulsion, avionics, structures, power, thermal, comms hardware
+  upstream.manufacturing_systems — ground assembly, cleanroom, and testing equipment
+
+  midstream.launchers          — rockets and launch vehicles
+  midstream.spaceports         — launch sites, pads, integration facilities
+  midstream.ground_stations    — antenna arrays, downlink and uplink facilities
+  midstream.mission_operations — command and control, flight dynamics, tracking
+  midstream.in_orbit_services  — refuelling, maintenance, active debris removal
+  midstream.space_logistics    — orbital transfer vehicles, space tugs, cargo delivery
+  midstream.relay_networks     — inter-satellite links, deep-space relay architecture
+
+  downstream.earth_observation — remote sensing, environmental monitoring, meteorology
+  downstream.telecommunications — satellite internet, broadcasting, secure radio
+  downstream.navigation        — GNSS, positioning, timing services
+  downstream.data_analytics    — geospatial intelligence, AI processing, value-added data services
+
+  institutional.government_agency   — national space agencies (NASA, ESA, JAXA …)
+  institutional.research            — universities, research labs, R&D organisations
+  institutional.regulatory          — regulators, standards bodies, spectrum authorities
+  institutional.military            — defence and intelligence space programmes
+  institutional.funding             — grants, public funding bodies, investment programmes
+
+  other.finance                — venture capital, private equity, space-focused investors
+  other.consulting             — advisory, strategy, engineering consultancies
+  other.media                  — media, news, industry analysis
 
 Rules:
-- Derive ONLY from the outputs listed. Do not invent.
-- One path per distinct market position.
-- Return JSON: {"tiers": ["upstream.propulsion.hydrazine_monopropellant", ...]}
-- Return only valid JSON, no explanation.
+- Assign ONLY paths whose LEVEL1.LEVEL2 appears in the list above.
+- Derive ONLY from the outputs listed — do not invent capabilities.
+- Assign one path per distinct market position; SpaceX would get multiple.
+- Return JSON only: {{"tiers": ["upstream.components.ion_thrusters", ...]}}
 
 Organisation: {name}
 Outputs:

@@ -22,10 +22,12 @@
   }
   .lane-pill:hover { border-color:currentColor; text-decoration:none; }
   .lane-pill.active { border-color:currentColor; }
-  .lane-pill.l-upstream   { background:#dbeafe; color:#1e40af; }
-  .lane-pill.l-midstream  { background:#ede9fe; color:#5b21b6; }
-  .lane-pill.l-downstream { background:#d1fae5; color:#065f46; }
-  .lane-pill.l-pending    { background:#f3f4f6; color:#6b7280; }
+  .lane-pill.l-upstream      { background:#dbeafe; color:#1e40af; }
+  .lane-pill.l-midstream     { background:#ede9fe; color:#5b21b6; }
+  .lane-pill.l-downstream    { background:#d1fae5; color:#065f46; }
+  .lane-pill.l-institutional { background:#fef3c7; color:#92400e; }
+  .lane-pill.l-other         { background:#fee2e2; color:#991b1b; }
+  .lane-pill.l-pending       { background:#f3f4f6; color:#6b7280; }
 
   /* Swimlane */
   .swimlane { display:flex; gap:14px; overflow-x:auto; padding-bottom:12px; align-items:flex-start; }
@@ -41,10 +43,12 @@
   .lane-count { font-weight:400; color:#aaa; }
   .lane-body { padding:8px; display:flex; flex-direction:column; gap:6px; max-height:72vh; overflow-y:auto; }
 
-  .lane.l-upstream   .lane-header { background:#dbeafe; color:#1e40af; }
-  .lane.l-midstream  .lane-header { background:#ede9fe; color:#5b21b6; }
-  .lane.l-downstream .lane-header { background:#d1fae5; color:#065f46; }
-  .lane.l-pending    .lane-header { background:#f3f4f6; color:#6b7280; }
+  .lane.l-upstream      .lane-header { background:#dbeafe; color:#1e40af; }
+  .lane.l-midstream     .lane-header { background:#ede9fe; color:#5b21b6; }
+  .lane.l-downstream    .lane-header { background:#d1fae5; color:#065f46; }
+  .lane.l-institutional .lane-header { background:#fef3c7; color:#92400e; }
+  .lane.l-other         .lane-header { background:#fee2e2; color:#991b1b; }
+  .lane.l-pending       .lane-header { background:#f3f4f6; color:#6b7280; }
 
   /* Entity card */
   .sc-card {
