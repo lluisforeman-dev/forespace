@@ -35,6 +35,9 @@ Reply: {{"relevant": true, "reason": "..."}} or {{"relevant": false, "reason": "
 @shared_task(bind=True, queue='triage', max_retries=2)
 def triage_document(self, document_id: str):
     """Route: relevant → extract queue; irrelevant → mark skipped."""
+    from ingest.pause import is_paused
+    if is_paused('research'):
+        return
     try:
         doc = Document.objects.get(pk=document_id)
     except Document.DoesNotExist:

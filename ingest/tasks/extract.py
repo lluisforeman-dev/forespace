@@ -100,6 +100,9 @@ def _map_value(claim: ExtractedClaim, datatype: str) -> dict:
 @shared_task(bind=True, queue='extract', max_retries=2)
 def extract_document(self, document_id: str):
     """Run LLM extraction on a triaged document and write candidate assertions."""
+    from ingest.pause import is_paused
+    if is_paused('research'):
+        return
     try:
         doc = Document.objects.select_related('source').get(pk=document_id)
     except Document.DoesNotExist:

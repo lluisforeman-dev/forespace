@@ -80,53 +80,130 @@
 
 </div>
 
-<!-- Maintenance actions -->
-<div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
-  <form method="post" action="{% url 'curation:assess_all' %}" onsubmit="return confirm('Assess all entities with no description? Queues WK summary + space_relevance scoring for every entity that still has no description. No filters — everything gets assessed.')">
-    {% csrf_token %}
-    <button class="btn" style="background:#28a745;color:#fff;font-size:12px;">&#129302; Assess all (no description)</button>
+<!-- Operations table -->
+<style>
+  .ops-table { width:100%; border-collapse:collapse; margin-bottom:20px; font-size:12px; }
+  .ops-table th { text-align:left; padding:6px 10px; border-bottom:2px solid #e5e7eb; color:#6b7280; font-weight:600; text-transform:uppercase; letter-spacing:.4px; }
+  .ops-table td { padding:6px 10px; border-bottom:1px solid #f3f4f6; vertical-align:middle; }
+  .ops-table tr:hover td { background:#f9fafb; }
+  .op-status { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+  .op-status.running { background:#22c55e; }
+  .op-status.paused  { background:#ef4444; }
+  .ops-table form { display:inline; margin:0; }
+  .op-btn { padding:3px 10px; border-radius:4px; border:1px solid; font-size:11px; cursor:pointer; }
+  .op-btn.start  { background:#fff; border-color:#16a34a; color:#16a34a; }
+  .op-btn.stop   { background:#fff; border-color:#dc2626; color:#dc2626; }
+  .op-btn.stop:hover  { background:#dc2626; color:#fff; }
+  .op-btn.start:hover { background:#16a34a; color:#fff; }
+</style>
+<table class="ops-table">
+  <thead><tr><th>Operation</th><th>Status</th><th>Run</th><th>Stop / Resume</th></tr></thead>
+  <tbody>
+
+  {% comment %}Research{% endcomment %}
+  <tr>
+    <td>Research all entities</td>
+    <td>{% if 'research' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% else %}<span class="op-status running"></span>Active{% endif %}</td>
+    <td><form method="post" action="{% url 'curation:research_all' %}" onsubmit="return confirm('Queue full research for all entities with no events?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
+    <td>
+      {% if 'research' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'research' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
+      {% else %}<form method="post" action="{% url 'curation:stop_operation' 'research' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}
+    </td>
+  </tr>
+
+  {% comment %}Assess{% endcomment %}
+  <tr>
+    <td>Assess all (score + describe)</td>
+    <td>{% if 'assess' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% else %}<span class="op-status running"></span>Active{% endif %}</td>
+    <td><form method="post" action="{% url 'curation:assess_all' %}" onsubmit="return confirm('Assess all entities with no description?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
+    <td>
+      {% if 'assess' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'assess' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
+      {% else %}<form method="post" action="{% url 'curation:stop_operation' 'assess' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}
+    </td>
+  </tr>
+
+  {% comment %}Classify{% endcomment %}
+  <tr>
+    <td>Score all entities (space_relevance)</td>
+    <td>{% if 'classify' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% else %}<span class="op-status running"></span>Active{% endif %}</td>
+    <td><form method="post" action="{% url 'curation:classify_all' %}" onsubmit="return confirm('Score all unscored entities?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
+    <td>
+      {% if 'classify' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'classify' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
+      {% else %}<form method="post" action="{% url 'curation:stop_operation' 'classify' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}
+    </td>
+  </tr>
+
+  {% comment %}Summarise{% endcomment %}
+  <tr>
+    <td>Summarise all entities</td>
+    <td>{% if 'summarise' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% else %}<span class="op-status running"></span>Active{% endif %}</td>
+    <td><form method="post" action="{% url 'curation:summarise_all' %}" onsubmit="return confirm('Queue summarise for all entities?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
+    <td>
+      {% if 'summarise' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'summarise' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
+      {% else %}<form method="post" action="{% url 'curation:stop_operation' 'summarise' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}
+    </td>
+  </tr>
+
+  {% comment %}Supply chain extract{% endcomment %}
+  <tr>
+    <td>Supply chain — extract outputs &amp; inputs</td>
+    <td>{% if 'supply_chain' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% else %}<span class="op-status running"></span>Active{% endif %}</td>
+    <td><form method="post" action="{% url 'curation:fill_supply_chain' %}" onsubmit="return confirm('Extract outputs/inputs for all score=100 entities missing them?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
+    <td>
+      {% if 'supply_chain' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'supply_chain' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
+      {% else %}<form method="post" action="{% url 'curation:stop_operation' 'supply_chain' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}
+    </td>
+  </tr>
+
+  {% comment %}Supply chain classify{% endcomment %}
+  <tr>
+    <td>Supply chain — classify tiers</td>
+    <td>{% if 'supply_chain' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% else %}<span class="op-status running"></span>Active{% endif %}</td>
+    <td><form method="post" action="{% url 'curation:classify_supply_chain_all' %}" onsubmit="return confirm('Re-classify tiers for all entities?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
+    <td>&nbsp;</td>
+  </tr>
+
+  {% comment %}Locations{% endcomment %}
+  <tr>
+    <td>Fill missing locations</td>
+    <td>{% if 'locations' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% else %}<span class="op-status running"></span>Active{% endif %}</td>
+    <td>
+      <form method="post" action="{% url 'curation:fill_locations_all' %}" onsubmit="return confirm('Fill missing headquarters locations?')" style="display:inline">{% csrf_token %}<button class="op-btn start">Locations</button></form>
+      <form method="post" action="{% url 'curation:fill_addresses_all' %}" onsubmit="return confirm('Fill missing street addresses?')" style="display:inline">{% csrf_token %}<button class="op-btn start">Addresses</button></form>
+      <form method="post" action="{% url 'curation:geocode_offices' %}" onsubmit="return confirm('Geocode office addresses?')" style="display:inline">{% csrf_token %}<button class="op-btn start">Geocode</button></form>
+    </td>
+    <td>
+      {% if 'locations' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'locations' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
+      {% else %}<form method="post" action="{% url 'curation:stop_operation' 'locations' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}
+    </td>
+  </tr>
+
+  {% comment %}Dedup{% endcomment %}
+  <tr>
+    <td>Deduplication sweep</td>
+    <td><span class="op-status running"></span>Manual</td>
+    <td>
+      <form method="post" action="{% url 'curation:run_dedup_sweep' %}" onsubmit="return confirm('Run dedup sweep (live)?')" style="display:inline">{% csrf_token %}<button class="op-btn start">Live</button></form>
+      <form method="post" action="{% url 'curation:run_dedup_sweep' %}" style="display:inline">{% csrf_token %}<input type="hidden" name="dry_run" value="1"><button class="op-btn start" style="border-color:#6b7280;color:#6b7280">Dry run</button></form>
+      <form method="post" action="{% url 'curation:merge_geography_duplicates' %}" onsubmit="return confirm('Merge geo duplicates?')" style="display:inline">{% csrf_token %}<button class="op-btn start">Merge geo</button></form>
+    </td>
+    <td>&nbsp;</td>
+  </tr>
+
+  </tbody>
+</table>
+
+<!-- Global stop/resume -->
+<div style="display:flex;gap:10px;margin-bottom:20px;">
+  {% if 'global' in paused_ops %}
+  <form method="post" action="{% url 'curation:resume_tasks' %}">{% csrf_token %}
+    <button class="btn" style="background:#16a34a;color:#fff;font-size:12px;">&#9654; Resume all</button>
   </form>
-  <form method="post" action="{% url 'curation:research_all' %}" onsubmit="return confirm('Queue full research pipeline for all entities with no events yet? This runs the same pipeline as manual research — Sonar + extract + summarise + cascade.')">
-    {% csrf_token %}
-    <button class="btn btn-primary" style="font-size:12px;">&#128269; Research all entities</button>
+  {% else %}
+  <form method="post" action="{% url 'curation:stop_all' %}" onsubmit="return confirm('Stop and flush ALL queued tasks?')">{% csrf_token %}
+    <button class="btn" style="background:#dc2626;color:#fff;font-size:12px;">&#9646;&#9646; Stop everything</button>
   </form>
-  <form method="post" action="{% url 'curation:classify_all' %}" onsubmit="return confirm('Score all unscored entities (0/20/50/100)? This queues classify_entity for every entity with no space_relevance score yet.')">
-    {% csrf_token %}
-    <button class="btn" style="background:#17a2b8;color:#fff;font-size:12px;">&#127919; Score all entities</button>
-  </form>
-  <form method="post" action="{% url 'curation:fill_locations_all' %}" onsubmit="return confirm('Queue a focused location lookup for all organisations missing headquarters data?')">
-    {% csrf_token %}
-    <button class="btn" style="background:#fd7e14;color:#fff;font-size:12px;">&#127759; Fill missing locations</button>
-  </form>
-  <form method="post" action="{% url 'curation:fill_addresses_all' %}" onsubmit="return confirm('Queue street address lookup for all organisations that have city/country but no precise address?')">
-    {% csrf_token %}
-    <button class="btn" style="background:#e67e22;color:#fff;font-size:12px;">&#128205; Fill missing addresses</button>
-  </form>
-  <form method="post" action="{% url 'curation:geocode_offices' %}" onsubmit="return confirm('Geocode all office locations that have an address but no coordinates yet? This calls Nominatim and may take a while.')">
-    {% csrf_token %}
-    <button class="btn" style="background:#6f42c1;color:#fff;font-size:12px;">&#127757; Geocode offices</button>
-  </form>
-  <form method="post" action="{% url 'curation:fill_supply_chain' %}" onsubmit="return confirm('Queue supply chain research for all score=100 entities missing outputs?')">
-    {% csrf_token %}
-    <button class="btn" style="background:#0d6efd;color:#fff;font-size:12px;">&#128279; Fill supply chain (score 100)</button>
-  </form>
-  <form method="post" action="{% url 'curation:classify_supply_chain_all' %}" onsubmit="return confirm('Re-classify tiers for entities with no tier or .other. tier?')">
-    {% csrf_token %}
-    <button class="btn" style="background:#0d6efd;color:#fff;font-size:12px;">&#127919; Re-classify supply chain tiers</button>
-  </form>
-  <form method="post" action="{% url 'curation:merge_geography_duplicates' %}" onsubmit="return confirm('Merge geography entities within 500m of each other (same city, different language)?')">
-    {% csrf_token %}
-    <button class="btn" style="background:#20c997;color:#fff;font-size:12px;">&#127758; Merge geo duplicates</button>
-  </form>
-  <form method="post" action="{% url 'curation:run_dedup_sweep' %}" onsubmit="return confirm('Run deduplication sweep? This will merge confirmed duplicates.')">
-    {% csrf_token %}
-    <button class="btn btn-primary" style="font-size:12px;">&#128260; Dedup sweep (live)</button>
-  </form>
-  <form method="post" action="{% url 'curation:run_dedup_sweep' %}">
-    {% csrf_token %}
-    <input type="hidden" name="dry_run" value="1">
-    <button class="btn" style="background:#6c757d;color:#fff;font-size:12px;">&#128260; Dedup sweep (dry run)</button>
-  </form>
+  {% endif %}
 </div>
 
 <!-- Assessment progress -->

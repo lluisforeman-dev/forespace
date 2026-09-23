@@ -1012,6 +1012,8 @@ Return only valid JSON: {{"outputs": [...], "inputs": [...]}}
 @shared_task(queue='extract')
 def extract_supply_chain(entity_id: str):
     """Targeted search for what a company delivers (output) and needs (input)."""
+    if is_paused('supply_chain'):
+        return
     import json as _json
     from core.models import Entity as _Entity, Assertion as _Assertion
     from django.utils import timezone
@@ -1123,6 +1125,8 @@ Outputs:
 @shared_task(queue='default')
 def classify_supply_chain(entity_id: str):
     """Derive value_chain_tier paths from existing output assertions. No web search."""
+    if is_paused('supply_chain'):
+        return
     import json as _json
     from core.models import Entity as _Entity, Assertion as _Assertion
     from django.db import transaction
@@ -1418,16 +1422,7 @@ def _geocode_office_relations(topic: str, assertion_ids: list) -> None:
             _time.sleep(1.1)
 
 
-PAUSE_FLAG = 'forespace:tasks:paused'
-
-
-def is_paused() -> bool:
-    import redis as _redis
-    from django.conf import settings as _settings
-    try:
-        return bool(_redis.from_url(_settings.CELERY_BROKER_URL).get(PAUSE_FLAG))
-    except Exception:
-        return False
+from ingest.pause import is_paused, PAUSE_FLAG  # noqa: F401 (PAUSE_FLAG kept for compat)
 
 
 @shared_task(bind=True, queue='extract', max_retries=2, default_retry_delay=30)
@@ -1436,7 +1431,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
     Use Perplexity Sonar to research a topic and write structured knowledge to the DB.
     topic_type: 'company' | 'question' | 'news'
     """
-    if is_paused():
+    if is_paused('research'):
         logger.info('research_topic: paused — dropping task for "%s"', topic)
         return
 

@@ -62,6 +62,9 @@ def _map_value(value, unit, datatype: str) -> dict:
 @shared_task(bind=True, queue='adjudicate', max_retries=1, default_retry_delay=60)
 def synthesize_conflict(self, entity_id: str, attribute_key: str, assertion_ids: list):
     """LLM synthesis of conflicting assertions → single accepted assertion."""
+    from ingest.pause import is_paused
+    if is_paused('research'):
+        return
     assertions = list(
         Assertion.objects
         .filter(pk__in=assertion_ids)

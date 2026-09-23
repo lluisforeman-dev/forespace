@@ -154,11 +154,10 @@ def _world_knowledge_summary(entity_id: str, entity, brief: bool = False) -> dic
 
 @shared_task(bind=True, queue='extract', max_retries=1, default_retry_delay=120)
 def synthesise_entity_summary(self, entity_id: str):
-    """Build or refresh the synthesised prose summary for an entity.
-
-    If the entity has collected events/fragments, synthesises from that evidence.
-    Otherwise falls back to a world-knowledge LLM call (skipping person/geography).
-    """
+    """Build or refresh the synthesised prose summary for an entity."""
+    from ingest.pause import is_paused
+    if is_paused('summarise'):
+        return
     from core.models import Entity
     try:
         entity = Entity.objects.get(pk=entity_id)

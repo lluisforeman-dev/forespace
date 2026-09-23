@@ -163,6 +163,9 @@ def _build_taxonomy_vocab(allowed_facets: set[str]) -> str:
 @shared_task(bind=True, queue='extract', max_retries=2)
 def classify_entity(self, entity_id: str, run_id: str | None = None):
     """Classify an entity across the taxonomy facets appropriate for its type."""
+    from ingest.pause import is_paused
+    if is_paused('classify'):
+        return
     try:
         entity = Entity.objects.get(pk=entity_id)
     except Entity.DoesNotExist:

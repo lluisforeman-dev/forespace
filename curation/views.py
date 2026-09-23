@@ -112,6 +112,7 @@ def dashboard(request):
         .order_by('-last_synthesised')[:40]
     )
 
+    from ingest.pause import paused_operations
     ctx = {
         'stub_count': Entity.objects.filter(status='stub').count(),
         'candidate_count': Assertion.objects.filter(status='candidate').count(),
@@ -129,6 +130,7 @@ def dashboard(request):
         'with_summary': with_summary,
         'with_score': with_score,
         'recently_assessed': recently_assessed,
+        'paused_ops': paused_operations(),
     }
     return render(request, 'curation/dashboard.html', ctx)
 
@@ -176,49 +178,62 @@ def question_research(request):
 
 @staff_member_required
 def stop_all_tasks(request):
-    """
-    Flush all pending Celery tasks.
-
-    Two-step purge:
-    1. Delete queue keys from Redis so no new tasks can be dequeued.
-    2. Revoke all tasks currently reserved/prefetched by workers so they are
-       discarded rather than executed after the worker finishes its current job.
-    """
+    """Flush all pending Celery tasks and set global pause flag."""
     if request.method != 'POST':
         return HttpResponseRedirect(reverse('curation:dashboard'))
 
     import redis as _redis
     from django.conf import settings as _settings
-    from ingest.tasks.research import PAUSE_FLAG
+    from ingest.pause import pause
 
     r = _redis.from_url(_settings.CELERY_BROKER_URL)
+    pause()  # set global flag — every task checks this
 
-    # Set pause flag — all research_topic tasks check this and bail immediately
-    r.set(PAUSE_FLAG, '1')
-
-    # Flush queue lists AND ETA/scheduled task sorted sets
     discarded = sum(r.llen(q) for q in CELERY_QUEUES)
     keys_to_delete = list(CELERY_QUEUES)
-    # Celery stores ETA/countdown tasks in kombu binding keys and unacked structures
     for pattern in ('_kombu.binding.*', 'unacked*', 'celery-task-meta-*'):
         keys_to_delete.extend(k.decode() if isinstance(k, bytes) else k for k in r.keys(pattern))
     for key in keys_to_delete:
         r.delete(key)
 
-    messages.warning(request, f'Stopped — {discarded} queued task(s) flushed. Workers are paused and will drop any prefetched tasks. Click Resume when ready.')
+    messages.warning(request, f'Stopped — {discarded} queued task(s) flushed. Click Resume when ready.')
+    return HttpResponseRedirect(reverse('curation:dashboard'))
+
+
+@staff_member_required
+def stop_operation(request, operation: str):
+    """Pause a named operation without flushing other queues."""
+    if request.method != 'POST':
+        return HttpResponseRedirect(reverse('curation:dashboard'))
+    from ingest.pause import pause, OPERATIONS
+    if operation not in OPERATIONS:
+        messages.error(request, f'Unknown operation: {operation}')
+    else:
+        pause(operation)
+        messages.warning(request, f'Paused: {operation}. New tasks of this type will be dropped.')
+    return HttpResponseRedirect(reverse('curation:dashboard'))
+
+
+@staff_member_required
+def resume_operation(request, operation: str = None):
+    """Resume a named operation (or all if operation is 'all')."""
+    if request.method != 'POST':
+        return HttpResponseRedirect(reverse('curation:dashboard'))
+    from ingest.pause import resume
+    resume(None if operation == 'all' else operation)
+    label = 'all operations' if operation == 'all' else operation
+    messages.success(request, f'Resumed: {label}.')
     return HttpResponseRedirect(reverse('curation:dashboard'))
 
 
 @staff_member_required
 def resume_tasks(request):
-    """Clear the pause flag so research tasks can run again."""
+    """Clear all pause flags."""
     if request.method != 'POST':
         return HttpResponseRedirect(reverse('curation:dashboard'))
-    import redis as _redis
-    from django.conf import settings as _settings
-    from ingest.tasks.research import PAUSE_FLAG
-    _redis.from_url(_settings.CELERY_BROKER_URL).delete(PAUSE_FLAG)
-    messages.success(request, 'Workers resumed — tasks will now execute normally.')
+    from ingest.pause import resume
+    resume(None)  # clears global + all named flags
+    messages.success(request, 'All operations resumed.')
     return HttpResponseRedirect(reverse('curation:dashboard'))
 
 

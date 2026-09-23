@@ -33,6 +33,9 @@ def crawl_url(
     source_kind: str = 'trade_press',
     source_trust: int = 60,
 ):
+    from ingest.pause import is_paused
+    if is_paused('crawl'):
+        return
     """Fetch *url*, deduplicate by SHA-256, create Document, enqueue parse."""
     try:
         resp = requests.get(url, headers=_HEADERS, timeout=30, allow_redirects=True)
