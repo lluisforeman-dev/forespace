@@ -106,9 +106,13 @@
     {% csrf_token %}
     <button class="btn" style="background:#6f42c1;color:#fff;font-size:12px;">&#127757; Geocode offices</button>
   </form>
-  <form method="post" action="{% url 'curation:fill_supply_chain' %}" onsubmit="return confirm('Queue supply chain research for all score=100 entities missing value_chain_tier?')">
+  <form method="post" action="{% url 'curation:fill_supply_chain' %}" onsubmit="return confirm('Queue supply chain research for all score=100 entities missing outputs?')">
     {% csrf_token %}
     <button class="btn" style="background:#0d6efd;color:#fff;font-size:12px;">&#128279; Fill supply chain (score 100)</button>
+  </form>
+  <form method="post" action="{% url 'curation:classify_supply_chain_all' %}" onsubmit="return confirm('Classify value_chain_tier from existing outputs for all entities?')">
+    {% csrf_token %}
+    <button class="btn" style="background:#6610f2;color:#fff;font-size:12px;">&#127991; Classify tiers from outputs</button>
   </form>
   <form method="post" action="{% url 'curation:merge_geography_duplicates' %}" onsubmit="return confirm('Merge geography entities within 500m of each other (same city, different language)?')">
     {% csrf_token %}

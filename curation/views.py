@@ -948,6 +948,43 @@ def research_all(request):
 
 
 @staff_member_required
+def classify_supply_chain_all(request):
+    """Queue classify_supply_chain for all SC-relevant entities with outputs but no tier."""
+    if request.method == 'POST':
+        from ingest.tasks.research import classify_supply_chain
+        from django.core.cache import cache
+
+        _SC_TYPES = ('company', 'investor', 'entity', 'university', 'facility')
+        has_tier = set(
+            Assertion.objects
+            .filter(attribute_id='value_chain_tier', superseded_at__isnull=True)
+            .values_list('entity_id', flat=True)
+        )
+        has_output = set(
+            Assertion.objects
+            .filter(attribute_id='output', superseded_at__isnull=True)
+            .values_list('entity_id', flat=True)
+        )
+        to_classify = has_output - has_tier
+        entities = list(
+            Entity.objects
+            .filter(id__in=to_classify, entity_type__in=_SC_TYPES)
+            .exclude(status='merged')
+            .values_list('id', flat=True)
+        )
+        queued = 0
+        for i, eid in enumerate(entities):
+            lock_key = f'classify_sc:{eid}'
+            if cache.get(lock_key):
+                continue
+            classify_supply_chain.apply_async(args=[str(eid)], countdown=i)
+            cache.set(lock_key, 1, timeout=3600)
+            queued += 1
+        messages.success(request, f'Queued tier classification for {queued} entities.')
+    return HttpResponseRedirect(reverse('curation:dashboard'))
+
+
+@staff_member_required
 def fill_supply_chain(request):
     """Queue research_topic for score=100 entities missing value_chain_tier."""
     if request.method == 'POST':
@@ -1440,10 +1477,10 @@ def supply_chain(request):
             return parts[0]
         return _TIER_TO_LEVEL.get(parts[0])
 
+    _SC_TYPES = ('company', 'investor', 'entity', 'university', 'facility')
     qs = (
         Entity.objects
-        .filter(id__in=entity_ids, status__in=('active', 'stub'))
-        .exclude(entity_type__in=('geography', 'document_node'))
+        .filter(id__in=entity_ids, status__in=('active', 'stub'), entity_type__in=_SC_TYPES)
     )
     if q:
         qs = qs.filter(Q(canonical_name__icontains=q) | Q(aliases__alias__icontains=q)).distinct()

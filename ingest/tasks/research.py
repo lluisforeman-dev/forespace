@@ -104,26 +104,18 @@ EXTRACTION RULES FOR RELATIONS:
 - Only use predicate keys from the allowed list below.
 
 RULES:
-- ★ SUPPLY CHAIN-CRITICAL: For any company, investor, or entity, ALWAYS extract:
-  1. value_chain_tier — hierarchical classification path: LEVEL1.LEVEL2.specifics
-       LEVEL1 (required): upstream | midstream | downstream
-       LEVEL2 (required): propulsion | structures | avionics | software | launch | comms |
-         earth_observation | ground_segment | navigation | power | thermal | manufacturing |
-         services | data | finance | other
-       specifics: free text category (e.g. electric_ion, heavy_lift, optical_imagery)
-       Emit ONE CLAIM PER PATH. Multiple paths if entity operates in multiple areas.
-       Examples: upstream.propulsion.electric_ion, downstream.launch.heavy_lift
-  2. output — each specific product or service the organisation offers to the market.
+- ★ SUPPLY CHAIN-CRITICAL: For any company, investor, facility or university (NOT for assets, missions, programs, or spacecraft), ALWAYS extract:
+  1. output — each specific product or service the organisation offers to the market.
        ONE CLAIM PER OUTPUT. Be specific: "1N hydrazine monopropellant thruster",
        "SAR imagery 1m resolution", "Falcon 9 launch service to LEO".
        Extract EVERY distinct output you can find.
-  3. input — each specific product, component or service the organisation needs to source.
+  2. input — each specific product, component or service the organisation needs to source.
        ONE CLAIM PER INPUT. Extract from sources AND infer from what they do:
        a satellite manufacturer needs propulsion systems, avionics, solar panels, structures,
        launch services even if no source explicitly states this. Be specific:
        "reaction control thrusters", "star trackers", "carbon fibre panels", "launch to SSO".
        Extract AND infer EVERY distinct input you can identify.
-  Extract all three for EVERY organisation.
+  value_chain_tier is derived separately from outputs — do NOT extract it here.
 - ★ MAP-CRITICAL: For any company, investor, or entity, ALWAYS extract if findable:
   headquarters_city, headquarters_country, employee_count, total_funding_usd, founding_year.
   These fields power geographic maps and funding charts — search every source for them.
@@ -1003,6 +995,92 @@ def _geocode_with_fallback(address: str) -> tuple[float, float] | tuple[None, No
 
     # Step 4: free-form fallback
     return _nominatim_geocode(address)
+
+
+_CLASSIFY_SC_PROMPT = """\
+You are classifying a space-industry organisation into supply chain tier paths based on its outputs.
+
+Given the list of outputs below, assign one or more hierarchical tier paths in the format LEVEL1.LEVEL2.specifics:
+  LEVEL1: upstream | midstream | downstream
+  LEVEL2: propulsion | structures | avionics | software | launch | comms |
+          earth_observation | ground_segment | navigation | power | thermal |
+          manufacturing | services | data | finance | other
+  specifics: short free-text descriptor (e.g. electric_ion, heavy_lift, optical_imagery)
+
+Rules:
+- Derive ONLY from the outputs listed. Do not invent.
+- One path per distinct market position.
+- Return JSON: {"tiers": ["upstream.propulsion.hydrazine_monopropellant", ...]}
+- Return only valid JSON, no explanation.
+
+Organisation: {name}
+Outputs:
+{outputs}
+"""
+
+
+@shared_task(queue='extract')
+def classify_supply_chain(entity_id: str):
+    """Derive value_chain_tier paths from existing output assertions. No web search."""
+    import json as _json
+    from core.models import Entity as _Entity, Assertion as _Assertion
+    from django.db import transaction
+    from django.utils import timezone
+    from psycopg2.extras import DateTimeTZRange
+
+    entity = _Entity.objects.filter(id=entity_id).first()
+    if not entity:
+        return
+
+    outputs = list(
+        _Assertion.objects
+        .filter(entity_id=entity_id, attribute_id='output',
+                status__in=('accepted', 'candidate'), superseded_at__isnull=True)
+        .exclude(value_text='')
+        .values_list('value_text', flat=True)
+    )
+    if not outputs:
+        logger.info('classify_supply_chain: no outputs for %s', entity.canonical_name)
+        return
+
+    prompt = _CLASSIFY_SC_PROMPT.format(
+        name=entity.canonical_name,
+        outputs='\n'.join(f'- {o}' for o in outputs),
+    )
+    try:
+        resp = get_client().chat.completions.create(
+            model=settings.AI_MODEL_FAST,
+            messages=[{'role': 'user', 'content': prompt}],
+            response_format={'type': 'json_object'},
+            max_tokens=200,
+            temperature=0,
+        )
+        data = _json.loads(resp.choices[0].message.content)
+        tiers = data.get('tiers') or []
+    except Exception as e:
+        logger.error('classify_supply_chain: LLM error for %s: %s', entity.canonical_name, e)
+        return
+
+    if not tiers:
+        return
+
+    # Supersede existing tier assertions
+    _Assertion.objects.filter(
+        entity_id=entity_id, attribute_id='value_chain_tier', superseded_at__isnull=True,
+    ).update(superseded_at=timezone.now())
+
+    now = timezone.now()
+    for tier in tiers:
+        _Assertion.objects.create(
+            entity_id=entity_id,
+            attribute_id='value_chain_tier',
+            value_text=tier,
+            method='structured_api',
+            confidence=0.85,
+            status='candidate',
+            valid_range=DateTimeTZRange(now, None),
+        )
+    logger.info('classify_supply_chain: %s → %s', entity.canonical_name, tiers)
 
 
 @shared_task(queue='extract')
