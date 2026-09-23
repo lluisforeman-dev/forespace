@@ -135,7 +135,7 @@
         </span>
       </div>
       <div class="lane-body">
-        {% for e in by_level|dictsort:level %}{% if e.0 == level %}{% for entity in e.1 %}
+        {% for lvl, entities in by_level.items %}{% if lvl == level %}{% for entity in entities %}
           <div class="sc-card" onclick="loadChain('{{ entity.id }}', '{{ entity.canonical_name|escapejs }}')">
             <div class="sc-card-name">{{ entity.canonical_name }}</div>
             {% if entity.sc_outputs %}
@@ -157,6 +157,7 @@
             </div>
           </div>
         {% endfor %}{% endif %}{% endfor %}
+
         {% for k, v in level_counts.items %}{% if k == level and v == 0 %}
           <div style="padding:10px;color:#ccc;font-size:12px;text-align:center;">No data yet</div>
         {% endif %}{% endfor %}
