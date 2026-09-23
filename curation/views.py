@@ -29,7 +29,7 @@ SPACE_NEWS_FEEDS = [
 ]
 
 CELERY_QUEUES = [
-    'crawl', 'parse', 'triage', 'extract',
+    'crawl', 'parse', 'triage', 'extract', 'default',
     'resolve', 'adjudicate', 'project', 'analytics', 'analysis',
 ]
 
