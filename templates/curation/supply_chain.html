@@ -213,12 +213,13 @@ function loadChain(entityId, entityName) {
           html += '<div class="chain-empty">None found.</div>';
         } else {
           rows.forEach(r => {
-            const outputsHtml = (r.outputs || []).map(o => `<div class="chain-row-sub">${o}</div>`).join('');
-            const tiersHtml = (r.tiers || []).map(t => `<div class="chain-row-sub" style="font-family:monospace;color:#6366f1">${t}</div>`).join('');
+            const outsHtml = (r.outputs||[]).map(o=>`<div class="chain-row-sub">↗ ${o}</div>`).join('');
+            const insHtml  = (r.inputs||[]).map(i=>`<div class="chain-row-sub" style="color:#6366f1">↙ ${i}</div>`).join('');
+            const tiersHtml= (r.tiers||[]).map(t=>`<div class="chain-row-sub" style="font-family:monospace;color:#aaa">${t}</div>`).join('');
             html += `<div class="chain-row">
               <div style="flex:1">
                 <a href="/curation/entity/${r.id}/" class="chain-row-name">${r.name}</a>
-                ${outputsHtml || tiersHtml}
+                ${outsHtml}${insHtml}${(!outsHtml && !insHtml) ? tiersHtml : ''}
               </div>
               <span class="chain-row-predicate">${PREDICATE_LABELS[r.predicate] || r.predicate}</span>
             </div>`;

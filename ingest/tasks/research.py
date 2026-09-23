@@ -113,11 +113,17 @@ RULES:
        specifics: free text category (e.g. electric_ion, heavy_lift, optical_imagery)
        Emit ONE CLAIM PER PATH. Multiple paths if entity operates in multiple areas.
        Examples: upstream.propulsion.electric_ion, downstream.launch.heavy_lift
-  2. output — each specific product or service offered to the market. ONE CLAIM PER OUTPUT.
-       Be specific: "1N hydrazine monopropellant thruster", "SAR imagery 1m resolution",
-       "Falcon 9 launch service to LEO", "Starlink broadband internet connectivity".
+  2. output — each specific product or service the organisation offers to the market.
+       ONE CLAIM PER OUTPUT. Be specific: "1N hydrazine monopropellant thruster",
+       "SAR imagery 1m resolution", "Falcon 9 launch service to LEO".
        Extract EVERY distinct output you can find.
-  Extract both for EVERY organisation.
+  3. input — each specific product, component or service the organisation needs to source.
+       ONE CLAIM PER INPUT. Extract from sources AND infer from what they do:
+       a satellite manufacturer needs propulsion systems, avionics, solar panels, structures,
+       launch services even if no source explicitly states this. Be specific:
+       "reaction control thrusters", "star trackers", "carbon fibre panels", "launch to SSO".
+       Extract AND infer EVERY distinct input you can identify.
+  Extract all three for EVERY organisation.
 - ★ MAP-CRITICAL: For any company, investor, or entity, ALWAYS extract if findable:
   headquarters_city, headquarters_country, employee_count, total_funding_usd, founding_year.
   These fields power geographic maps and funding charts — search every source for them.

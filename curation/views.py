@@ -1428,9 +1428,10 @@ def supply_chain(request):
 
     tier_map    = _multi_map('value_chain_tier')
     output_map  = _multi_map('output')
+    input_map   = _multi_map('input')
     country_map = _single_map('headquarters_country')
 
-    entity_ids = set(tier_map) | set(output_map)
+    entity_ids = set(tier_map) | set(output_map) | set(input_map)
 
     def _path_level(path):
         """Return level1 from a path, supporting both new (upstream.x.y) and old (component) formats."""
@@ -1477,6 +1478,7 @@ def supply_chain(request):
         eid = str(e.id)
         e.sc_tiers   = tier_map.get(e.id, [])
         e.sc_outputs = output_map.get(e.id, [])
+        e.sc_inputs  = input_map.get(e.id, [])
         e.sc_country = country_map.get(e.id, '')
         e.supply_out = supply_out.get(eid, 0)
         e.supply_in  = supply_in.get(eid, 0)
@@ -1554,15 +1556,18 @@ def supply_chain_entity(request, entity_id):
 
     tiers_multi = {}
     outputs_multi = {}
+    inputs_multi = {}
     for row in Assertion.objects.filter(
-        attribute_id__in=('value_chain_tier', 'output'), entity_id__in=all_ids,
+        attribute_id__in=('value_chain_tier', 'output', 'input'), entity_id__in=all_ids,
         status__in=('accepted', 'candidate'), superseded_at__isnull=True,
     ).exclude(value_text='').values('entity_id', 'value_text', 'attribute_id'):
         eid = row['entity_id']
         if row['attribute_id'] == 'value_chain_tier':
             tiers_multi.setdefault(eid, []).append(row['value_text'])
-        else:
+        elif row['attribute_id'] == 'output':
             outputs_multi.setdefault(eid, []).append(row['value_text'])
+        else:
+            inputs_multi.setdefault(eid, []).append(row['value_text'])
 
     def _enrich(rows, id_key, name_key, type_key):
         return [
@@ -1572,8 +1577,9 @@ def supply_chain_entity(request, entity_id):
                 'type':      r[type_key],
                 'predicate': r['predicate_id'],
                 'product':   (r['qualifiers'] or {}).get('product', ''),
-                'tiers':     tiers_multi.get(r[id_key], []),
-                'outputs':   outputs_multi.get(r[id_key], []),
+                'tiers':   tiers_multi.get(r[id_key], []),
+                'outputs': outputs_multi.get(r[id_key], []),
+                'inputs':  inputs_multi.get(r[id_key], []),
             }
             for r in rows
         ]
