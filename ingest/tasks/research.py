@@ -987,16 +987,23 @@ def _geocode_with_fallback(address: str) -> tuple[float, float] | tuple[None, No
 
 _EXTRACT_SC_PROMPT = """\
 You are a supply chain analyst for the space industry.
-Search for information about the organisation below and return JSON with two keys:
+Search the web for this organisation's product catalogue, datasheets, press releases and website.
 
-"outputs": list of specific products or services this organisation delivers to customers.
-  One string per item. Be specific: "1N hydrazine monopropellant thruster", "SAR imagery 1m resolution",
-  "Falcon 9 launch service to LEO", "optical ground station network access".
+Return JSON with two keys:
 
-"inputs": list of specific products, components or services this organisation needs to source.
-  One string per item. Extract from sources AND infer from what they do:
-  a satellite manufacturer needs propulsion systems, avionics, solar panels, structures, launch services.
-  Be specific: "reaction control thrusters", "star trackers", "carbon fibre panels", "launch services to SSO".
+"outputs": what this organisation sells or delivers to customers.
+  Rules:
+  - Use the actual product or service name where one exists: "BGT-X5 green monopropellant thruster",
+    "Dove optical imaging satellite", "Falcon 9 launch to 500 km SSO", "TILE-2 electrospray propulsion unit".
+  - Include key specs in the string where available: thrust, resolution, orbit, mass, power.
+  - Never write a category — "propulsion systems" is wrong; "1N hydrazine thruster for CubeSats" is right.
+  - Max 10 items. Do not repeat the same product in different words.
+
+"inputs": what this organisation needs to source from suppliers.
+  Rules:
+  - Infer from what they build/operate; be specific: "radiation-hardened microprocessors",
+    "xenon propellant for Hall thrusters", "CFRP honeycomb panels", "LOX/methane turbopumps".
+  - Max 10 items.
 
 Return only valid JSON: {{"outputs": [...], "inputs": [...]}}
 """
@@ -1030,19 +1037,27 @@ def extract_supply_chain(entity_id: str):
         logger.error('extract_supply_chain: LLM error for %s: %s', entity.canonical_name, e)
         return
 
-    outputs = [s for s in data.get('outputs', []) if isinstance(s, str) and s.strip()]
-    inputs  = [s for s in data.get('inputs',  []) if isinstance(s, str) and s.strip()]
+    outputs = list({s.strip() for s in data.get('outputs', []) if isinstance(s, str) and s.strip()})[:10]
+    inputs  = list({s.strip() for s in data.get('inputs',  []) if isinstance(s, str) and s.strip()})[:10]
 
     if not outputs and not inputs:
         logger.info('extract_supply_chain: nothing extracted for %s', entity.canonical_name)
         return
 
     now = timezone.now()
+    # Supersede previous extractions so re-runs replace rather than stack
+    _Assertion.objects.filter(
+        entity_id=entity_id,
+        attribute_id__in=('output', 'input'),
+        method='structured_api',
+        superseded_at__isnull=True,
+    ).update(superseded_at=now)
+
     for value, attr_key in [(v, 'output') for v in outputs] + [(v, 'input') for v in inputs]:
         _Assertion.objects.create(
             entity_id=entity_id,
             attribute_id=attr_key,
-            value_text=value.strip(),
+            value_text=value,
             method='structured_api',
             confidence=0.80,
             status='candidate',
