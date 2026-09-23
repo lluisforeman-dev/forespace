@@ -104,17 +104,20 @@ EXTRACTION RULES FOR RELATIONS:
 - Only use predicate keys from the allowed list below.
 
 RULES:
-- ★ SUPPLY CHAIN-CRITICAL: For any company, investor, or entity, ALWAYS extract value_chain_tier.
-  Use hierarchical paths: LEVEL1.LEVEL2.specifics
-    LEVEL1 (required): upstream | midstream | downstream
-    LEVEL2 (required): propulsion | structures | avionics | software | launch | comms |
-      earth_observation | ground_segment | navigation | power | thermal | manufacturing |
-      services | data | finance | other
-    specifics: free text describing the specific product/technology (e.g. electric_ion, heavy_lift)
-  Emit ONE CLAIM PER PATH. Extract MULTIPLE paths if the entity operates in multiple areas.
-  Examples: upstream.propulsion.electric_ion, downstream.launch.heavy_lift,
-    downstream.earth_observation.optical_imagery, upstream.structures.carbon_fibre_composites
-  These paths power the supply chain graph — extract them for EVERY organisation.
+- ★ SUPPLY CHAIN-CRITICAL: For any company, investor, or entity, ALWAYS extract:
+  1. value_chain_tier — hierarchical classification path: LEVEL1.LEVEL2.specifics
+       LEVEL1 (required): upstream | midstream | downstream
+       LEVEL2 (required): propulsion | structures | avionics | software | launch | comms |
+         earth_observation | ground_segment | navigation | power | thermal | manufacturing |
+         services | data | finance | other
+       specifics: free text category (e.g. electric_ion, heavy_lift, optical_imagery)
+       Emit ONE CLAIM PER PATH. Multiple paths if entity operates in multiple areas.
+       Examples: upstream.propulsion.electric_ion, downstream.launch.heavy_lift
+  2. output — each specific product or service offered to the market. ONE CLAIM PER OUTPUT.
+       Be specific: "1N hydrazine monopropellant thruster", "SAR imagery 1m resolution",
+       "Falcon 9 launch service to LEO", "Starlink broadband internet connectivity".
+       Extract EVERY distinct output you can find.
+  Extract both for EVERY organisation.
 - ★ MAP-CRITICAL: For any company, investor, or entity, ALWAYS extract if findable:
   headquarters_city, headquarters_country, employee_count, total_funding_usd, founding_year.
   These fields power geographic maps and funding charts — search every source for them.

@@ -138,14 +138,16 @@
         {% for e in by_level|dictsort:level %}{% if e.0 == level %}{% for entity in e.1 %}
           <div class="sc-card" onclick="loadChain('{{ entity.id }}', '{{ entity.canonical_name|escapejs }}')">
             <div class="sc-card-name">{{ entity.canonical_name }}</div>
-            {% if entity.sc_tiers %}
+            {% if entity.sc_outputs %}
             <div class="sc-card-paths">
-              {% for path in entity.sc_tiers|slice:":3" %}
-                <span class="sc-card-path">{{ path }}</span>
+              {% for out in entity.sc_outputs|slice:":3" %}
+                <span class="sc-card-path" style="color:#374151">{{ out }}</span>
               {% endfor %}
-              {% if entity.sc_tiers|length > 3 %}
-                <span class="sc-card-path" style="color:#aaa">+{{ entity.sc_tiers|length|add:"-3" }} more</span>
-              {% endif %}
+              {% if entity.sc_outputs|length > 3 %}<span class="sc-card-path" style="color:#aaa">+{{ entity.sc_outputs|length|add:"-3" }} more</span>{% endif %}
+            </div>
+            {% elif entity.sc_tiers %}
+            <div class="sc-card-paths">
+              {% for path in entity.sc_tiers|slice:":2" %}<span class="sc-card-path">{{ path }}</span>{% endfor %}
             </div>
             {% endif %}
             <div class="sc-card-meta">
@@ -210,12 +212,12 @@ function loadChain(entityId, entityName) {
           html += '<div class="chain-empty">None found.</div>';
         } else {
           rows.forEach(r => {
-            const tiersHtml = (r.tiers || []).map(t => `<div class="chain-row-sub">${t}</div>`).join('');
+            const outputsHtml = (r.outputs || []).map(o => `<div class="chain-row-sub">${o}</div>`).join('');
+            const tiersHtml = (r.tiers || []).map(t => `<div class="chain-row-sub" style="font-family:monospace;color:#6366f1">${t}</div>`).join('');
             html += `<div class="chain-row">
               <div style="flex:1">
                 <a href="/curation/entity/${r.id}/" class="chain-row-name">${r.name}</a>
-                ${tiersHtml}
-                ${r.product ? `<div class="chain-row-sub">product: ${r.product}</div>` : ''}
+                ${outputsHtml || tiersHtml}
               </div>
               <span class="chain-row-predicate">${PREDICATE_LABELS[r.predicate] || r.predicate}</span>
             </div>`;
