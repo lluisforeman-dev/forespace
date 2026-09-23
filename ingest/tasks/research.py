@@ -1034,7 +1034,11 @@ def extract_supply_chain(entity_id: str):
             max_tokens=800,
             temperature=0,
         )
-        data = _json.loads(resp.choices[0].message.content)
+        content = resp.choices[0].message.content
+        if not content:
+            logger.warning('extract_supply_chain: empty response for %s', entity.canonical_name)
+            return
+        data = _json.loads(content)
     except Exception as e:
         logger.error('extract_supply_chain: LLM error for %s: %s', entity.canonical_name, e)
         return
@@ -1160,7 +1164,11 @@ def classify_supply_chain(entity_id: str):
             max_tokens=200,
             temperature=0,
         )
-        data = _json.loads(resp.choices[0].message.content)
+        content = resp.choices[0].message.content
+        if not content:
+            logger.warning('classify_supply_chain: empty response for %s', entity.canonical_name)
+            return
+        data = _json.loads(content)
         tiers = data.get('tiers') or []
     except Exception as e:
         logger.error('classify_supply_chain: LLM error for %s: %s', entity.canonical_name, e)
