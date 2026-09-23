@@ -1147,7 +1147,23 @@ def classify_supply_chain(entity_id: str):
         logger.error('classify_supply_chain: LLM error for %s: %s', entity.canonical_name, e)
         return
 
-    if not tiers:
+    # Sanitise: flatten semicolon/comma-joined paths, strip quotes and brackets
+    _VALID_LEVELS = {'upstream', 'midstream', 'downstream', 'institutional', 'other'}
+    clean_tiers = []
+    for raw in tiers:
+        # Split on ; or , in case LLM joined multiple paths into one string
+        parts = re.split(r'[;,]', str(raw))
+        for p in parts:
+            p = p.strip().strip("'\"[] ")
+            if not p:
+                continue
+            level1 = p.split('.')[0]
+            if level1 not in _VALID_LEVELS:
+                logger.warning('classify_supply_chain: invalid tier %r for %s', p, entity.canonical_name)
+                continue
+            clean_tiers.append(p)
+
+    if not clean_tiers:
         return
 
     # Supersede existing tier assertions
@@ -1156,7 +1172,7 @@ def classify_supply_chain(entity_id: str):
     ).update(superseded_at=timezone.now())
 
     now = timezone.now()
-    for tier in tiers:
+    for tier in clean_tiers:
         _Assertion.objects.create(
             entity_id=entity_id,
             attribute_id='value_chain_tier',
@@ -1166,7 +1182,7 @@ def classify_supply_chain(entity_id: str):
             status='candidate',
             valid_range=DateTimeTZRange(now, None),
         )
-    logger.info('classify_supply_chain: %s → %s', entity.canonical_name, tiers)
+    logger.info('classify_supply_chain: %s → %s', entity.canonical_name, clean_tiers)
 
 
 @shared_task(queue='extract')
