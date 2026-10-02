@@ -39,3 +39,26 @@ app.conf.task_queues = [
     )
 ]
 app.conf.task_default_queue = 'extract'
+
+
+# ── Periodic maintenance without celery-beat ─────────────────────────────────
+# There is no beat process in the topology (Procfile: web + worker only), so
+# recurring jobs are kicked by worker_ready and kept alive by self-rescheduling
+# tasks. The Redis lock makes N workers schedule at most one chain.
+from celery.signals import worker_ready  # noqa: E402
+
+
+@worker_ready.connect
+def _kick_periodic_maintenance(**_kwargs):
+    try:
+        from django.conf import settings as _settings
+        import redis as _r
+        r = _r.from_url(_settings.CELERY_BROKER_URL)
+        if r.set('eigengraph:periodic:dedup_sweep', '1', nx=True, ex=26 * 3600):
+            from ingest.tasks.dedup import periodic_dedup_sweep
+            periodic_dedup_sweep.apply_async(countdown=600)
+            logger.info('periodic dedup sweep scheduled (+10 min)')
+        else:
+            logger.info('periodic dedup sweep already scheduled (lock held)')
+    except Exception as exc:
+        logger.warning('could not schedule periodic dedup sweep: %s', exc)

@@ -39,6 +39,108 @@ from ingest.prompts import get_prompt
 
 logger = logging.getLogger(__name__)
 
+# ── Entity-type audit ────────────────────────────────────────────────────────
+# entity_type is assigned write-once by extraction (which defaults to
+# 'company' when unsure) and nothing used to re-check it — how "Falcon 9"
+# became a company and "Denmark" a company. classify_entity re-audits the
+# type against the entity's accumulated evidence on every pass.
+_TYPE_AUDIT_SYSTEM = (
+    'You are an entity-type auditor for a space-industry knowledge graph. '
+    'Answer only with valid JSON.'
+)
+
+_TYPE_AUDIT_USER = """\
+Given the evidence below, what is the correct entity_type for "{name}"?
+
+The type describes WHAT THE ENTITY ITSELF IS — not what is located in or around
+it, and not what it owns. A city or country with aerospace activity is still a
+geography. A state launch base is a facility. A rocket, satellite, or other named
+product is an asset. An operational undertaking (Artemis, ISS, Galileo) is a
+program. A deployable instrument with calls, deadlines and budgets is a
+funding_program. A commercial space business is a company. A public institution
+or agency is an entity.
+
+Allowed types: company, entity, investor, university, facility, asset, person,
+program, funding_program, end_user, geography
+
+Evidence:
+{evidence}
+
+Current label: {current_type}
+
+Reply: {{"entity_type": "<one allowed type>", "confidence": "high"|"medium"|"low"}}"""
+
+_CORRECTABLE_TYPES = {
+    'company', 'entity', 'investor', 'university', 'facility', 'asset',
+    'person', 'program', 'funding_program', 'end_user', 'geography',
+}
+
+
+def _typing_evidence(entity: Entity) -> str:
+    """Compact evidence block for the type audit."""
+    from core.models import Event, KnowledgeFragment
+    parts = []
+    for f in KnowledgeFragment.objects.filter(entity=entity).order_by('-confidence')[:3]:
+        parts.append(f.text[:220])
+    for ev in Event.objects.filter(entity=entity).order_by('-created_at')[:5]:
+        parts.append(f'{ev.event_type}: {ev.title}')
+    prof = _build_profile(entity)
+    if prof.strip():
+        parts.append(prof)
+    return '\n'.join(parts)[:1200]
+
+
+def _validate_entity_type(entity: Entity) -> str | None:
+    """Re-audit entity.entity_type against the entity's evidence.
+
+    Returns the new type when a high-confidence correction was applied, else
+    None. Husks (thin evidence) are never judged; confirmed place names are
+    never corrected away from geography. Fail-closed on any error.
+    """
+    if entity.entity_type not in _CORRECTABLE_TYPES:
+        return None
+    if entity.entity_type == 'geography':
+        from core.normalize import normalize_name
+        from ingest.tasks.resolve import _GEOGRAPHIC_BLOCKLIST
+        if normalize_name(entity.canonical_name) in _GEOGRAPHIC_BLOCKLIST:
+            return None
+    evidence = _typing_evidence(entity)
+    if len(evidence.strip()) < 80:
+        return None  # not enough signal — do not guess
+    try:
+        resp = get_client().chat.completions.create(
+            model=settings.AI_MODEL_FAST,
+            messages=[
+                {'role': 'system', 'content': _TYPE_AUDIT_SYSTEM},
+                {'role': 'user', 'content': _TYPE_AUDIT_USER.format(
+                    name=entity.canonical_name, evidence=evidence,
+                    current_type=entity.entity_type)},
+            ],
+            response_format={'type': 'json_object'},
+            max_tokens=40,
+            temperature=0,
+        )
+        log_call('classify', settings.AI_MODEL_FAST, resp, entity=entity)
+        raw = (resp.choices[0].message.content or '').strip()
+        if not raw:
+            return None
+        raw = raw.replace('True', 'true').replace('False', 'false').replace('None', 'null')
+        result = json.loads(raw)
+        new_type = result.get('entity_type')
+        if result.get('confidence') != 'high' or new_type not in _CORRECTABLE_TYPES:
+            return None
+        if new_type == entity.entity_type:
+            return None
+        old = entity.entity_type
+        entity.entity_type = new_type
+        entity.save(update_fields=['entity_type'])
+        logger.info('TYPE CORRECTION %s "%s": %s -> %s',
+                    entity.id, entity.canonical_name, old, new_type)
+        return new_type
+    except Exception as exc:
+        logger.warning('type audit failed for %s: %s', entity.id, exc)
+        return None
+
 # Taxonomy facets applicable to each entity type.
 # Entity types not listed here are skipped entirely.
 _FACETS_FOR_TYPE: dict[str, set[str]] = {
@@ -170,6 +272,11 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
         entity = Entity.objects.get(pk=entity_id)
     except Entity.DoesNotExist:
         return
+
+    # Type audit — re-check write-once typing before classifying. A correction
+    # updates entity.entity_type in place, so the facet routing below uses the
+    # corrected type.
+    _validate_entity_type(entity)
 
     allowed_facets = _FACETS_FOR_TYPE.get(entity.entity_type)
     if not allowed_facets:

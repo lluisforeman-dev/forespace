@@ -603,3 +603,24 @@ def dedup_sweep(self, min_similarity: float = _DEDUP_TRGM_MIN, dry_run: bool = F
     )
     logger.info('dedup_sweep done: merged=%d skipped=%d dry_run=%s', merged, skipped, dry_run)
     return {'merged': merged, 'skipped': skipped}
+
+
+@shared_task(bind=True, queue='analytics', max_retries=0)
+def periodic_dedup_sweep(self):
+    """Self-rescheduling daily dedup sweep — runs without a celery-beat process.
+
+    worker_ready (config/celery.py) schedules the first run; a Redis lock
+    ensures one fleet-wide chain. Each run re-schedules itself for +24h, even
+    on failure — a crashed sweep must not kill the schedule. Respects the
+    global pause flag (the chain continues; only the sweep is skipped).
+    """
+    from ingest.pause import is_paused
+    try:
+        if is_paused():
+            logger.info('periodic_dedup_sweep: pipeline paused — skipping this cycle')
+        else:
+            dedup_sweep()
+    except Exception as exc:
+        logger.warning('periodic_dedup_sweep failed: %s', exc)
+    finally:
+        periodic_dedup_sweep.apply_async(countdown=24 * 3600)

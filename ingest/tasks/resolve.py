@@ -198,6 +198,9 @@ def resolve_mention(
     # An entity with actual data always outranks a data-less namesake: routing
     # a mention to a husk because it got the name first is how permanent false
     # splits are born. Data-less matches are demoted to weak hints below.
+    # TYPE GUARD: an evidence-bearing namesake of a different kind ("Falcon 9"
+    # the launch vehicle vs a company-typed mention) is not auto-routed — the
+    # LLM confirms against the entity's actual context first.
     evidence_q = (
         Q(assertions__status='accepted', assertions__superseded_at__isnull=True)
         | Q(events__isnull=False)
@@ -210,9 +213,17 @@ def resolve_mention(
         .distinct()
         .first()
     )
+    type_rejected = None
     if ent:
-        _add_alias(str(ent.id), mention, norm, document_id)
-        return str(ent.id)
+        if ent.entity_type == entity_type or _llm_verify_entity(
+                mention, entity_type, subject_context, str(ent.id)):
+            _add_alias(str(ent.id), mention, norm, document_id)
+            return str(ent.id)
+        type_rejected = str(ent.id)
+        logger.info(
+            'L2a type-guard: "%s" (%s) rejected namesake %s (%s)',
+            mention, entity_type, type_rejected, ent.entity_type,
+        )
     weak_ent = (
         Entity.objects
         .filter(canonical_name__iexact=mention, status__in=('active', 'stub'))
@@ -223,6 +234,8 @@ def resolve_mention(
     # entity routes immediately; an alias owned only by a STUB is a weak hint
     # (stubs exist because resolution once failed) — it is only used if the
     # candidate adjudication below finds nothing better.
+    # TYPE GUARD: same check as L2a — an established owner of a different kind
+    # must be confirmed before the alias routes blindly.
     alias = (
         EntityAlias.objects
         .select_related('entity')
@@ -230,7 +243,13 @@ def resolve_mention(
         .first()
     )
     if alias:
-        return str(alias.entity_id)
+        if alias.entity.entity_type == entity_type or _llm_verify_entity(
+                mention, entity_type, subject_context, str(alias.entity_id)):
+            return str(alias.entity_id)
+        logger.info(
+            'L2b type-guard: alias "%s" (%s) rejected owner %s (%s)',
+            mention, entity_type, alias.entity_id, alias.entity.entity_type,
+        )
 
     stub_hint = (
         EntityAlias.objects
@@ -256,6 +275,8 @@ def resolve_mention(
 
     # A data-less exact-name match or a stub alias hint — weak evidence only,
     # used when candidate adjudication finds nothing better.
+    if weak_ent and str(weak_ent.id) == type_rejected:
+        weak_ent = None  # the type guard already rejected this namesake
     if weak_ent or stub_hint:
         target = str(weak_ent.id) if weak_ent else stub_hint
         _add_alias(target, mention, norm, document_id)
