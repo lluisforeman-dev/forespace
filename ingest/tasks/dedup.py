@@ -298,10 +298,22 @@ def _process_pairs(pairs, decided_pairs, merged_ids, entity_type_map,
             skipped_count += 1
             continue
 
-        # Keep the entity with more accepted assertions; ties → older entity
+        # Keep the entity with more accepted assertions; ties → richer
+        # evidence base (fragments + events); still tied → the older entity.
+        # A zero-evidence short form must never absorb its established
+        # long-form parent ("Starliner" must not swallow "CST-100 Starliner").
         count_a = Assertion.objects.filter(entity_id=id_a, status='accepted').count()
         count_b = Assertion.objects.filter(entity_id=id_b, status='accepted').count()
-        kept_id = id_a if count_a >= count_b else id_b
+        if count_a == count_b:
+            from core.models import Event as _Event, KnowledgeFragment as _KF
+            ev_a = _KF.objects.filter(entity_id=id_a).count() + _Event.objects.filter(entity_id=id_a).count()
+            ev_b = _KF.objects.filter(entity_id=id_b).count() + _Event.objects.filter(entity_id=id_b).count()
+            if ev_a != ev_b:
+                kept_id = id_a if ev_a > ev_b else id_b
+            else:
+                kept_id = id_a if entity_a.created_at <= entity_b.created_at else id_b
+        else:
+            kept_id = id_a if count_a >= count_b else id_b
         merged_id = id_b if kept_id == id_a else id_a
 
         rationale = {
@@ -573,11 +585,25 @@ def dedup_sweep(self, min_similarity: float = _DEDUP_TRGM_MIN, dry_run: bool = F
             SELECT DISTINCT
                 LEAST(a.entity_id::text, b.entity_id::text)   AS id_a,
                 GREATEST(a.entity_id::text, b.entity_id::text) AS id_b,
-                MAX(similarity(a.alias_norm, b.alias_norm))    AS sim
+                MAX(GREATEST(
+                    similarity(a.alias_norm, b.alias_norm),
+                    CASE WHEN
+                        ((' ' || a.alias_norm || ' ') LIKE ('%% ' || b.alias_norm || ' %%')
+                         OR (' ' || b.alias_norm || ' ') LIKE ('%% ' || a.alias_norm || ' %%'))
+                        AND length(a.alias_norm) >= 5 AND length(b.alias_norm) >= 5
+                    THEN 0.75 ELSE 0 END
+                )) AS sim
             FROM entity_alias a
             JOIN entity_alias b
               ON a.entity_id != b.entity_id
-             AND similarity(a.alias_norm, b.alias_norm) > %s
+             AND (
+                  similarity(a.alias_norm, b.alias_norm) > %s
+                  OR (
+                      ((' ' || a.alias_norm || ' ') LIKE ('%% ' || b.alias_norm || ' %%')
+                       OR (' ' || b.alias_norm || ' ') LIKE ('%% ' || a.alias_norm || ' %%'))
+                      AND length(a.alias_norm) >= 5 AND length(b.alias_norm) >= 5
+                  )
+                 )
             GROUP BY 1, 2
             ORDER BY sim DESC
             LIMIT 2000
