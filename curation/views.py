@@ -13,7 +13,7 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 
-from core.models import Assertion, Classification, Entity, EntityAlias, EntitySummary, Event, KnowledgeFragment, PromptTemplate, Relation, Source, ScheduledSource, TaxonomyNode
+from core.models import Assertion, AttributeDef, Classification, Entity, EntityAlias, EntitySummary, Event, KnowledgeFragment, PromptTemplate, Relation, Source, ScheduledSource, TaxonomyNode
 from ingest.tasks.analytics import get_snapshot
 
 
@@ -59,7 +59,7 @@ def _per_queue_lengths():
 def _worker_status():
     """Ping Celery workers. Cached 60s so dashboard load stays fast."""
     from django.core.cache import cache
-    cached = cache.get('forespace:worker:status')
+    cached = cache.get('eigengraph:worker:status')
     if cached is not None:
         return cached
     try:
@@ -68,7 +68,7 @@ def _worker_status():
         status = {'online': bool(result), 'workers': list(result.keys())}
     except Exception:
         status = {'online': False, 'workers': []}
-    cache.set('forespace:worker:status', status, 60)
+    cache.set('eigengraph:worker:status', status, 60)
     return status
 
 
@@ -123,7 +123,7 @@ def dashboard(request):
         .order_by('-last_synthesised')[:40]
     )
 
-    from ingest.pause import paused_operations
+    from ingest.pause import paused_operations, get_cascade_cap
     ql = _per_queue_lengths()
     # Operation → queues it uses (for "Running (N)" display)
     op_queue_counts = {
@@ -148,31 +148,32 @@ def dashboard(request):
         'queued_tasks': _queue_lengths(),
         'worker_status': _worker_status(),
         'num_feeds': len(SPACE_NEWS_FEEDS),
-        'title': 'ForeSpace',
+        'title': 'EigenGraph',
         'total_active': total_active,
         'with_summary': with_summary,
         'with_score': with_score,
         'recently_assessed': recently_assessed,
         'paused_ops': paused_operations(),
         'op_queue_counts': op_queue_counts,
+        'cascade_cap': get_cascade_cap(),
     }
     return render(request, 'curation/dashboard.html', ctx)
 
 
 @staff_member_required
 def auto_news(request):
-    """Use Sonar to find and extract last week's space news."""
+    """Use EigenSearch to find and extract last week's space news."""
     if request.method != 'POST':
         return HttpResponseRedirect(reverse('curation:dashboard'))
     from ingest.tasks.research import research_topic
     research_topic.delay('space industry news last 7 days', 'news')
-    messages.success(request, 'Space news research queued — Sonar is searching the web.')
+    messages.success(request, 'Space news research queued — EigenSearch is searching the web.')
     return HttpResponseRedirect(reverse('curation:dashboard'))
 
 
 @staff_member_required
 def company_research(request):
-    """Use Sonar to research a specific company."""
+    """Use EigenSearch to research a specific company."""
     if request.method != 'POST':
         return HttpResponseRedirect(reverse('curation:dashboard'))
     company = request.POST.get('company', '').strip()
@@ -181,13 +182,13 @@ def company_research(request):
         return HttpResponseRedirect(reverse('curation:dashboard'))
     from ingest.tasks.research import research_topic
     research_topic.delay(company, 'company')
-    messages.success(request, f'Researching "{company}" — Sonar is on it.')
+    messages.success(request, f'Researching "{company}" — EigenSearch is on it.')
     return HttpResponseRedirect(reverse('curation:dashboard'))
 
 
 @staff_member_required
 def question_research(request):
-    """Use Sonar to answer a question by searching the web."""
+    """Use EigenSearch to answer a question by searching the web."""
     if request.method != 'POST':
         return HttpResponseRedirect(reverse('curation:dashboard'))
     question = request.POST.get('question', '').strip()
@@ -197,6 +198,22 @@ def question_research(request):
     from ingest.tasks.research import research_topic
     research_topic.delay(question, 'question')
     messages.success(request, f'Queued: "{question}"')
+    return HttpResponseRedirect(reverse('curation:dashboard'))
+
+
+@staff_member_required
+def set_cascade_cap(request):
+    """Set how deep research_topic may auto-cascade (0 = no auto-cascade)."""
+    if request.method != 'POST':
+        return HttpResponseRedirect(reverse('curation:dashboard'))
+    from ingest.pause import set_cascade_cap as _set_cap
+    try:
+        depth = int(request.POST.get('cascade_cap', ''))
+    except (TypeError, ValueError):
+        messages.error(request, 'Cascade depth must be a number between 0 and 10.')
+        return HttpResponseRedirect(reverse('curation:dashboard'))
+    depth = _set_cap(depth)
+    messages.success(request, f'Cascade depth cap set to {depth}.')
     return HttpResponseRedirect(reverse('curation:dashboard'))
 
 
@@ -376,7 +393,7 @@ def entity_profile(request, entity_id):
         if new_status and new_status in valid_statuses:
             entity.status = new_status
         entity.save()
-        return redirect('curation:entity_profile', entity_id=entity_id)
+        return HttpResponseRedirect(reverse('curation:entity_profile', args=[entity_id]))
 
     all_assertions = (
         Assertion.objects
@@ -401,8 +418,30 @@ def entity_profile(request, entity_id):
         if a.attribute_id not in best_per_attr:
             best_per_attr[a.attribute_id] = a
     facts = sorted(best_per_attr.values(), key=lambda a: -a.confidence)
-    for f in facts:
+
+    # ── Truth decay (§8d): score every fact against its world date ────────
+    # A fact is stale when its as_of (valid_range.lower) is older than the
+    # attribute's volatility window — "100 employees in 2016" is not a valid
+    # headcount in 2026. Facts are ranked by decayed trust, not raw confidence.
+    from ingest.confidence import display_trust as _trust
+    _volatility = dict(AttributeDef.objects.values_list('key', 'volatility_days'))
+
+    def _decorate_fact(f):
+        f.effective_at = (
+            f.valid_range.lower
+            if (f.valid_range is not None and f.valid_range.lower is not None)
+            else f.observed_at
+        )
+        f.volatility_days = _volatility.get(f.attribute_id)
+        f.trust = _trust(f.confidence, f.observed_at, f.volatility_days, effective_at=f.effective_at)
+        _window = f.volatility_days if f.volatility_days is not None else 3650
+        f.days_stale = max(0, (timezone.now() - f.effective_at).days - _window)
+        f.is_stale = f.days_stale > 0
         f.source_count = source_counts.get(f.attribute_id, 1)
+        return f
+
+    facts = [_decorate_fact(f) for f in facts]
+    facts.sort(key=lambda a: -a.trust)
 
     relations_out = (
         Relation.objects
@@ -521,6 +560,7 @@ def entity_profile(request, entity_id):
                   .filter(attribute_id=attr_key, status='candidate', superseded_at__isnull=True)
                   .order_by('-confidence').first())
             if fb:
+                fb = _decorate_fact(fb)
                 if attr_key == 'headquarters_city':    hq_city    = fb
                 elif attr_key == 'headquarters_country': hq_country = fb
                 elif attr_key == 'headquarters_address': hq_address = fb
@@ -1294,7 +1334,9 @@ def geocode_offices(request):
 def merge_geography_duplicates(request):
     """Merge geography entities whose coordinates are within 0.005° (~500m) of each other."""
     if request.method == 'POST':
-        from ingest.tasks.resolve import _add_alias, _normalize_mention
+        from ingest.tasks.resolve import _add_alias
+        from core.normalize import normalize_name
+        from core.models import EntityMerge
         from django.db import transaction
 
         THRESHOLD = 0.005
@@ -1323,17 +1365,26 @@ def merge_geography_duplicates(request):
             for keep_id, keep_name, dup_id, dup_name in pairs:
                 dup = Entity.objects.get(id=dup_id)
                 Relation.objects.filter(object_id=dup_id).update(object_id=keep_id)
+                Relation.objects.filter(subject_id=dup_id).update(subject_id=keep_id)
                 for alias in EntityAlias.objects.filter(entity_id=dup_id):
-                    if not EntityAlias.objects.filter(entity_id=keep_id, normalized=alias.normalized).exists():
+                    norm = normalize_name(alias.alias)  # recompute — never trust a stored column
+                    if not EntityAlias.objects.filter(entity_id=keep_id, alias_norm=norm).exists():
                         alias.entity_id = keep_id
                         alias.save(update_fields=['entity'])
                     else:
                         alias.delete()
-                norm = _normalize_mention(dup_name)
-                if not EntityAlias.objects.filter(entity_id=keep_id, normalized=norm).exists():
+                norm = normalize_name(dup_name)
+                if not EntityAlias.objects.filter(entity_id=keep_id, alias_norm=norm).exists():
                     _add_alias(str(keep_id), dup_name, norm, None)
                 dup.status = 'merged'
-                dup.save(update_fields=['status'])
+                dup.redirects_to_id = keep_id
+                dup.save(update_fields=['status', 'redirects_to'])
+                EntityMerge.objects.create(
+                    kept_id=keep_id,
+                    merged_id=dup_id,
+                    performed_by='auto:geo_dedupe',
+                    rationale={'reason': f'coords within {THRESHOLD}deg'},
+                )
                 count += 1
 
         if count:

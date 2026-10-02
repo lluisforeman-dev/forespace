@@ -245,7 +245,7 @@ def synthesise_entity_summary(self, entity_id: str):
         # This runs unconditionally (not just on score promotion) so entities
         # that were already scored by classify_entity before research ever ran
         # still get their research pipeline triggered here.
-        # Score=50 (adjacent) entities use 'space_angle' so Sonar focuses
+        # Score=50 (adjacent) entities use 'space_angle' so EigenSearch focuses
         # exclusively on their space-related activities and ignores the rest.
         effective_score = entity.space_relevance  # use post-promote value
         if effective_score is not None and effective_score >= 50:

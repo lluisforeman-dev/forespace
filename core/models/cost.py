@@ -23,7 +23,10 @@ class LLMCall(models.Model):
         'core.Entity', null=True, blank=True,
         on_delete=models.SET_NULL, related_name='llm_calls',
     )
-    task = models.CharField(max_length=20, choices=TASKS)
+    # max_length 60 — callers log names like 'synthesise_entity_summary_wk'
+    # (longer names used to exceed the old 20-char column and were silently
+    # dropped from the cost ledger by log_call's blanket except)
+    task = models.CharField(max_length=60, choices=TASKS)
     model = models.CharField(max_length=100)
     tokens_in = models.IntegerField()
     tokens_out = models.IntegerField()

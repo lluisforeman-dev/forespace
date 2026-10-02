@@ -2,9 +2,9 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: forespace
-      POSTGRES_USER: forespace
-      POSTGRES_PASSWORD: forespace
+      POSTGRES_DB: eigengraph
+      POSTGRES_USER: eigengraph
+      POSTGRES_PASSWORD: eigengraph
     ports:
       - "5432:5432"
     volumes:

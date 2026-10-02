@@ -147,9 +147,8 @@ _VALID_ENTITY_TYPES = {
     'facility', 'asset', 'person',
     'document_node', 'event', 'program',
     'funding_program',  # deployable funding instruments — grants, VC funds, loan programmes
-    'geography',        # cities, countries, regions — relation targets only, never researched
-    'end_user',   # downstream consumers of space services (not space companies themselves)
-    'geography',  # countries, regions, cities — relation targets only, never researched
+    'end_user',         # downstream consumers of space services (not space companies themselves)
+    'geography',        # countries, regions, cities — relation targets only, never researched
 }
 
 # Legal company suffixes that indicate a specific registered entity the LLM is unlikely to know.

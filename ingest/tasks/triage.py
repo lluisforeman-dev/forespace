@@ -63,7 +63,7 @@ def triage_document(self, document_id: str):
             max_tokens=100,
             temperature=0,
         )
-        log_call('triage', settings.AI_MODEL, resp, duration_ms=int((time.monotonic() - t0) * 1000))
+        log_call('triage', settings.AI_MODEL_FAST, resp, duration_ms=int((time.monotonic() - t0) * 1000))
         content = resp.choices[0].message.content
         if not content:
             logger.warning('triage_document %s: empty response, marking skipped', document_id)

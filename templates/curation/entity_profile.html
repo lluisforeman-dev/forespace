@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ entity.canonical_name }} — ForeSpace{% endblock %}
+{% block title %}{{ entity.canonical_name }} — EigenGraph{% endblock %}
 {% block content %}
 
 <style>
@@ -275,7 +275,7 @@
       <tr>
         <th>Fact</th>
         <th>Value</th>
-        <th style="width:140px">Confidence</th>
+        <th style="width:140px">Trust</th>
         <th>Sources</th>
       </tr>
     </thead>
@@ -285,10 +285,14 @@
       {% if val %}
       <tr>
         <td style="color:#6f42c1;font-size:13px">{{ f.attribute.label }}</td>
-        <td style="font-weight:500">{{ val }}{% if f.unit %} <span style="color:#888;font-size:11px">{{ f.unit }}</span>{% endif %}</td>
+        <td style="font-weight:500">
+          {{ val }}{% if f.unit %} <span style="color:#888;font-size:11px">{{ f.unit }}</span>{% endif %}
+          {% if f.effective_at %}<span style="color:#aaa;font-size:11px;margin-left:6px">as of {{ f.effective_at|date:"Y-m-d" }}</span>{% endif %}
+          {% if f.is_stale %}<span class="badge" style="background:#fff3cd;color:#856404;margin-left:6px" title="Value is {{ f.days_stale }} days past its freshness window — verify before relying on it">&#9203; stale</span>{% endif %}
+        </td>
         <td>
-          <span class="conf-bar"><span class="conf-fill {% if f.confidence >= 85 %}conf-high{% elif f.confidence >= 70 %}conf-mid{% elif f.confidence >= 50 %}conf-low{% else %}conf-poor{% endif %}" style="width:{{ f.confidence }}%"></span></span>
-          <span style="font-size:11px;color:#888;margin-left:4px">{{ f.confidence }}%</span>
+          <span class="conf-bar"><span class="conf-fill {% if f.trust >= 0.8 %}conf-high{% elif f.trust >= 0.6 %}conf-mid{% elif f.trust >= 0.4 %}conf-low{% else %}conf-poor{% endif %}" style="width:{% widthratio f.trust 1 100 %}%"></span></span>
+          <span style="font-size:11px;color:#888;margin-left:4px">{{ f.trust }}</span>
         </td>
         <td><span class="sources-pill">{{ f.source_count }} source{{ f.source_count|pluralize }}</span></td>
       </tr>

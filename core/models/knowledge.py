@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q, UniqueConstraint
 
 
 class Event(models.Model):
@@ -63,6 +64,15 @@ class Event(models.Model):
     class Meta:
         db_table = 'entity_event'
         ordering = ['-date', '-created_at']
+        constraints = [
+            # DB-level guard against duplicate event rows (added in migration 0024).
+            # Same (entity, type, date, amount) may only exist once when amount > 0.
+            UniqueConstraint(
+                fields=['entity', 'event_type', 'date', 'amount_usd'],
+                condition=Q(amount_usd__gt=0),
+                name='entity_event_dedup_amount',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.entity} · {self.event_type} · {self.date}'

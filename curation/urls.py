@@ -12,6 +12,7 @@ urlpatterns = [
     path('stop/<str:operation>/', views.stop_operation, name='stop_operation'),
     path('resume/', views.resume_tasks, name='resume_tasks'),
     path('resume/<str:operation>/', views.resume_operation, name='resume_operation'),
+    path('cascade-cap/', views.set_cascade_cap, name='set_cascade_cap'),
     path('ingest/', views.ingest_trigger, name='ingest_trigger'),
     path('stubs/', views.stubs, name='stubs'),
     path('stubs/<uuid:entity_id>/promote/', views.promote_stub, name='promote_stub'),

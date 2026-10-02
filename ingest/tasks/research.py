@@ -1,6 +1,6 @@
-"""Sonar-powered research task.
+"""EigenSearch-powered research task.
 
-Calls Perplexity Sonar (via OpenRouter) which searches the web in real time,
+Calls EigenSearch (via OpenRouter) which searches the web in real time,
 then writes four types of structured knowledge directly to the DB:
   1. Assertions  — key-value facts with confidence
   2. Events      — discrete moments in history (funding, launches, pivots, failures)
@@ -30,7 +30,7 @@ from ingest.tasks.resolve import resolve_mention, _VALID_ENTITY_TYPES
 
 logger = logging.getLogger(__name__)
 
-_SONAR_SOURCE_NAME = 'Perplexity Sonar'
+_EIGENSEARCH_SOURCE_NAME = 'EigenSearch'
 
 _SYSTEM = """\
 You are a structured data extractor for a space-industry knowledge graph.
@@ -186,6 +186,39 @@ def _attr_vocab() -> str:
     )
 
 
+def _extract_balanced_objects(text: str) -> list[str]:
+    """Return every balanced {...} substring, innermost first.
+
+    Uses a brace stack (respecting string literals and escapes) so objects are
+    emitted at ANY nesting depth — essential because a truncated response's
+    outermost object never closes, so depth-0-only scanning would find nothing.
+    Signature-key classification downstream ignores containers like the outer
+    {"claims": [...]} wrapper, which carries none of the per-object keys.
+    """
+    objects: list[str] = []
+    stack: list[int] = []
+    in_str = False
+    esc = False
+    for i, ch in enumerate(text):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == '\\':
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == '{':
+            stack.append(i)
+        elif ch == '}':
+            if stack:
+                start = stack.pop()
+                objects.append(text[start:i + 1])
+    return objects
+
+
 def _parse_json(text: str) -> dict:
     text = text.strip()
     m = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', text)
@@ -194,19 +227,36 @@ def _parse_json(text: str) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        # Truncated response — salvage complete claim objects
-        candidates = re.findall(r'\{(?:[^{}]|\{[^{}]*\})*\}', text)
-        claims = []
-        for c in candidates:
+        # Truncated response — salvage every complete object, sorted into sections
+        # by signature keys so claims AND events/fragments/relations are recovered.
+        data: dict = {'claims': [], 'events': [], 'fragments': [], 'relations': []}
+        recovered = 0
+        for raw_obj in _extract_balanced_objects(text):
             try:
-                obj = json.loads(c)
-                if isinstance(obj, dict) and 'attribute_key' in obj:
-                    claims.append(obj)
+                obj = json.loads(raw_obj)
             except json.JSONDecodeError:
-                pass
-        if claims:
-            logger.warning('Truncated JSON: recovered %d claims', len(claims))
-            return {'claims': claims, 'events': [], 'fragments': []}
+                continue
+            if not isinstance(obj, dict):
+                continue
+            if 'attribute_key' in obj:
+                data['claims'].append(obj)
+                recovered += 1
+            elif 'event_type' in obj:
+                data['events'].append(obj)
+                recovered += 1
+            elif 'category' in obj and 'text' in obj:
+                data['fragments'].append(obj)
+                recovered += 1
+            elif 'predicate' in obj and 'object_mention' in obj:
+                data['relations'].append(obj)
+                recovered += 1
+        if recovered:
+            logger.warning(
+                'Truncated JSON: recovered %d objects (%d claims, %d events, %d fragments, %d relations)',
+                recovered, len(data['claims']), len(data['events']),
+                len(data['fragments']), len(data['relations']),
+            )
+            return data
         raise
 
 
@@ -226,15 +276,15 @@ def _map_value(value, unit, datatype: str) -> dict:
     return {'value_text': str(value)[:500] if value is not None else ''}
 
 
-def _get_or_create_url_doc(source_url: str, sonar_source: Source) -> Document:
+def _get_or_create_url_doc(source_url: str, search_source: Source) -> Document:
     src_trust = domain_trust(source_url)
     url_sha = hashlib.sha256(source_url.encode()).hexdigest()
     doc, _ = Document.objects.get_or_create(
         content_sha256=url_sha,
         defaults={
-            'source': sonar_source,
+            'source': search_source,
             'url': source_url,
-            'storage_key': 'sonar-url',
+            'storage_key': 'eigensearch-url',
             'title': source_url[:200],
             'pipeline_status': 'done',
             'trust_override': src_trust,
@@ -263,7 +313,7 @@ def _parse_date_flexible(date_str) -> tuple:
 def _entity_context_block(topic: str) -> str:
     """
     Build a compact summary of what we already know about an entity.
-    Injected into the Sonar prompt so it searches for gaps, not duplicates.
+    Injected into the EigenSearch prompt so it searches for gaps, not duplicates.
     Returns empty string if entity not found or has no data.
     """
     from django.db.models import Q
@@ -355,7 +405,7 @@ Think about: technology & products, key people & leadership,
 contracts & customers, partnerships & competition, regulatory & licensing history.
 
 Return JSON only: {"angles": ["...", "..."]}
-Include the entity name or a clear disambiguator in each angle so Sonar doesn't confuse
+Include the entity name or a clear disambiguator in each angle so EigenSearch doesn't confuse
 it with unrelated entities (e.g. if the entity could be mistaken for something else,
 add a clarifying term like "space", "aerospace", "satellite", etc.)."""
 
@@ -425,10 +475,10 @@ def _seen_urls_recent(days: int, limit: int = 50) -> str:
     return '\n'.join(urls)
 
 
-def _sonar_source() -> Source:
+def _eigensearch_source() -> Source:
     source, _ = Source.objects.get_or_create(
-        name=_SONAR_SOURCE_NAME,
-        defaults={'kind': 'llm', 'base_trust': 65, 'domain': 'perplexity.ai'},
+        name=_EIGENSEARCH_SOURCE_NAME,
+        defaults={'kind': 'llm', 'base_trust': 65, 'domain': 'openrouter.ai'},
     )
     return source
 
@@ -578,7 +628,7 @@ def _is_same_story(desc_a: str, desc_b: str, title_a: str, title_b: str) -> bool
         return False
 
 
-def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source, subject_context: str = '', primary_entity_id: str | None = None, primary_entity_norm: str | None = None) -> tuple[int, set]:
+def _store_events(events: list, name_to_id: dict, fallback_doc: Document, search_source: Source, subject_context: str = '', primary_entity_id: str | None = None, primary_entity_norm: str | None = None) -> tuple[int, set]:
     """Persist extracted events, resolving participant entity names.
     Returns (stored_count, entity_ids) where entity_ids includes all subjects and participants."""
     valid_types = {t[0] for t in Event.EVENT_TYPES}
@@ -618,7 +668,7 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
         confidence = _CONF_MAP.get(ev.get('confidence', 'medium'), 62)
 
         source_url = ev.get('source_url')
-        ev_doc = _get_or_create_url_doc(source_url, sonar_source) if source_url else fallback_doc
+        ev_doc = _get_or_create_url_doc(source_url, search_source) if source_url else fallback_doc
 
         amount_raw = ev.get('amount_usd')
         amount_usd = None
@@ -724,7 +774,7 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, sonar_
     return stored, entity_ids
 
 
-def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, sonar_source: Source, subject_context: str = '', primary_entity_id: str | None = None, primary_entity_norm: str | None = None) -> tuple[int, set]:
+def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, search_source: Source, subject_context: str = '', primary_entity_id: str | None = None, primary_entity_norm: str | None = None) -> tuple[int, set]:
     """Persist knowledge fragments. Returns (stored_count, entity_ids)."""
     valid_cats = {c[0] for c in KnowledgeFragment.CATEGORIES}
     stored = 0
@@ -755,7 +805,7 @@ def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, 
         date_val, _ = _parse_date_flexible(frag.get('date_of_information'))
 
         source_url = frag.get('source_url')
-        frag_doc = _get_or_create_url_doc(source_url, sonar_source) if source_url else fallback_doc
+        frag_doc = _get_or_create_url_doc(source_url, search_source) if source_url else fallback_doc
 
         try:
             KnowledgeFragment.objects.create(
@@ -773,8 +823,8 @@ def _store_fragments(fragments: list, name_to_id: dict, fallback_doc: Document, 
     return stored, entity_ids
 
 
-def _store_relations(relations: list, fallback_doc: Document, sonar_source: Source, subject_context: str = '', primary_entity_id: str | None = None, primary_entity_norm: str | None = None) -> tuple[int, set]:
-    """Persist inline-extracted relations from Sonar output. Returns (stored_count, entity_ids)."""
+def _store_relations(relations: list, fallback_doc: Document, search_source: Source, subject_context: str = '', primary_entity_id: str | None = None, primary_entity_norm: str | None = None) -> tuple[int, set]:
+    """Persist inline-extracted relations from EigenSearch output. Returns (stored_count, entity_ids)."""
     valid_predicates = {p.key for p in PredicateDef.objects.all()}
     if not valid_predicates:
         logger.warning('_store_relations: no predicates — run seed_predicates first')
@@ -808,7 +858,7 @@ def _store_relations(relations: list, fallback_doc: Document, sonar_source: Sour
         description = (rel.get('description') or '').strip()[:500]
 
         source_url = rel.get('source_url')
-        rel_doc = _get_or_create_url_doc(source_url, sonar_source) if source_url else fallback_doc
+        rel_doc = _get_or_create_url_doc(source_url, search_source) if source_url else fallback_doc
 
         try:
             with transaction.atomic():
@@ -971,7 +1021,7 @@ def _geocode_with_fallback(address: str) -> tuple[float, float] | tuple[None, No
             r = _req.get(
                 'https://nominatim.openstreetmap.org/search',
                 params=params,
-                headers={'User-Agent': 'ForeSpace/1.0 (space-industry knowledge graph)'},
+                headers={'User-Agent': 'EigenGraph/1.0 (space-industry knowledge graph)'},
                 timeout=5,
             )
             results = r.json()
@@ -1065,7 +1115,7 @@ def extract_supply_chain(entity_id: str):
             attribute_id=attr_key,
             value_text=value,
             method='structured_api',
-            confidence=0.80,
+            confidence=80,  # 0-100 integer — NOT a 0-1 fraction
             status='candidate',
             valid_range=DateTimeTZRange(now, None),
         )
@@ -1205,7 +1255,7 @@ def classify_supply_chain(entity_id: str):
             attribute_id='value_chain_tier',
             value_text=tier,
             method='structured_api',
-            confidence=0.85,
+            confidence=85,  # 0-100 integer — NOT a 0-1 fraction
             status='candidate',
             valid_range=DateTimeTZRange(now, None),
         )
@@ -1327,7 +1377,7 @@ def _nominatim_geocode(address: str) -> tuple[float, float] | tuple[None, None]:
         r = _req.get(
             'https://nominatim.openstreetmap.org/search',
             params={'q': address, 'format': 'json', 'limit': 1},
-            headers={'User-Agent': 'ForeSpace/1.0 (space-industry knowledge graph)'},
+            headers={'User-Agent': 'EigenGraph/1.0 (space-industry knowledge graph)'},
             timeout=5,
         )
         results = r.json()
@@ -1430,13 +1480,13 @@ def _geocode_office_relations(topic: str, assertion_ids: list) -> None:
             _time.sleep(1.1)
 
 
-from ingest.pause import is_paused, PAUSE_FLAG  # noqa: F401 (PAUSE_FLAG kept for compat)
+from ingest.pause import is_paused, PAUSE_FLAG, get_cascade_cap  # noqa: F401 (PAUSE_FLAG kept for compat)
 
 
 @shared_task(bind=True, queue='extract', max_retries=2, default_retry_delay=30)
 def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth: int = 0, search_angle: str = None):
     """
-    Use Perplexity Sonar to research a topic and write structured knowledge to the DB.
+    Use EigenSearch to research a topic and write structured knowledge to the DB.
     topic_type: 'company' | 'question' | 'news'
     """
     if is_paused('research'):
@@ -1678,12 +1728,12 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             f'{_seen_block(seen)}'
         )
 
-    model = settings.AI_MODEL_SONAR
+    model = settings.AI_MODEL_EIGENSEARCH
     run = ExtractionRun.objects.create(
         task=f'research_{topic_type}',
         prompt_sha256=hashlib.sha256(user_msg.encode()).hexdigest(),
         model=model,
-        code_version='sonar-v3',
+        code_version='eigensearch-v4',
     )
 
     try:
@@ -1720,17 +1770,17 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
     fragments = data.get('fragments', [])
     relations = data.get('relations', [])
 
-    # Synthetic Document for the Sonar response
-    source = _sonar_source()
+    # Synthetic Document for the EigenSearch response
+    source = _eigensearch_source()
     content_sha = hashlib.sha256(raw.encode()).hexdigest()
     doc, _ = Document.objects.get_or_create(
         content_sha256=content_sha,
         defaults={
             'source': source,
-            'storage_key': 'sonar',
+            'storage_key': 'eigensearch',
             'text_content': raw,
             'pipeline_status': 'done',
-            'title': f'Sonar: {topic[:200]}',
+            'title': f'EigenSearch: {topic[:200]}',
         },
     )
 
@@ -1763,20 +1813,26 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         src_trust = domain_trust(source_url)
         claim_doc = _get_or_create_url_doc(source_url, source) if source_url else doc
 
+        # Truth decay (§8a): the claim's recency anchor is the date the value was
+        # TRUE in the world (as_of), not the date we asked the LLM. A "100 employees
+        # as of 2016" claim researched in 2026 takes the full volatility penalty for
+        # volatile attributes; immutable attributes (volatility_days=None) don't decay.
+        as_of_raw = claim.get('as_of')
+        as_of = parse_date(str(as_of_raw)) if as_of_raw else None
+        as_of_dt = (
+            datetime.combine(as_of, datetime.min.time()).replace(tzinfo=tz.utc)
+            if as_of else None
+        )
+
         confidence = compute_score(
             extractor_confidence=extractor_conf,
             source_base_trust=src_trust,
             source_kind='trade_press' if src_trust >= 70 else 'aggregator',
-            document_published_at=None,
+            document_published_at=as_of_dt or claim_doc.published_at,
             volatility_days=attr.volatility_days,
         )
 
-        as_of_raw = claim.get('as_of')
-        as_of = parse_date(str(as_of_raw)) if as_of_raw else None
-        range_start = (
-            datetime.combine(as_of, datetime.min.time()).replace(tzinfo=tz.utc)
-            if as_of else timezone.now()
-        )
+        range_start = as_of_dt or timezone.now()
 
         try:
             with transaction.atomic():
@@ -1835,7 +1891,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
     # ── Store fragments ───────────────────────────────────────────────────
     fragments_stored, fragment_entity_ids = _store_fragments(fragments, name_to_id, doc, source, subject_context=_subject_ctx, primary_entity_id=_primary_id, primary_entity_norm=_primary_norm)
 
-    # ── Store relations (inline — Sonar had full web context) ─────────────
+    # ── Store relations (inline — EigenSearch had full web context) ─────────────
     relations_stored, relation_entity_ids = _store_relations(relations, doc, source, subject_context=_subject_ctx, primary_entity_id=_primary_id, primary_entity_norm=_primary_norm)
 
     # ── Finalise run ──────────────────────────────────────────────────────
@@ -1913,7 +1969,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             .filter(id__in=entity_id_strs)
             .exclude(status='merged')
             .exclude(entity_type='geography')  # cities/countries are relation targets, never researched
-            .exclude(space_relevance__lt=50, space_relevance__isnull=False)  # Sonar for 50+, null, skip 0/20
+            .exclude(space_relevance__lt=50, space_relevance__isnull=False)  # EigenSearch for 50+, null, skip 0/20
             .annotate(assertion_count=Count(
                 'assertions',
                 filter=_Q(assertions__status='accepted'),
@@ -1921,6 +1977,16 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             .order_by('assertion_count')  # least known first
             .only('id', 'canonical_name', 'entity_type', 'status')
         )
+
+        # Cascade depth cap (dashboard-editable). Children of this run would be at
+        # cascade_depth + 1; stop as soon as that would exceed the cap.
+        max_depth = get_cascade_cap()
+        if cascade_depth + 1 > max_depth:
+            logger.info(
+                'research_topic: cascade stopped at depth %d (cap=%d) after "%s"',
+                cascade_depth + 1, max_depth, topic,
+            )
+            all_discovered = []
 
         for i, discovered in enumerate(all_discovered):
             name = discovered.canonical_name
@@ -1953,7 +2019,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             countdown=240,  # 4 min after primary
         )
         logger.info('research_topic: research call queued "%s"', topic)
-    if topic_type in ('company', 'space_angle') and cascade_depth == 0 and search_angle is None:
+
         angles = _generate_search_angles(topic, topic_type)
         for i, angle in enumerate(angles):
             research_topic.apply_async(

@@ -19,7 +19,7 @@ from core.models import Classification, Entity, Assertion, Taxonomy
 
 logger = logging.getLogger(__name__)
 
-CACHE_KEY = 'forespace:analytics:snapshot'
+CACHE_KEY = 'eigengraph:analytics:snapshot'
 CACHE_TTL = 60 * 60 * 6   # 6 hours
 
 

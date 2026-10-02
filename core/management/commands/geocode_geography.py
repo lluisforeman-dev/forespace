@@ -29,7 +29,7 @@ class Command(BaseCommand):
                 r = requests.get(
                     'https://nominatim.openstreetmap.org/search',
                     params={'q': ent.canonical_name, 'format': 'json', 'limit': 1},
-                    headers={'User-Agent': 'ForeSpace/1.0 (space-industry knowledge graph)'},
+                    headers={'User-Agent': 'EigenGraph/1.0 (space-industry knowledge graph)'},
                     timeout=5,
                 )
                 results = r.json()

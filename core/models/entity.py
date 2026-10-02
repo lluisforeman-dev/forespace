@@ -39,7 +39,10 @@ class Entity(models.Model):
     )
     watchlist = models.BooleanField(default=False)  # priority=2× in scheduler
     # 0 = confirmed non-space, 100 = confirmed space-relevant, null = unknown
-    space_relevance = models.SmallIntegerField(null=True, blank=True)
+    space_relevance = models.SmallIntegerField(
+        null=True, blank=True,
+        help_text='0 = confirmed non-space, 100 = confirmed space-relevant, null = unknown',
+    )
     # Geocoded HQ coordinates — set from headquarters_address (precise) or city/country (approx)
     latitude           = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     longitude          = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)

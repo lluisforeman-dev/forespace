@@ -14,6 +14,8 @@ Key scaling properties:
 Safe to run repeatedly — already-merged and already-decided pairs are always skipped.
 Use dry_run=True to preview without writing.
 """
+from __future__ import annotations
+
 import logging
 
 import json
@@ -21,6 +23,8 @@ import json
 from celery import shared_task
 from django.conf import settings
 from django.db import connection, transaction
+from django.utils import timezone
+from psycopg2.extras import DateTimeTZRange
 
 from core.normalize import normalize_name
 
@@ -256,15 +260,33 @@ def _process_pairs(pairs, decided_pairs, merged_ids, entity_type_map,
     return merged_count, skipped_count
 
 
+def _ranges_overlap(a, b) -> bool:
+    """Do two psycopg DateTimeTZRange objects overlap? None bounds = unbounded."""
+    a_lower, a_upper = a.lower, a.upper
+    b_lower, b_upper = b.lower, b.upper
+    if (a_lower is None and a_upper is None) or (b_lower is None and b_upper is None):
+        return True
+    # Ranges are '[)' — a includes its lower, excludes its upper.
+    left_ok = a_lower is None or b_upper is None or a_lower < b_upper
+    right_ok = b_lower is None or a_upper is None or b_lower < a_upper
+    return left_ok and right_ok
+
+
 def execute_merge(kept_id: str, merged_id: str, rationale: dict, performed_by: str = 'auto:dedup_sweep') -> None:
     """Merge entity `merged_id` into `kept_id`.
 
     Transfers all data to the kept entity, marks merged as status='merged',
     sets redirects_to, and writes an EntityMerge audit record.
+
+    Before transferring assertions, any merged assertion that would overlap a
+    live kept assertion for the same attribute is superseded (valid_range closed
+    at now) — otherwise the no_overlapping_validity GiST constraint aborts the
+    whole merge and the pair is retried (and re-LLM'd) on every future sweep.
     """
     from core.models import (
-        Assertion, Entity, EntityAlias, EntityMerge, EntityNonMerge, EntitySummary,
-        Event, KnowledgeFragment, Relation,
+        Assertion, Classification, Entity, EntityAlias, EntityIdentifier,
+        EntityMerge, EntityNonMerge, EntitySummary, Event, KnowledgeFragment,
+        LLMCall, Relation,
     )
     from ingest.tasks.resolve import _add_alias
 
@@ -277,6 +299,45 @@ def execute_merge(kept_id: str, merged_id: str, rationale: dict, performed_by: s
 
         # Register merged entity's canonical name as alias on kept
         _add_alias(kept_id, merged.canonical_name, normalize_name(merged.canonical_name), None)
+
+        # ── Avoid no_overlapping_validity violations ─────────────────────
+        # Supersede merged's live assertions whose attribute also has a live,
+        # overlapping assertion on kept. Close their valid_range at now so the
+        # bitemporal history stays honest.
+        kept_live = list(
+            Assertion.objects
+            .filter(entity=kept, status='accepted', superseded_at__isnull=True)
+            .values_list('attribute_id', 'valid_range')
+        )
+        kept_ranges: dict[str, list] = {}
+        for attribute_id, rng in kept_live:
+            kept_ranges.setdefault(attribute_id, []).append(rng)
+
+        superseded_conflicts = 0
+        for a in Assertion.objects.filter(
+            entity=merged, status='accepted', superseded_at__isnull=True,
+        ):
+            rng = a.valid_range
+            candidates = kept_ranges.get(a.attribute_id, [])
+            if not candidates:
+                continue  # no kept value for this attribute — transfer freely
+            if rng is None or rng.lower is None:
+                overlaps = True  # open-ended merged value overlaps anything
+            else:
+                overlaps = any(_ranges_overlap(rng, k) for k in candidates)
+            if overlaps:
+                now_ts = timezone.now()
+                lower = rng.lower or now_ts
+                a.valid_range = DateTimeTZRange(lower, now_ts)
+                a.superseded_at = now_ts
+                a.status = 'superseded'
+                a.save(update_fields=['valid_range', 'superseded_at', 'status'])
+                superseded_conflicts += 1
+        if superseded_conflicts:
+            logger.info(
+                'execute_merge: superseded %d conflicting assertion(s) from "%s"',
+                superseded_conflicts, merged.canonical_name,
+            )
 
         # Transfer assertions, events, fragments
         Assertion.objects.filter(entity=merged).update(entity=kept)
@@ -294,6 +355,28 @@ def execute_merge(kept_id: str, merged_id: str, rationale: dict, performed_by: s
             ev.participants.remove(merged)
             if ev.entity_id != kept.id:
                 ev.participants.add(kept)
+
+        # Transfer external identifiers — skip any (scheme, value) already
+        # anchored to kept (unique constraint would abort the merge)
+        for ident in EntityIdentifier.objects.filter(entity=merged):
+            try:
+                with transaction.atomic():  # savepoint — contains a constraint failure
+                    ident.entity = kept
+                    ident.save(update_fields=['entity'])
+            except Exception:
+                ident.entity = merged  # revert in-memory; row keeps pointing at merged
+
+        # Transfer classifications, then drop exact duplicates (same node)
+        Classification.objects.filter(entity=merged).update(entity=kept)
+        seen_nodes: set = set()
+        for c in list(Classification.objects.filter(entity=kept).order_by('id')):
+            if c.node_id in seen_nodes:
+                c.delete()
+            else:
+                seen_nodes.add(c.node_id)
+
+        # Re-point cost-ledger entries so per-entity cost analytics survive merges
+        LLMCall.objects.filter(entity=merged).update(entity=kept)
 
         # Delete duplicate summary (kept entity's summary takes precedence)
         EntitySummary.objects.filter(entity=merged).delete()

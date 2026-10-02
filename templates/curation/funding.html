@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load curation_tags %}
-{% block title %}Funding Intelligence — ForeSpace{% endblock %}
+{% block title %}Funding Intelligence — EigenGraph{% endblock %}
 {% block content %}
 
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
@@ -59,7 +59,7 @@
           <div style="flex:1;min-width:0;">
             <!-- Title + call status badge + apply button -->
             <div style="font-weight:600;font-size:13px;color:#1a1a2e;margin-bottom:3px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
-              {% if ev.source and ev.source.url and ev.source.url != 'sonar' %}
+              {% if ev.source and ev.source.url %}
                 <a href="{{ ev.source.url }}" target="_blank" rel="noopener" style="color:#1a1a2e;">{{ ev.title }}</a>
               {% else %}
                 {{ ev.title }}
@@ -178,7 +178,7 @@
              style="padding:1px 8px;border-radius:4px;font-size:11px;font-weight:600;
                     background:{% if call.call_status == 'upcoming' %}#d97706{% else %}#16a34a{% endif %};color:#fff;">
             Apply →</a>
-          {% elif call.source and call.source.url and call.source.url != 'sonar' %}
+          {% elif call.source and call.source.url %}
           <a href="{{ call.source.url }}" target="_blank" rel="noopener"
              style="color:#0066cc;">→ details</a>
           {% endif %}

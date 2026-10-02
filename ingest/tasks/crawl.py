@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 
 _HEADERS = {
     'User-Agent': (
-        'ForeSpace/0.1 (space-industry knowledge graph; '
+        'EigenGraph/0.1 (space-industry knowledge graph; '
+        # TODO: still the registered contact domain — switch to eigengraph.io
+        # once that domain is live and mail is reachable there.
         'contact@forespace.io) +https://forespace.io/bot'
     ),
     'Accept': 'text/html,application/xhtml+xml,*/*',
@@ -33,10 +35,10 @@ def crawl_url(
     source_kind: str = 'trade_press',
     source_trust: int = 60,
 ):
+    """Fetch *url*, deduplicate by SHA-256, create Document, enqueue parse."""
     from ingest.pause import is_paused
     if is_paused('crawl'):
         return
-    """Fetch *url*, deduplicate by SHA-256, create Document, enqueue parse."""
     try:
         resp = requests.get(url, headers=_HEADERS, timeout=30, allow_redirects=True)
         resp.raise_for_status()

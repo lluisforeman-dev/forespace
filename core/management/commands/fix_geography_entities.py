@@ -13,7 +13,7 @@ from core.models import Entity, Relation
 
 logger = logging.getLogger(__name__)
 
-_HEADERS = {'User-Agent': 'ForeSpace/1.0 (space-industry knowledge graph)'}
+_HEADERS = {'User-Agent': 'EigenGraph/1.0 (space-industry knowledge graph)'}
 
 
 def _geocode(name):

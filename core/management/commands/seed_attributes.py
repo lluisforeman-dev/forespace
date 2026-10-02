@@ -484,6 +484,54 @@ ATTRIBUTES = [
         'volatility_days': None,
         'description': 'Nominal orbital altitude in kilometres above Earth\'s surface.',
     },
+    # ── Supply chain (multi-valued; extracted by extract_supply_chain) ──────
+    {
+        'key': 'output',
+        'entity_type': 'company',
+        'label': 'Product / Service Output',
+        'datatype': 'text',
+        'cardinality': 'multi',
+        'is_projected': False,
+        'is_promoted': False,
+        'volatility_days': 365,
+        'description': (
+            'One SPECIFIC product or service this organisation sells or delivers — use the actual '
+            'product name with key specs where available ("BGT-X5 green monopropellant thruster", '
+            '"Dove optical imaging satellite"). Never a category: "propulsion systems" is wrong, '
+            '"1N hydrazine thruster for CubeSats" is right. One assertion per output.'
+        ),
+    },
+    {
+        'key': 'input',
+        'entity_type': 'company',
+        'label': 'Sourced Input',
+        'datatype': 'text',
+        'cardinality': 'multi',
+        'is_projected': False,
+        'is_promoted': False,
+        'volatility_days': 365,
+        'description': (
+            'One specific thing this organisation needs to source from suppliers, inferred from what '
+            'it builds or operates ("radiation-hardened microprocessors", "xenon propellant", '
+            '"CFRP honeycomb panels"). One assertion per input.'
+        ),
+    },
+    {
+        'key': 'value_chain_tier',
+        'entity_type': 'company',
+        'label': 'Value Chain Tier Path',
+        'datatype': 'text',
+        'cardinality': 'multi',
+        'is_projected': False,
+        'is_promoted': False,
+        'volatility_days': 365,
+        'description': (
+            'Supply chain tier as a dotted path LEVEL1.LEVEL2.specifics, e.g. '
+            '"upstream.components.ion_thrusters" or "downstream.earth_observation". LEVEL1 is one of '
+            'upstream|midstream|downstream|institutional|other; LEVEL2 must be a known market segment. '
+            'One assertion per distinct market position.'
+        ),
+    },
 ]
 
 

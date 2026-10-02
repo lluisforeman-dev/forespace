@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Research Insights — ForeSpace{% endblock %}
+{% block title %}Research Insights — EigenGraph{% endblock %}
 {% block content %}
 
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
@@ -45,7 +45,7 @@
         <div style="flex:1;min-width:0;">
           <!-- Title -->
           <div style="font-weight:600;font-size:13px;color:#1a1a2e;margin-bottom:3px;">
-            {% if ev.source and ev.source.url and ev.source.url != 'sonar' %}
+            {% if ev.source and ev.source.url %}
               <a href="{{ ev.source.url }}" target="_blank" rel="noopener" style="color:#1a1a2e;">{{ ev.title }}</a>
             {% else %}
               {{ ev.title }}
@@ -106,7 +106,7 @@
             {% if frag.date_of_information %}
               &nbsp;·&nbsp;{{ frag.date_of_information|date:"M Y" }}
             {% endif %}
-            {% if frag.source and frag.source.url and frag.source.url != 'sonar' %}
+            {% if frag.source and frag.source.url %}
               &nbsp;·&nbsp;<a href="{{ frag.source.url }}" target="_blank" rel="noopener" style="color:#888;">source</a>
             {% endif %}
           </div>

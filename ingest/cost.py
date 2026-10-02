@@ -4,6 +4,7 @@ Log every call: model, tokens in/out, cost, task, run, entity.
 cost-per-entity-per-month is the primary economic viability metric.
 """
 from __future__ import annotations
+import logging
 import time
 from decimal import Decimal
 
@@ -14,10 +15,11 @@ _RATES: dict[str, tuple[float, float]] = {
     'openai/gpt-4o-mini': (0.00015, 0.0006),
     'openai/gpt-4o': (0.0025, 0.01),
     'openai/gpt-5.6-luna': (0.003, 0.015),
+    # Web-research variant of the main model (used by research_topic).
+    # Priced as the base model — OpenRouter's small online surcharge not itemised.
+    'openai/gpt-5.6-luna:online': (0.003, 0.015),
     'anthropic/claude-3-haiku': (0.00025, 0.00125),
     'anthropic/claude-3.5-sonnet': (0.003, 0.015),
-    'perplexity/llama-3.1-sonar-small-128k-online': (0.0002, 0.0002),
-    'perplexity/llama-3.1-sonar-large-128k-online': (0.001, 0.001),
 }
 _DEFAULT = (0.001, 0.003)
 
@@ -52,5 +54,6 @@ def log_call(
             cost_usd=estimate_cost(model, usage.prompt_tokens, usage.completion_tokens),
             duration_ms=duration_ms,
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        # Never break the pipeline, but make ledger gaps visible in worker logs.
+        logging.getLogger(__name__).warning('log_call(%s): cost row lost — %s', task, exc)

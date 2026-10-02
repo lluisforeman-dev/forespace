@@ -74,7 +74,7 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # --- Database (Postgres required — MySQL cannot run this schema) ---
 DATABASES = {
     'default': {
-        **env.db('DATABASE_URL', default='postgresql://localhost/forespace'),
+        **env.db('DATABASE_URL', default='postgresql://localhost/eigengraph'),
         'CONN_MAX_AGE': 300,        # pool_recycle equivalent
         'CONN_HEALTH_CHECKS': True, # pool_pre_ping equivalent
     }
@@ -98,15 +98,19 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
 CELERY_TASK_TRACK_STARTED = True
 CELERY_RESULT_EXPIRES = 3600   # expire stored results after 1 hour
-CELERY_TASK_EXPIRES = 3600     # discard queued tasks not picked up within 1 hour
+# 12h — 1h silently DISCARDED queued tasks while the extract queue backed up
+# (cascade countdowns alone can run to hours). Results still expire hourly.
+CELERY_TASK_EXPIRES = 43200
 
 # --- AI — OpenRouter (same keys as astronode) ---
 AI_API_KEY = env('AI_API_KEY', default='')
 AI_API_URL = env('AI_API_URL', default='https://openrouter.ai/api/v1')
 AI_MODEL = env('AI_MODEL', default='openai/gpt-5.6-luna')
 AI_MODEL_PROSE = env('AI_MODEL_PROSE', default='openai/gpt-5.6-luna')
-AI_MODEL_SONAR = env('AI_MODEL_SONAR', default='openai/gpt-5.6-luna:online')
-AI_MODEL_FAST = env('AI_MODEL_FAST', default='openai/gpt-5.6-luna')  # cheap model for mechanical tasks
+AI_MODEL_EIGENSEARCH = env('AI_MODEL_EIGENSEARCH', default='openai/gpt-5.6-luna:online')
+# Cheap model for mechanical tasks (triage, resolve, classify, dedup). Must differ
+# from AI_MODEL — triage alone is most of the call volume. render.yaml sets this too.
+AI_MODEL_FAST = env('AI_MODEL_FAST', default='openai/gpt-4o-mini')
 
 # --- Mail — Hostinger SMTP (same as astronode) ---
 EMAIL_HOST = env('MAIL_SERVER', default='smtp.hostinger.com')

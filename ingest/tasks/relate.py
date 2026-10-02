@@ -58,7 +58,7 @@ CRITICAL RULES:
 - Never invent relations not stated in the document.
 - Return JSON: {"relations": [...]}"""
 
-_SYSTEM_SONAR = """\
+_SYSTEM_EIGENSEARCH = """\
 You are a relation extractor for a space-industry knowledge graph.
 You are given a list of known entities and a research text about them.
 Identify all meaningful relationships between these entities.
@@ -182,9 +182,9 @@ def extract_relations(self, document_id: str):
 
 
 @shared_task(bind=True, queue='extract', max_retries=2)
-def extract_relations_sonar(self, document_id: str, entity_names: list[str]):
+def extract_relations_eigensearch(self, document_id: str, entity_names: list[str]):
     """
-    Extract relations from a Sonar research document.
+    Extract relations from a EigenSearch research document.
     Less strict than extract_relations — no verbatim quote check, slightly lower base confidence.
     """
     try:
@@ -212,7 +212,7 @@ def extract_relations_sonar(self, document_id: str, entity_names: list[str]):
         resp = get_client().chat.completions.create(
             model=model,
             messages=[
-                {'role': 'system', 'content': get_prompt('relate_sonar', _SYSTEM_SONAR)},
+                {'role': 'system', 'content': get_prompt('relate_eigensearch', _SYSTEM_EIGENSEARCH)},
                 {'role': 'user', 'content': user_msg},
             ],
             response_format={'type': 'json_object'},
@@ -223,7 +223,7 @@ def extract_relations_sonar(self, document_id: str, entity_names: list[str]):
         raw = json.loads(resp.choices[0].message.content)
         relations = raw.get('relations', [])
     except Exception as exc:
-        logger.error('extract_relations_sonar %s error: %s', document_id, exc)
+        logger.error('extract_relations_eigensearch %s error: %s', document_id, exc)
         raise self.retry(exc=exc)
 
     valid_predicates = {p.key for p in PredicateDef.objects.all()}
@@ -278,10 +278,10 @@ def extract_relations_sonar(self, document_id: str, entity_names: list[str]):
                     )
             created += 1
         except Exception as e:
-            logger.debug('extract_relations_sonar: skipping relation %s→%s: %s', subject_mention, object_mention, e)
+            logger.debug('extract_relations_eigensearch: skipping relation %s→%s: %s', subject_mention, object_mention, e)
             skipped += 1
 
-    logger.info('extract_relations_sonar %s: %d created, %d skipped', document_id, created, skipped)
+    logger.info('extract_relations_eigensearch %s: %d created, %d skipped', document_id, created, skipped)
     if created:
         from ingest.tasks.project import refresh_relation_current
         refresh_relation_current.apply_async(countdown=5)

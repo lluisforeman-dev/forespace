@@ -8,19 +8,27 @@ Usage in a task:
     if is_paused('supply_chain'):
         return
 """
-GLOBAL_FLAG = 'forespace:pause:global'
+GLOBAL_FLAG = 'eigengraph:pause:global'
+
+# ── Cascade depth cap ────────────────────────────────────────────────────────
+# How deep research_topic may cascade: depth 0 = the run you triggered;
+# its auto-queued children are depth 1, their children depth 2, etc.
+# Stored in Redis so it is editable live from the dashboard without a deploy.
+# A Redis flush resets it to the default.
+CASCADE_CAP_KEY = 'eigengraph:cascade:max_depth'
+DEFAULT_CASCADE_CAP = 2
 
 # Named operation flags — each maps to one or more task functions
 OPERATIONS = {
-    'research':                'forespace:pause:research',
-    'supply_chain_extract':    'forespace:pause:supply_chain_extract',
-    'supply_chain_classify':   'forespace:pause:supply_chain_classify',
-    'summarise':               'forespace:pause:summarise',
-    'classify':                'forespace:pause:classify',
-    'assess':                  'forespace:pause:assess',
-    'locations':               'forespace:pause:locations',
-    'geocode':                 'forespace:pause:geocode',
-    'crawl':                   'forespace:pause:crawl',
+    'research':                'eigengraph:pause:research',
+    'supply_chain_extract':    'eigengraph:pause:supply_chain_extract',
+    'supply_chain_classify':   'eigengraph:pause:supply_chain_classify',
+    'summarise':               'eigengraph:pause:summarise',
+    'classify':                'eigengraph:pause:classify',
+    'assess':                  'eigengraph:pause:assess',
+    'locations':               'eigengraph:pause:locations',
+    'geocode':                 'eigengraph:pause:geocode',
+    'crawl':                   'eigengraph:pause:crawl',
 }
 
 # Keep backward-compat alias for old code that used PAUSE_FLAG
@@ -77,3 +85,21 @@ def paused_operations() -> list:
         return result
     except Exception:
         return []
+
+
+def get_cascade_cap() -> int:
+    """Return the current cascade depth cap (default DEFAULT_CASCADE_CAP)."""
+    try:
+        raw = _redis().get(CASCADE_CAP_KEY)
+        if raw is None:
+            return DEFAULT_CASCADE_CAP
+        return max(0, min(10, int(raw)))
+    except Exception:
+        return DEFAULT_CASCADE_CAP
+
+
+def set_cascade_cap(depth: int) -> int:
+    """Set the cascade depth cap (0 = no auto-cascade at all). Clamped to 0-10."""
+    depth = max(0, min(10, int(depth)))
+    _redis().set(CASCADE_CAP_KEY, depth)
+    return depth

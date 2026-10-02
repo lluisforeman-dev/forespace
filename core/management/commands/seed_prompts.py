@@ -20,7 +20,7 @@ class Command(BaseCommand):
         # Each import pulls the module-level constant directly.
         from ingest.tasks.triage import _SYSTEM as TRIAGE
         from ingest.tasks.extract import _SYSTEM as EXTRACT_CLAIMS
-        from ingest.tasks.relate import _SYSTEM as RELATE_DOC, _SYSTEM_SONAR as RELATE_SONAR
+        from ingest.tasks.relate import _SYSTEM as RELATE_DOC, _SYSTEM_EIGENSEARCH as RELATE_EIGENSEARCH
         from ingest.tasks.resolve import _LLM_RESOLVE_SYSTEM as RESOLVE
         from ingest.tasks.synthesize import _SYSTEM as SYNTHESIZE
         from ingest.tasks.summarise import _SYSTEM as SUMMARISE
@@ -44,7 +44,7 @@ class Command(BaseCommand):
             dict(
                 key='research_main',
                 label='Main Research Extractor',
-                description='Powers all Sonar web research calls. Defines the 4-section output: claims, events, fragments, relations.',
+                description='Powers all EigenSearch web research calls. Defines the 4-section output: claims, events, fragments, relations.',
                 system_prompt=RESEARCH_MAIN,
             ),
             dict(
@@ -56,7 +56,7 @@ class Command(BaseCommand):
             dict(
                 key='extract_claims',
                 label='Document Claim Extractor',
-                description='Extracts structured key-value claims from raw documents (non-Sonar path). Requires verbatim quotes.',
+                description='Extracts structured key-value claims from raw documents (non-EigenSearch path). Requires verbatim quotes.',
                 system_prompt=EXTRACT_CLAIMS,
             ),
             dict(
@@ -66,10 +66,10 @@ class Command(BaseCommand):
                 system_prompt=RELATE_DOC,
             ),
             dict(
-                key='relate_sonar',
-                label='Relation Extractor (Sonar)',
-                description='Extracts relations from Sonar research text. Approximate quotes accepted.',
-                system_prompt=RELATE_SONAR,
+                key='relate_eigensearch',
+                label='Relation Extractor (EigenSearch)',
+                description='Extracts relations from EigenSearch research text. Approximate quotes accepted.',
+                system_prompt=RELATE_EIGENSEARCH,
             ),
             dict(
                 key='resolve_entity',

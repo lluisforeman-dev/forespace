@@ -93,15 +93,50 @@ def score(
     return _clamp(s)
 
 
-def display_trust(confidence: int, observed_at: datetime, volatility_days: int | None) -> float:
+def effective_staleness(effective_at, volatility_days: int | None) -> dict:
+    """How far past its volatility window a claim has decayed.
+
+    effective_at is the date the value was TRUE in the world (assertion
+    valid_range.lower, i.e. as_of) — not the date we learned it. A "100 employees
+    in 2016" claim is stale in 2026 even if we only researched it yesterday.
+
+    Returns {'days_stale', 'periods_stale', 'stale'}; immutable attributes
+    (volatility_days=None) are treated as ~10-year windows per §8d.
+    """
+    if volatility_days is None:
+        volatility_days = 3650
+    if effective_at is None:
+        return {'days_stale': 0, 'periods_stale': 0.0, 'stale': False}
+    now = datetime.now(timezone.utc)
+    if effective_at.tzinfo is None:
+        effective_at = effective_at.replace(tzinfo=timezone.utc)
+    age_days = (now - effective_at).days
+    excess = max(0, age_days - volatility_days)
+    periods = excess / max(volatility_days, 1)
+    return {'days_stale': excess, 'periods_stale': round(periods, 2), 'stale': excess > 0}
+
+
+def display_trust(
+    confidence: int,
+    observed_at: datetime,
+    volatility_days: int | None,
+    effective_at: datetime | None = None,
+) -> float:
     """Compute the read-time trust score for API consumers (§8d).
 
-    Returned on a 0.1–1.0 scale, decays as the claim ages past volatility_days.
-    Never stored on the assertion row — always computed at read time.
+    Returned on a 0.1–1.0 scale. Decay is anchored to *effective_at* (when the
+    value was true in the world — e.g. assertion valid_range.lower) when provided,
+    falling back to *observed_at* (when we learned it). Never stored on the
+    assertion row — always computed at read time.
+
+    Each full volatility period past the window costs 0.05 trust, penalised up to
+    0.7 — so a volatile claim ~14 periods past its window floors at 0.1, i.e. it
+    is effectively no longer valid ("100 employees in 2016" in 2026).
     """
     if volatility_days is None:
         volatility_days = 3650  # ~10 years for "immutable" attributes
+    when = effective_at or observed_at
     base = confidence / 100
-    staleness = max(0, (datetime.now(timezone.utc) - observed_at).days - volatility_days)
-    age_penalty = min(0.3, 0.05 * (staleness / max(volatility_days, 1)))
-    return round(_clamp(int((base - age_penalty) * 100)) / 100, 1)
+    info = effective_staleness(when, volatility_days)
+    age_penalty = min(0.7, 0.05 * info['periods_stale'])
+    return round(max(0.1, min(1.0, base - age_penalty)), 1)

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}ForeSpace{% endblock %}
+{% block title %}EigenGraph{% endblock %}
 {% block content %}
 
 <!-- Task monitor bar -->
@@ -197,7 +197,7 @@
 </table>
 
 <!-- Global stop/resume -->
-<div style="display:flex;gap:10px;margin-bottom:20px;">
+<div style="display:flex;gap:10px;margin-bottom:20px;align-items:center;flex-wrap:wrap;">
   {% if 'global' in paused_ops %}
   <form method="post" action="{% url 'curation:resume_tasks' %}">{% csrf_token %}
     <button class="btn" style="background:#16a34a;color:#fff;font-size:12px;">&#9654; Resume all</button>
@@ -207,6 +207,17 @@
     <button class="btn" style="background:#dc2626;color:#fff;font-size:12px;">&#9646;&#9646; Stop everything</button>
   </form>
   {% endif %}
+
+  <form method="post" action="{% url 'curation:set_cascade_cap' %}" style="display:flex;gap:8px;align-items:center;">
+    {% csrf_token %}
+    <label style="font-size:12px;color:#555;margin:0;">Cascade depth cap</label>
+    <input type="number" name="cascade_cap" min="0" max="10" value="{{ cascade_cap }}"
+           style="width:60px;margin-bottom:0;padding:5px 8px;">
+    <button class="btn" style="background:#1a1a2e;color:#fff;font-size:12px;padding:6px 14px;">Set</button>
+    <span style="font-size:11px;color:#888;">
+      how deep research auto-cascades: 0&nbsp;=&nbsp;off, 1&nbsp;=&nbsp;one hop, 2&nbsp;=&nbsp;two hops…
+    </span>
+  </form>
 </div>
 
 <!-- Assessment progress -->
