@@ -19,7 +19,7 @@ from psycopg2.extras import DateTimeTZRange
 from core.models import Assertion, AttributeDef, Document, ExtractionRun
 from core.normalize import normalize_country, normalize_name
 from ingest.ai import get_client
-from ingest.confidence import score as compute_score
+from ingest.confidence import combine
 from ingest.cost import log_call
 from ingest.prompts import get_prompt
 from ingest.schemas import ExtractedClaim, ExtractionResult
@@ -169,16 +169,11 @@ def extract_document(self, document_id: str):
         if claim.attribute_key == 'headquarters_country' and isinstance(claim.value, str):
             country_override = normalize_country(claim.value) or None
 
-        confidence = compute_score(
-            extractor_confidence=claim.extractor_confidence,
-            source_base_trust=doc.effective_trust,
-            source_kind=doc.source.kind,
-            document_published_at=doc.published_at,
-            volatility_days=attr.volatility_days,
-        )
+        confidence = combine(doc.effective_trust)
 
-        # Acceptance policy §8c
-        status = 'accepted' if confidence >= 50 else 'candidate'
+        # Acceptance policy §8c — computed confidence decides; a hedging LLM
+        # label ('low') only ever blocks auto-acceptance, it never adds numbers.
+        status = 'candidate' if (confidence < 50 or claim.extractor_confidence == 'low') else 'accepted'
 
         # valid_range: from as_of (or now) to open
         if claim.as_of:

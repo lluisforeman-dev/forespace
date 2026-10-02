@@ -18,7 +18,7 @@ from django.utils import timezone
 from psycopg2.extras import DateTimeTZRange
 
 from core.models import Assertion, Entity
-from ingest.confidence import documents_independent
+from ingest.confidence import documents_independent, combine
 
 logger = logging.getLogger(__name__)
 
@@ -88,15 +88,20 @@ def _adjudicate_one(new_a: Assertion) -> None:
             return
 
         independent = documents_independent(new_a.document, best.document)
-        gap = 100 - best.confidence
         with transaction.atomic():
             if independent:
-                # True corroboration — bump confidence AND record the count
+                # True corroboration — Bayesian odds combination (§8a v2):
+                # the existing confidence acts as the prior; the corroborating
+                # source's trust multiplies the odds. Echoes gain nothing.
                 new_count = (best.corroboration_count or 0) + 1
                 docs = list(best.corroborated_by or [])
                 if new_a.document_id and new_a.document_id not in docs:
                     docs.append(new_a.document_id)
-                bump = min(99, best.confidence + max(5, int(gap * new_a.confidence / 300)))
+                corroborant_trust = (
+                    new_a.document.source.effective_trust()
+                    if new_a.document and new_a.document.source else 50
+                )
+                bump = combine(best.confidence, [corroborant_trust])
                 Assertion.objects.filter(pk=best.pk).update(
                     confidence=bump,
                     corroboration_count=new_count,

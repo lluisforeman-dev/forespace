@@ -24,7 +24,7 @@ from psycopg2.extras import DateTimeTZRange
 from core.models import Assertion, AttributeDef, Document, Event, ExtractionRun, KnowledgeFragment, PredicateDef, Relation, Source
 from core.normalize import normalize_country
 from ingest.ai import get_client
-from ingest.confidence import domain_trust, score as compute_score
+from ingest.confidence import domain_trust, combine  # claims + events both anchor to source trust
 from ingest.cost import log_call
 from ingest.prompts import get_prompt
 from ingest.tasks.resolve import resolve_mention, _VALID_ENTITY_TYPES
@@ -543,8 +543,6 @@ def _is_space_relevant(name: str, entity_type: str = 'company') -> bool:
     return True
 
 
-_CONF_MAP = {'high': 78, 'medium': 62, 'low': 45}
-
 _TYPE_TO_TOPIC = {
     'company': 'company',
     'investor': 'company',
@@ -677,10 +675,14 @@ def _store_events(events: list, name_to_id: dict, fallback_doc: Document, search
         if significance not in valid_sig:
             significance = 'medium'
 
-        confidence = _CONF_MAP.get(ev.get('confidence', 'medium'), 62)
-
         source_url = ev.get('source_url')
         ev_doc = _get_or_create_url_doc(source_url, search_source) if source_url else fallback_doc
+
+        # Event confidence = the source's trust — the event came from that
+        # source; the LLM's self-reported label is not a measurement.
+        confidence = ev_doc.effective_trust if ev_doc else (
+            search_source.effective_trust() if search_source else 50
+        )
 
         amount_raw = ev.get('amount_usd')
         amount_usd = None
@@ -1877,13 +1879,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             if as_of else None
         )
 
-        confidence = compute_score(
-            extractor_confidence=extractor_conf,
-            source_base_trust=src_trust,
-            source_kind='trade_press' if src_trust >= 70 else 'aggregator',
-            document_published_at=as_of_dt or claim_doc.published_at,
-            volatility_days=attr.volatility_days,
-        )
+        confidence = combine(src_trust)
 
         range_start = as_of_dt or timezone.now()
 

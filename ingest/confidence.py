@@ -103,39 +103,41 @@ def documents_independent(doc_a, doc_b) -> bool:
     return domain_a != domain_b
 
 
-def _recency_penalty(published_at, volatility_days: int | None) -> int:
-    """Penalise claims whose source is older than the attribute's volatility window."""
-    if not published_at or not volatility_days:
-        return 0
-    now = datetime.now(timezone.utc)
-    age_days = (now - published_at).days
-    if age_days <= volatility_days:
-        return 0
-    excess = age_days - volatility_days
-    return min(30, int(excess / max(volatility_days, 1) * 10))
+# ── Confidence combination (§8a v2 — Bayesian odds, no invented constants) ───
+# A source's trust IS the claim's evidence weight. The extractor LLM's
+# self-reported confidence is no longer mapped to magic numbers (45/62/78):
+# self-reported certainty is not a measurement. The only numeric inputs are
+# source trust (curated, per-source) and the structure of corroboration.
+#
+#   odds_source = T / (100 - T)          # T=80 → 4:1 right, T=50 → coin flip
+#   single source:   confidence = T      # exactly the source's trust
+#   corroboration:   odds *= max(1, odds_i)   # independent sources only
+#
+# Agreement from a source at or below coin-flip trust contributes nothing —
+# it cannot confirm, it can only fail to. Same-domain echoes are already
+# excluded upstream (documents_independent). Converges monotonically toward
+# 99 and never reaches it.
+
+def source_odds(trust: int) -> float:
+    """Odds that a source of this trust is right about a claim it reports."""
+    t = _clamp(trust)
+    return t / max(1, 100 - t)
 
 
-def score(
-    extractor_confidence: str,    # "high" | "medium" | "low"
-    source_base_trust: int,        # 0-100, hand-set per Source
-    source_kind: str,              # 'regulator' | 'primary' | 'trade_press' | 'aggregator' | ...
-    document_published_at,
-    volatility_days: int | None,
-    corroboration_count: int = 0,
-    method: str = 'extracted',
-) -> int:
-    s = source_base_trust
-    if extractor_confidence == "high":
-        s += 10
-    elif extractor_confidence == "low":
-        s -= 15
-    s -= _recency_penalty(document_published_at, volatility_days)
-    s += min(15, 5 * corroboration_count)
-    if source_kind == "aggregator":
-        s -= 20
-    if method == "imputed":
-        s -= 25
-    return _clamp(s)
+def combine(base_trust: int, corroborant_trusts=None) -> int:
+    """Combine source trust (+ independent corroboration) into a 1-99 confidence.
+
+    base_trust: the primary source's trust (0-100) — the claim's prior.
+    corroborant_trusts: trusts of additional independent sources confirming
+    the same value. Bayesian odds multiplication; order-independent.
+    """
+    odds = source_odds(base_trust)
+    for t in corroborant_trusts or []:
+        o = source_odds(t)
+        if o > 1:  # agreement from an unreliable source is worthless, not harmful
+            odds *= o
+    p = odds / (1 + odds)
+    return max(1, min(99, round(100 * p)))
 
 
 def effective_staleness(effective_at, volatility_days: int | None) -> dict:

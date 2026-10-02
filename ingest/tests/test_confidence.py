@@ -1,9 +1,9 @@
-"""Tests for ingest.confidence — §8a scoring and §8d display_trust."""
+"""Tests for ingest.confidence — §8a odds combination and §8d display_trust."""
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from ingest.confidence import _clamp, _recency_penalty, display_trust, score
+from ingest.confidence import _clamp, combine, display_trust, source_odds
 
 
 # ── _clamp ─────────────────────────────────────────────────────────────────
@@ -18,68 +18,60 @@ def test_clamp_above_hundred():
     assert _clamp(110) == 100
 
 
-# ── _recency_penalty ────────────────────────────────────────────────────────
+# ── source_odds ──────────────────────────────────────────────────────────────
 
-def test_recency_penalty_no_published_at():
-    assert _recency_penalty(None, 30) == 0
+def test_source_odds_coin_flip_at_50():
+    assert source_odds(50) == 1.0
 
-def test_recency_penalty_no_volatility():
-    pub = datetime.now(timezone.utc) - timedelta(days=100)
-    assert _recency_penalty(pub, None) == 0
+def test_source_odds_monotonic():
+    assert source_odds(80) > source_odds(60) > source_odds(40)
 
-def test_recency_penalty_within_window():
-    pub = datetime.now(timezone.utc) - timedelta(days=10)
-    assert _recency_penalty(pub, 30) == 0
-
-def test_recency_penalty_past_window():
-    pub = datetime.now(timezone.utc) - timedelta(days=60)
-    penalty = _recency_penalty(pub, 30)
-    assert 0 < penalty <= 30
-
-def test_recency_penalty_caps_at_30():
-    pub = datetime.now(timezone.utc) - timedelta(days=3650)
-    assert _recency_penalty(pub, 30) == 30
+def test_source_odds_high_trust():
+    assert source_odds(80) == 4.0
 
 
-# ── score ───────────────────────────────────────────────────────────────────
+# ── combine ──────────────────────────────────────────────────────────────────
 
-def test_score_high_confidence_adds_points():
-    s_high = score('high', 70, 'primary', None, None)
-    s_med = score('medium', 70, 'primary', None, None)
-    assert s_high > s_med
+def test_combine_single_source_equals_trust():
+    """The operator's rule: one source → confidence IS the trust."""
+    assert combine(80) == 80
+    assert combine(62) == 62
+    assert combine(30) == 30
 
-def test_score_low_confidence_subtracts():
-    s_low = score('low', 70, 'primary', None, None)
-    s_med = score('medium', 70, 'primary', None, None)
-    assert s_low < s_med
+def test_combine_independent_corroboration_increases():
+    assert combine(80, [80]) > 80
 
-def test_score_aggregator_penalty():
-    s_primary = score('medium', 70, 'primary', None, None)
-    s_agg = score('medium', 70, 'aggregator', None, None)
-    assert s_agg < s_primary
+def test_combine_two_equal_sources():
+    """80 + 80 → odds 4*4=16 → p≈94.1 → 94."""
+    assert combine(80, [80]) == 94
 
-def test_score_corroboration_bump():
-    s_0 = score('medium', 60, 'primary', None, None, corroboration_count=0)
-    s_3 = score('medium', 60, 'primary', None, None, corroboration_count=3)
-    assert s_3 > s_0
+def test_combine_converges_upward():
+    """More independent corroboration → monotonically upward, saturating at 99."""
+    seq = [combine(80, [80] * n) for n in range(0, 6)]
+    assert seq == sorted(seq)                    # never decreases
+    assert seq[1] > seq[0]                       # corroboration helps
+    assert all(s <= 99 for s in seq)             # saturates, never hits 100
+    assert seq[-1] == 99
 
-def test_score_corroboration_caps_at_15():
-    s_3 = score('medium', 60, 'primary', None, None, corroboration_count=3)
-    s_10 = score('medium', 60, 'primary', None, None, corroboration_count=10)
-    assert s_10 == s_3 + (15 - 15)  # both hit the 15-point cap, delta is 0
-    assert s_10 - s_3 == 0
+def test_combine_coin_flip_corroboration_worthless():
+    """A 50-trust source agreeing adds nothing — odds are exactly 1."""
+    assert combine(80, [50]) == combine(80)
 
-def test_score_imputed_penalty():
-    s_extracted = score('medium', 70, 'primary', None, None, method='extracted')
-    s_imputed = score('medium', 70, 'primary', None, None, method='imputed')
-    assert s_imputed < s_extracted
+def test_combine_unreliable_corroboration_worthless_not_harmful():
+    """Agreement from a low-trust source never LOWERS confidence."""
+    assert combine(80, [30]) == combine(80)
 
-def test_score_always_0_to_100():
-    for trust in (0, 50, 100):
-        for conf in ('high', 'medium', 'low'):
-            for kind in ('primary', 'aggregator'):
-                s = score(conf, trust, kind, None, None)
-                assert 0 <= s <= 100, f"Out of range: {s}"
+def test_combine_order_independent():
+    assert combine(70, [80, 60]) == combine(70, [60, 80])
+
+def test_combine_always_1_to_99():
+    assert combine(0) == 1
+    assert combine(100) == 99
+    assert combine(100, [100, 100, 100]) == 99
+
+def test_combine_real_sources():
+    """Reuters (82) corroborated by SpaceNews (80): 82→odds 4.56, ×4 → 95."""
+    assert combine(82, [80]) == 95
 
 
 # ── display_trust ────────────────────────────────────────────────────────────
