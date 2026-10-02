@@ -1525,11 +1525,29 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         logger.info('research_topic: paused — dropping task for "%s"', topic)
         return
 
+    # Cascade gate: a queued child may have been scored 0 AFTER its parent
+    # collected the cascade (the scorer's verdict lands whenever the backlog
+    # allows — the USS Hornet museum ship was deep-researched this way). The
+    # scorer's verdict outranks the cascade's discovery: drop entity-deep-dive
+    # runs whose topic scored 0. User-triggered runs (depth 0) always proceed.
+    if cascade_depth > 0 and topic_type in ('company', 'asset', 'space_angle', 'research'):
+        from core.models import Entity as _ZeroCheckEntity
+        _zero = _ZeroCheckEntity.objects.filter(
+            canonical_name__iexact=topic, space_relevance=0, status__in=('active', 'stub'),
+        ).first()
+        if _zero:
+            logger.info(
+                'research_topic: "%s" scored space_relevance=0 — dropping cascade run (depth %d)',
+                topic, cascade_depth,
+            )
+            return
+
     # Align the research frame with what the entity actually IS. A company
     # prompt on a vehicle ("Starship") made EigenSearch research the delivery-
     # robot company and re-contaminate the asset entity. One cheap lookup;
     # callers that pass topic_type='company' for a known asset get the asset
     # frame instead.
+    if topic_type == 'company':
     if topic_type == 'company':
         from core.models import Entity as _Entity
         from core.normalize import normalize_name as _norm
@@ -2061,7 +2079,13 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             .filter(id__in=entity_id_strs)
             .exclude(status='merged')
             .exclude(entity_type='geography')  # cities/countries are relation targets, never researched
-            .exclude(space_relevance__lt=50, space_relevance__isnull=False)  # EigenSearch for 50+, null, skip 0/20
+            # Score-gated: only entities the assessor has judged space-relevant.
+            # Unscored (null) entities are NOT eligible — their own birth
+            # assessment (queued at creation) queues research if they score
+            # >= 50, so nothing relevant is lost; this only closes the race
+            # where a backlog-delayed score arrived after the parent run
+            # finished (the USS Hornet museum ship was researched this way).
+            .filter(space_relevance__gte=50)
             .annotate(assertion_count=Count(
                 'assertions',
                 filter=_Q(assertions__status='accepted'),
