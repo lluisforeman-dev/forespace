@@ -16,8 +16,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.models import Entity, EntityAlias, KnowledgeFragment
-from ingest.tasks.classify import _validate_entity_type
+from core.models import (
+    Assertion, AttributeDef, Entity, EntityAlias, ExtractionRun, KnowledgeFragment,
+)
+from ingest.tasks.classify import _validate_entity_type, classify_entity
 from ingest.tasks.resolve import resolve_mention
 
 
@@ -240,3 +242,84 @@ def test_single_name_match_still_routes_without_llm():
         resolved = resolve_mention('Stellar', entity_type='company')
     assert resolved == str(entity.id)
     get_client.assert_not_called()
+
+
+# ── classify merge conditioning ──────────────────────────────────────────────
+
+def _make_run():
+    return ExtractionRun.objects.create(
+        task='research_company',
+        prompt_sha256='a' * 64,
+        model='test-model',
+        code_version='test',
+        status='completed',
+    )
+
+
+def _make_attr():
+    attr, _ = AttributeDef.objects.get_or_create(
+        key='headquarters_address',
+        defaults=dict(entity_type='company', label='HQ address', datatype='text'),
+    )
+    return attr
+
+
+def _make_doc():
+    """Extracted assertions require a source document (extracted_needs_source)."""
+    from core.models import Document, Source
+    source, _ = Source.objects.get_or_create(
+        name='test-source', defaults=dict(kind='trade_press', domain='example.com'),
+    )
+    return Document.objects.create(
+        source=source, content_sha256=uuid.uuid4().hex,
+        storage_key=f'test/{uuid.uuid4().hex}', pipeline_status='extracted',
+    )
+
+
+def _make_assertion(entity, run, status):
+    # method='extracted' has a DB check: document AND quote must be present.
+    return Assertion.objects.create(
+        entity=entity, attribute_id=_make_attr().key, run=run,
+        document=_make_doc(), method='extracted', confidence=60,
+        status=status, value_text='Calle Falsa 1, Madrid', quote='Calle Falsa 1, Madrid',
+    )
+
+
+@pytest.mark.django_db
+def test_classify_defers_while_run_claims_pending():
+    """Un-adjudicated claims from the triggering run → defer, judge nothing yet."""
+    entity = _make_entity('Acme Space', 'company')
+    run = _make_run()
+    _make_assertion(entity, run, status='candidate')
+    with patch('ingest.tasks.classify.classify_entity') as task_mock, \
+         patch('ingest.tasks.classify.get_client') as get_client:
+        classify_entity(str(entity.id), str(run.pk))
+        task_mock.apply_async.assert_called_once()
+        call_kwargs = task_mock.apply_async.call_args.kwargs
+        assert call_kwargs['args'] == [str(entity.id), str(run.pk), 1]
+        assert call_kwargs['countdown'] == 15
+        get_client.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_classify_proceeds_when_run_adjudicated():
+    """All run claims adjudicated → no deferral, classification proceeds."""
+    entity = _make_entity('Acme Space', 'company')
+    run = _make_run()
+    _make_assertion(entity, run, status='accepted')
+    client = _client_replying(_reply({'classifications': [], 'space_relevance': 50}))
+    with patch('ingest.tasks.classify.classify_entity') as task_mock, \
+         patch('ingest.tasks.classify.get_client', return_value=client):
+        classify_entity(str(entity.id), str(run.pk))
+        task_mock.apply_async.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_classify_without_run_id_never_defers():
+    """Manual/other triggers (run_id=None) keep immediate behaviour."""
+    entity = _make_entity('Acme Space', 'company')
+    client = _client_replying(_reply({'classifications': [], 'space_relevance': 50}))
+    with patch('ingest.tasks.classify.classify_entity') as task_mock, \
+         patch('ingest.tasks.classify.get_client', return_value=client):
+        classify_entity(str(entity.id))
+        task_mock.apply_async.assert_not_called()

@@ -263,8 +263,14 @@ def _build_taxonomy_vocab(allowed_facets: set[str]) -> str:
 
 
 @shared_task(bind=True, queue='extract', max_retries=2)
-def classify_entity(self, entity_id: str, run_id: str | None = None):
-    """Classify an entity across the taxonomy facets appropriate for its type."""
+def classify_entity(self, entity_id: str, run_id: str | None = None, _deferred: int = 0):
+    """Classify an entity across the taxonomy facets appropriate for its type.
+
+    Merge-conditioned: when triggered by an extraction run, this pass waits
+    (bounded) until that run's claims have been adjudicated, so it always
+    judges the entity on its complete accepted set — logically sequential
+    where it matters, without holding a worker or an orchestrator.
+    """
     from ingest.pause import is_paused
     if is_paused('classify'):
         return
@@ -272,6 +278,22 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
         entity = Entity.objects.get(pk=entity_id)
     except Entity.DoesNotExist:
         return
+
+    # Merge conditioning: the run that triggered us may still have claims
+    # awaiting adjudication (+5s offset is a guess; this is a check). Defer
+    # briefly and re-judge on the complete set. Bounded so a stalled
+    # adjudication degrades to today's behaviour instead of stalling forever.
+    if run_id and _deferred < 8:
+        pending = Assertion.objects.filter(run_id=run_id, status='candidate').count()
+        if pending:
+            classify_entity.apply_async(
+                args=[entity_id, run_id, _deferred + 1], countdown=15,
+            )
+            logger.info(
+                'classify_entity %s: deferred (%d un-adjudicated claim(s) in run %s, attempt %d)',
+                entity_id, pending, run_id, _deferred + 1,
+            )
+            return
 
     # Type audit — re-check write-once typing before classifying. A correction
     # updates entity.entity_type in place, so the facet routing below uses the
