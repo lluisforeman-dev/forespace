@@ -54,11 +54,11 @@ def _kick_periodic_maintenance(**_kwargs):
         from django.conf import settings as _settings
         import redis as _r
         r = _r.from_url(_settings.CELERY_BROKER_URL)
-        if r.set('eigengraph:periodic:dedup_sweep', '1', nx=True, ex=26 * 3600):
-            from ingest.tasks.dedup import periodic_dedup_sweep
-            periodic_dedup_sweep.apply_async(countdown=600)
-            logger.info('periodic dedup sweep scheduled (+10 min)')
+        if r.set('eigengraph:periodic:maintenance', '1', nx=True, ex=26 * 3600):
+            from ingest.tasks.dedup import periodic_maintenance
+            periodic_maintenance.apply_async(countdown=600)
+            logger.info('periodic maintenance scheduled (+10 min)')
         else:
-            logger.info('periodic dedup sweep already scheduled (lock held)')
+            logger.info('periodic maintenance already scheduled (lock held)')
     except Exception as exc:
-        logger.warning('could not schedule periodic dedup sweep: %s', exc)
+        logger.warning('could not schedule periodic maintenance: %s', exc)

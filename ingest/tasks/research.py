@@ -1969,8 +1969,11 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         topic, accepted, events_stored, fragments_stored, relations_stored,
     )
 
-    # ── Geocode addresses from location runs ─────────────────────────────
-    if topic_type == 'location':
+    # ── Geocode location claims from this run ────────────────────────────
+    # Fires for every research run, not just 'location' topics: companies
+    # store headquarters/office assertions here and lat/lon should follow
+    # automatically. The helper self-guards (entity lookup, missing lat only).
+    if new_ids:
         _geocode_office_relations(topic, new_ids)
 
     # ── Downstream tasks ─────────────────────────────────────────────────
@@ -2089,5 +2092,20 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
                 countdown=180 + i * 90,  # stagger: 3min, 4.5min, 6min after primary
             )
             logger.info('research_topic: angle run queued "%s" → %s', topic, angle)
+
+        # Supply chain mapping for companies — primary runs only (cost-bounded:
+        # one extraction + one classification pass per company, not per angle).
+        if topic_type == 'company':
+            from core.models import Entity as _Entity
+            _company = (
+                _Entity.objects
+                .filter(canonical_name__iexact=topic, entity_type='company', status='active')
+                .first()
+            )
+            if _company:
+                extract_supply_chain.apply_async(
+                    args=[str(_company.id)], countdown=300,  # 5 min — after extraction settles
+                )
+                logger.info('research_topic: supply chain extraction queued "%s"', topic)
 
     return {'accepted': accepted, 'rejected': rejected, 'events': events_stored, 'fragments': fragments_stored, 'relations': relations_stored}

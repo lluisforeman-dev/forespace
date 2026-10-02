@@ -606,21 +606,39 @@ def dedup_sweep(self, min_similarity: float = _DEDUP_TRGM_MIN, dry_run: bool = F
 
 
 @shared_task(bind=True, queue='analytics', max_retries=0)
-def periodic_dedup_sweep(self):
-    """Self-rescheduling daily dedup sweep — runs without a celery-beat process.
+def periodic_maintenance(self):
+    """Self-rescheduling nightly maintenance — runs without a celery-beat process.
 
     worker_ready (config/celery.py) schedules the first run; a Redis lock
-    ensures one fleet-wide chain. Each run re-schedules itself for +24h, even
-    on failure — a crashed sweep must not kill the schedule. Respects the
-    global pause flag (the chain continues; only the sweep is skipped).
+    ensures one fleet-wide chain. Each pass:
+      1. dedup_sweep          — false-split reconciliation (LLM-adjudicated)
+      2. anchor_identifiers   — wikidata/LEI/DUNS anchors for resolution quality
+      3. enrich_ownership     — subsidiary_of links from wikidata hierarchies
+    Each run re-schedules itself for +24h, even on failure — a crashed pass
+    must not kill the schedule. Respects the global pause flag (the chain
+    continues; only the work is skipped).
     """
     from ingest.pause import is_paused
     try:
         if is_paused():
-            logger.info('periodic_dedup_sweep: pipeline paused — skipping this cycle')
+            logger.info('periodic_maintenance: pipeline paused — skipping this cycle')
         else:
             dedup_sweep()
     except Exception as exc:
-        logger.warning('periodic_dedup_sweep failed: %s', exc)
-    finally:
-        periodic_dedup_sweep.apply_async(countdown=24 * 3600)
+        logger.warning('periodic_maintenance dedup_sweep failed: %s', exc)
+
+    try:
+        if not is_paused():
+            from django.core.management import call_command
+            call_command('anchor_identifiers', limit=200)
+    except Exception as exc:
+        logger.warning('periodic_maintenance anchor_identifiers failed: %s', exc)
+
+    try:
+        if not is_paused():
+            from ingest.tasks.ownership import enrich_ownership
+            enrich_ownership(batch_size=100)
+    except Exception as exc:
+        logger.warning('periodic_maintenance enrich_ownership failed: %s', exc)
+
+    periodic_maintenance.apply_async(countdown=24 * 3600)
