@@ -392,6 +392,10 @@ def classify_entity(self, entity_id: str, run_id: str | None = None, _deferred: 
         valid_nodes[(facet_key, node_path)] = node
         return node
 
+    # Ordinal map for taxonomy-assignment rows: unlike claims and relations,
+    # classifications have NO external trust anchor (the evidence is the
+    # entity's own profile). This is an ordering hint for curation, not a
+    # measurement — kept deliberately as the only self-report-derived number.
     conf_map = {'high': 85, 'medium': 65, 'low': 45}
     created = skipped = 0
     with transaction.atomic():

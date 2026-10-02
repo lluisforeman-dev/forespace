@@ -861,7 +861,6 @@ def _store_relations(relations: list, fallback_doc: Document, search_source: Sou
         logger.warning('_store_relations: no predicates — run seed_predicates first')
         return 0, set()
 
-    conf_map = {'high': 78, 'medium': 62, 'low': 45}
     stored = 0
     entity_ids: set = set()
 
@@ -884,12 +883,14 @@ def _store_relations(relations: list, fallback_doc: Document, search_source: Sou
         if object_type not in _VALID_ENTITY_TYPES:
             object_type = 'company'
 
-        confidence = conf_map.get(rel.get('confidence', 'medium'), 62)
-        qualifiers = rel.get('qualifiers') or {}
-        description = (rel.get('description') or '').strip()[:500]
-
         source_url = rel.get('source_url')
         rel_doc = _get_or_create_url_doc(source_url, search_source) if source_url else fallback_doc
+
+        # Relation confidence = the source's trust — same rule as claims and
+        # events. The LLM's self-reported label is not a measurement.
+        confidence = rel_doc.effective_trust if rel_doc else search_source.effective_trust()
+        qualifiers = rel.get('qualifiers') or {}
+        description = (rel.get('description') or '').strip()[:500]
 
         try:
             with transaction.atomic():

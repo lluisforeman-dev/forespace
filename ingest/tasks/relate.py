@@ -124,6 +124,9 @@ def extract_relations(self, document_id: str):
         raise self.retry(exc=exc)
 
     valid_predicates = {p.key for p in PredicateDef.objects.all()}
+    # Relation confidence = the source document's trust — no LLM self-report numbers.
+    from core.models import Document as _Doc
+    _doc = _Doc.objects.filter(pk=document_id).first()
     created = skipped = 0
 
     for rel in result.relations:
@@ -138,8 +141,7 @@ def extract_relations(self, document_id: str):
             skipped += 1
             continue
 
-        conf_map = {'high': 85, 'medium': 65, 'low': 45}
-        confidence = conf_map[rel.confidence]
+        confidence = _doc.effective_trust if _doc else 50
 
         with transaction.atomic():
             subject_id = resolve_mention(rel.subject_mention, document_id=document_id)
@@ -227,7 +229,9 @@ def extract_relations_eigensearch(self, document_id: str, entity_names: list[str
         raise self.retry(exc=exc)
 
     valid_predicates = {p.key for p in PredicateDef.objects.all()}
-    conf_map = {'high': 75, 'medium': 58, 'low': 40}   # slightly lower than primary source
+    # Relation confidence = the source document's trust (EigenSearch variant).
+    from core.models import Document as _Doc
+    _doc = _Doc.objects.filter(pk=document_id).first()
     created = skipped = 0
 
     for rel in relations:
@@ -241,7 +245,7 @@ def extract_relations_eigensearch(self, document_id: str, entity_names: list[str
             skipped += 1
             continue
 
-        confidence = conf_map.get(rel.get('confidence', 'medium'), 58)
+        confidence = _doc.effective_trust if _doc else 50
         quote = rel.get('quote', f'{subject_mention} {predicate} {object_mention}')
 
         try:
