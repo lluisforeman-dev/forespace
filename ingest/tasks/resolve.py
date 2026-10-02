@@ -63,6 +63,24 @@ Rules:
 
 Reply: {{"canonical": "<full name>", "confidence": "high"|"medium"|"low"}} or {{"canonical": null}} if unknown."""
 
+# L5-verify prompt — confirm a world-knowledge name match against the actual
+# graph entity. Names collide across domains: a mention may canonically be
+# called "Starship" (delivery robot) while the graph's "Starship" is SpaceX's
+# launch vehicle. The canonical-name lookup alone cannot see this.
+_LLM_VERIFY_USER = """\
+A document mentions "{mention}" (type: {entity_type}).
+Document context: {subject_context}
+
+Our knowledge graph already contains this entity:
+Name   : "{candidate_name}" (type: {candidate_type})
+{candidate_context}
+
+Is the mention referring to THIS SAME real-world entity?
+A shared or similar name alone is NOT enough — names collide across domains.
+Judge by what each entity IS and DOES (sector, domain, described purpose).
+
+Reply: {{"match": true|false, "confidence": "high"|"medium"|"low"}}"""
+
 # Normalized geographic terms that should never become stub entities.
 # Countries, regions, and continents appear as claim *values*, not subjects.
 _GEOGRAPHIC_BLOCKLIST = {
@@ -382,6 +400,10 @@ Rules:
 - DIFFERENT if a meaningful qualifier distinguishes them ("6G StarLab" is not "StarLab",
   "NASA JPL" is not "NASA", "ICEYE US" is not "ICEYE" — separate legal entities).
 - DIFFERENT if related but legally separate.
+- DIFFERENT when names collide across domains — a shared word is not a shared
+  identity. SpaceX's "Starship" launch vehicle is NOT Starship Technologies
+  (delivery robots); a product named like a company is not that company.
+  Compare what each entity IS and DOES, not how the names sound.
 - Use each candidate's knowledge context (facts, relations, description).
 - Reply "match": null when uncertain — a missed match is safer than a wrong merge.
 
@@ -408,7 +430,7 @@ def _llm_pick_candidate(mention: str, entity_type: str, candidates: list,
             context = _entity_context_for_resolution(entity_id)
             block = f'{i}. "{alias_norm}" (similarity {sim:.2f})'
             if context:
-                block += f'\n   {context[:220].replace(chr(10), " | ")}'
+                block += f'\n   {context[:500].replace(chr(10), " | ")}'
             blocks.append(block)
 
         user_msg = _PICK_USER.format(
@@ -602,6 +624,12 @@ def _llm_known_entity(mention: str, entity_type: str, subject_context: str = '')
             status__in=('active', 'stub'),
         ).first()
         if ent:
+            if not _llm_verify_entity(mention, entity_type, subject_context, str(ent.id)):
+                logger.info(
+                    'L5 verification rejected "%s" → canonical "%s" (entity %s is a different thing)',
+                    mention, canonical, ent.id,
+                )
+                return None, None
             return canonical, str(ent.id)
 
         # Try alias_norm
@@ -612,6 +640,12 @@ def _llm_known_entity(mention: str, entity_type: str, subject_context: str = '')
             .first()
         )
         if alias:
+            if not _llm_verify_entity(mention, entity_type, subject_context, str(alias.entity_id)):
+                logger.info(
+                    'L5 verification rejected "%s" → canonical "%s" (entity %s is a different thing)',
+                    mention, canonical, alias.entity_id,
+                )
+                return None, None
             return canonical, str(alias.entity_id)
 
         # Canonical not in DB yet — return name only so stub uses the better form
@@ -621,6 +655,73 @@ def _llm_known_entity(mention: str, entity_type: str, subject_context: str = '')
     except Exception as exc:
         logger.warning('L5 world-knowledge lookup failed for "%s": %s', mention, exc)
         return None, None
+
+
+def _entity_has_evidence(entity_id: str) -> bool:
+    """True when the entity carries real data (fragments, events, accepted assertions).
+
+    Evidence-less husks have no identity to clash with — merging into them is
+    safe and verification would be a wasted LLM call.
+    """
+    from core.models import Assertion, Event, KnowledgeFragment
+    return (
+        KnowledgeFragment.objects.filter(entity_id=entity_id).exists()
+        or Event.objects.filter(entity_id=entity_id).exists()
+        or Assertion.objects.filter(
+            entity_id=entity_id, status='accepted', superseded_at__isnull=True,
+        ).exists()
+    )
+
+
+def _llm_verify_entity(
+    mention: str, entity_type: str, subject_context: str, entity_id: str,
+) -> bool:
+    """L5-verify — confirm a world-knowledge name match against the graph entity.
+
+    L5 maps a mention to a canonical NAME via world knowledge, then looks that
+    name up in the graph. But names collide across domains (SpaceX's Starship
+    launch vehicle vs Starship Technologies' delivery robots — both genuinely
+    called "Starship"), so a name hit must be confirmed against what the
+    existing entity actually IS before merging. Fails closed: an unverifiable
+    match is treated as no match.
+    """
+    if not _entity_has_evidence(entity_id):
+        return True  # husk — nothing to clash with
+    try:
+        from ingest.ai import get_client
+        from ingest.cost import log_call
+        client = get_client()
+
+        entity = Entity.objects.only('canonical_name', 'entity_type').get(pk=entity_id)
+        context = _entity_context_for_resolution(entity_id)
+        user_msg = _LLM_VERIFY_USER.format(
+            mention=mention, entity_type=entity_type,
+            subject_context=subject_context or '(not available)',
+            candidate_name=entity.canonical_name,
+            candidate_type=entity.entity_type,
+            candidate_context=context or '(no data)',
+        )
+
+        resp = client.chat.completions.create(
+            model=settings.AI_MODEL_FAST,
+            messages=[
+                {'role': 'system', 'content': _LLM_RESOLVE_SYSTEM},
+                {'role': 'user', 'content': user_msg},
+            ],
+            response_format={'type': 'json_object'},
+            max_tokens=60,
+            temperature=0,
+        )
+        log_call('resolve', settings.AI_MODEL_FAST, resp)
+        raw = (resp.choices[0].message.content or '').strip()
+        if not raw:
+            return False
+        raw = raw.replace('True', 'true').replace('False', 'false').replace('None', 'null')
+        result = json.loads(raw)
+        return result.get('match') is True and result.get('confidence') in ('high', 'medium')
+    except Exception as exc:
+        logger.warning('L5 verification failed for "%s": %s', mention, exc)
+        return False
 
 
 def _create_stub(
