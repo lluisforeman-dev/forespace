@@ -543,6 +543,19 @@ def _is_space_relevant(name: str, entity_type: str = 'company') -> bool:
     return True
 
 
+def _eigensearch_web_tools(model: str) -> list | None:
+    """OpenRouter web-search wiring for the EigenSearch call.
+
+    Two interchangeable forms of the same plugin:
+      ':online' suffix  → carried by the model slug itself
+      any other model   → explicit web_search tool, so cheaper or free models
+                          can search too
+    """
+    if model.endswith(':online'):
+        return None
+    return [{'type': 'openrouter:web_search'}]
+
+
 _TYPE_TO_TOPIC = {
     'company': 'company',
     'investor': 'company',
@@ -1786,17 +1799,25 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         code_version='eigensearch-v4',
     )
 
+    # Web-search wiring — two interchangeable OpenRouter forms:
+    #   ':online' suffix  → plugin carried by the model slug itself
+    #   any other model   → attach the explicit web_search tool, so cheaper
+    #                       (or free) models can search too
+    call_kwargs = dict(
+        model=model,
+        messages=[
+            {'role': 'system', 'content': get_prompt('research_main', _SYSTEM)},
+            {'role': 'user', 'content': user_msg},
+        ],
+        max_tokens=30000,
+        temperature=0,
+    )
+    if not model.endswith(':online'):
+        call_kwargs['tools'] = _eigensearch_web_tools(model)
+
     try:
         t0 = time.monotonic()
-        resp = get_client().chat.completions.create(
-            model=model,
-            messages=[
-                {'role': 'system', 'content': get_prompt('research_main', _SYSTEM)},
-                {'role': 'user', 'content': user_msg},
-            ],
-            max_tokens=30000,
-            temperature=0,
-        )
+        resp = get_client().chat.completions.create(**call_kwargs)
         log_call(f'research_{topic_type}', model, resp,
                  run=run, duration_ms=int((time.monotonic() - t0) * 1000))
         raw = resp.choices[0].message.content
