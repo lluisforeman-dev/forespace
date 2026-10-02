@@ -17,7 +17,7 @@ from django.db import transaction
 from django.utils import timezone
 from psycopg2.extras import DateTimeTZRange
 
-from core.models import Assertion
+from core.models import Assertion, Entity
 from ingest.confidence import documents_independent
 
 logger = logging.getLogger(__name__)
@@ -32,11 +32,45 @@ def adjudicate_assertions(self, assertion_ids: list[int]):
         .filter(id__in=assertion_ids)
         .select_related('attribute', 'document__source')
     )
+    touched_entities: set[str] = set()
     for new_a in assertions:
         try:
             _adjudicate_one(new_a)
+            touched_entities.add(str(new_a.entity_id))
         except Exception as exc:
             logger.error('adjudicate_one failed for assertion %s: %s', new_a.pk, exc)
+    if touched_entities:
+        _promote_stubs(touched_entities)
+
+
+# A stub is a HYPOTHESIS (unresolved mention), not a company. Evidence promotes:
+# this many accepted assertions turn a stub into an established entity.
+STUB_PROMOTION_THRESHOLD = 3
+
+
+def _promote_stubs(entity_ids: set[str]) -> None:
+    """Promote stubs that have accumulated enough accepted assertions.
+
+    The lifecycle is: unresolved mention → stub → (evidence accrues) → active.
+    Without promotion, data-rich stubs stay invisible to company views while
+    data-less fragments masquerade as companies — the exact inverse of reality.
+    """
+    for eid in entity_ids:
+        entity = Entity.objects.filter(pk=eid, status='stub').first()
+        if not entity:
+            continue
+        accepted = (
+            Assertion.objects
+            .filter(entity_id=eid, status='accepted', superseded_at__isnull=True)
+            .count()
+        )
+        if accepted >= STUB_PROMOTION_THRESHOLD:
+            entity.status = 'active'
+            entity.save(update_fields=['status'])
+            logger.info(
+                'Stub promoted to active: "%s" (%d accepted assertions)',
+                entity.canonical_name, accepted,
+            )
 
 
 def _adjudicate_one(new_a: Assertion) -> None:

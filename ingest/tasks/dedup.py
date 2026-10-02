@@ -110,44 +110,77 @@ def _entity_context_for_dedup(entity_id: str) -> str:
     return '\n'.join(lines)
 
 
-def _load_decided_pairs() -> set:
-    """Load all already-decided pairs (both merges and non-merges) from DB.
+def _load_decided_pairs() -> tuple[set, dict]:
+    """Load decided pairs.
 
-    Returns a set of (min_id, max_id) tuples for O(1) lookup.
+    Returns (merged_keys, non_merges):
+      merged_keys — permanent (min_id, max_id) tuples (a merge is a merge)
+      non_merges  — (min_id, max_id) → (assertions_a, assertions_b) recorded at
+                    decision time, so thin decisions can be REOPENED when
+                    evidence grows (see _should_reopen).
     """
-    from core.models import Entity, EntityMerge, EntityNonMerge
+    from core.models import EntityMerge, EntityNonMerge
 
-    decided = set()
-
+    merged: set = set()
     for m_id, k_id in EntityMerge.objects.values_list('merged_id', 'kept_id'):
         a, b = str(m_id), str(k_id)
-        decided.add((min(a, b), max(a, b)))
+        merged.add((min(a, b), max(a, b)))
 
-    for a_id, b_id in EntityNonMerge.objects.values_list('entity_a_id', 'entity_b_id'):
+    non_merges: dict = {}
+    for a_id, b_id, ca, cb in (
+        EntityNonMerge.objects
+        .values_list('entity_a_id', 'entity_b_id', 'assertions_a', 'assertions_b')
+    ):
         a, b = str(a_id), str(b_id)
-        decided.add((min(a, b), max(a, b)))
+        non_merges[(min(a, b), max(a, b))] = (ca or 0, cb or 0)
 
-    return decided
+    return merged, non_merges
 
 
-def _persist_non_merge(id_a: str, id_b: str, method: str = 'auto:dedup_sweep') -> None:
-    """Save a confirmed-different pair to EntityNonMerge (normalised order)."""
+def _should_reopen(rec_a: int, rec_b: int, cur_a: int, cur_b: int) -> bool:
+    """Re-litigate a 'different' verdict when the evidence base has changed.
+
+    The LLM defaults to 'different' when uncertain — so a decision made when
+    either side was data-less is a guess, not a finding. Reopen when:
+      - either side was thin (<3 assertions) at decision time but now has ≥3, or
+      - either side gained ≥3 accepted assertions since the decision.
+    """
+    if cur_a >= 3 and rec_a < 3:
+        return True
+    if cur_b >= 3 and rec_b < 3:
+        return True
+    if cur_a - rec_a >= 3 or cur_b - rec_b >= 3:
+        return True
+    return False
+
+
+def _persist_non_merge(id_a: str, id_b: str, method: str = 'auto:dedup_sweep',
+                       count_a: int = 0, count_b: int = 0) -> None:
+    """Save a confirmed-different pair to EntityNonMerge (normalised order),
+    recording the evidence base at decision time so it can be reopened later."""
     from core.models import EntityNonMerge
     a, b = (min(id_a, id_b), max(id_a, id_b))
-    EntityNonMerge.objects.get_or_create(
+    EntityNonMerge.objects.update_or_create(
         entity_a_id=a,
         entity_b_id=b,
-        defaults={'method': method},
+        defaults={
+            'method': method,
+            'assertions_a': count_a,
+            'assertions_b': count_b,
+        },
     )
 
 
 def _process_pairs(pairs, decided_pairs, merged_ids, entity_type_map,
-                   client, dry_run, method='auto:dedup_sweep', identifier_map=None):
+                   client, dry_run, method='auto:dedup_sweep', identifier_map=None,
+                   assertion_counts=None, non_merges=None):
     """Core dedup logic shared by full sweep and targeted dedup.
 
-    identifier_map: {entity_id_str: wikidata_qid} — when both entities carry an
-    external QID, arbitration is deterministic (same → merge, different →
-    permanent non-merge) and no LLM call is made.
+    identifier_map:   {entity_id_str: wikidata_qid} — deterministic arbitration.
+    assertion_counts: {entity_id_str: accepted assertion count} — drives reopen.
+    non_merges:       {(a, b): (rec_a, rec_b)} — decided pairs with their
+                      evidence-at-decision-time; pairs whose evidence has grown
+                      are re-litigated instead of skipped.
 
     Returns (merged_count, skipped_count) and mutates decided_pairs / merged_ids in place.
     """
@@ -155,6 +188,9 @@ def _process_pairs(pairs, decided_pairs, merged_ids, entity_type_map,
     from ingest.cost import log_call
 
     identifier_map = identifier_map or {}
+    assertion_counts = assertion_counts or {}
+    non_merges = non_merges or {}
+    reopened = 0
     merged_count = skipped_count = 0
 
     for id_a, id_b, sim in pairs:
@@ -163,9 +199,21 @@ def _process_pairs(pairs, decided_pairs, merged_ids, entity_type_map,
         if id_a in merged_ids or id_b in merged_ids:
             skipped_count += 1
             continue
-        if pair_key in decided_pairs:
-            skipped_count += 1
-            continue
+
+        recorded = non_merges.get(pair_key)
+        if recorded is not None and pair_key not in decided_pairs:
+            cur_a = assertion_counts.get(id_a, 0)
+            cur_b = assertion_counts.get(id_b, 0)
+            if _should_reopen(recorded[0], recorded[1], cur_a, cur_b):
+                reopened += 1
+                logger.info(
+                    'dedup: REOPENING decided pair (%d,%d assertions then, %d,%d now)',
+                    recorded[0], recorded[1], cur_a, cur_b,
+                )
+                non_merges.pop(pair_key, None)
+            else:
+                skipped_count += 1
+                continue
 
         # Type compatibility check — don't compare persons against companies etc.
         type_a = entity_type_map.get(id_a)
@@ -181,7 +229,8 @@ def _process_pairs(pairs, decided_pairs, merged_ids, entity_type_map,
         if qid_a and qid_b and qid_a != qid_b:
             # Different real-world entities — decided forever, no LLM, no retry
             decided_pairs.add(pair_key)
-            _persist_non_merge(id_a, id_b, f'{method}:wikidata_diff')
+            _persist_non_merge(id_a, id_b, f'{method}:wikidata_diff',
+                               assertion_counts.get(id_a, 0), assertion_counts.get(id_b, 0))
             skipped_count += 1
             continue
 
@@ -204,7 +253,8 @@ def _process_pairs(pairs, decided_pairs, merged_ids, entity_type_map,
         elif sim < _DEDUP_LLM_MIN:
             # Below LLM threshold — treat as different without calling LLM
             decided_pairs.add(pair_key)
-            _persist_non_merge(id_a, id_b, method)
+            _persist_non_merge(id_a, id_b, method,
+                               assertion_counts.get(id_a, 0), assertion_counts.get(id_b, 0))
             skipped_count += 1
             continue
         else:
@@ -242,7 +292,8 @@ def _process_pairs(pairs, decided_pairs, merged_ids, entity_type_map,
 
         if not do_merge:
             decided_pairs.add(pair_key)
-            _persist_non_merge(id_a, id_b, method)
+            _persist_non_merge(id_a, id_b, method,
+                               assertion_counts.get(id_a, 0), assertion_counts.get(id_b, 0))
             skipped_count += 1
             continue
 
@@ -431,10 +482,11 @@ def dedup_entities(self, entity_ids: list, dry_run: bool = False):
     if not entity_ids:
         return {'merged': 0, 'skipped': 0}
 
-    from core.models import Entity, EntityIdentifier
+    from core.models import Assertion, Entity, EntityIdentifier
+    from django.db.models import Count
     from ingest.ai import get_client
 
-    decided_pairs = _load_decided_pairs()
+    merged_keys, non_merges = _load_decided_pairs()
     merged_ids = set(
         str(i) for i in
         Entity.objects.filter(status='merged').values_list('id', flat=True)
@@ -467,11 +519,23 @@ def dedup_entities(self, entity_ids: list, dry_run: bool = False):
         """, [_DEDUP_TRGM_MIN, entity_ids])
         pairs = cur.fetchall()
 
+    pair_ids = {id_ for pair in pairs for id_ in pair[:2]}
+    assertion_counts = {
+        str(r['entity_id']): r['n']
+        for r in (
+            Assertion.objects
+            .filter(entity_id__in=pair_ids, status='accepted', superseded_at__isnull=True)
+            .values('entity_id')
+            .annotate(n=Count('id'))
+        )
+    }
+
     logger.info('dedup_entities: %d candidate pairs for %d entities', len(pairs), len(entity_ids))
     client = get_client()
     merged, skipped = _process_pairs(
-        pairs, decided_pairs, merged_ids, entity_type_map, client, dry_run,
+        pairs, set(), merged_ids, entity_type_map, client, dry_run,
         method='auto:research_cascade', identifier_map=identifier_map,
+        assertion_counts=assertion_counts, non_merges=non_merges,
     )
     logger.info('dedup_entities done: merged=%d skipped=%d dry_run=%s', merged, skipped, dry_run)
     return {'merged': merged, 'skipped': skipped}
@@ -485,10 +549,11 @@ def dedup_sweep(self, min_similarity: float = _DEDUP_TRGM_MIN, dry_run: bool = F
     Skips all previously decided pairs (EntityMerge + EntityNonMerge) — LLM cost
     per sweep is bounded by the number of NEW pairs only, not the total graph size.
     """
-    from core.models import Entity, EntityIdentifier
+    from core.models import Assertion, Entity, EntityIdentifier
+    from django.db.models import Count
     from ingest.ai import get_client
 
-    decided_pairs = _load_decided_pairs()
+    merged_keys, non_merges = _load_decided_pairs()
     merged_ids = set(
         str(i) for i in
         Entity.objects.filter(status='merged').values_list('id', flat=True)
@@ -518,11 +583,23 @@ def dedup_sweep(self, min_similarity: float = _DEDUP_TRGM_MIN, dry_run: bool = F
         """, [min_similarity])
         pairs = cur.fetchall()
 
+    pair_ids = {id_ for pair in pairs for id_ in pair[:2]}
+    assertion_counts = {
+        str(r['entity_id']): r['n']
+        for r in (
+            Assertion.objects
+            .filter(entity_id__in=pair_ids, status='accepted', superseded_at__isnull=True)
+            .values('entity_id')
+            .annotate(n=Count('id'))
+        )
+    }
+
     logger.info('dedup_sweep: %d candidate pairs (min_sim=%.2f)', len(pairs), min_similarity)
     client = get_client()
     merged, skipped = _process_pairs(
-        pairs, decided_pairs, merged_ids, entity_type_map, client, dry_run,
+        pairs, set(), merged_ids, entity_type_map, client, dry_run,
         identifier_map=identifier_map,
+        assertion_counts=assertion_counts, non_merges=non_merges,
     )
     logger.info('dedup_sweep done: merged=%d skipped=%d dry_run=%s', merged, skipped, dry_run)
     return {'merged': merged, 'skipped': skipped}

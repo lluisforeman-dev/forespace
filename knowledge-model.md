@@ -133,7 +133,42 @@ confidence         =  min(contributing events' confidence)   ← a chain is neve
 - A daily cron (`refresh_stale_facts`) re-researches the stalest volatile
   facts, so decay is a *prompt to re-verify*, not a slow rot.
 
-## 8. What this model deliberately does NOT do (yet)
+## 8. Entity identity — how mentions become the right node
+
+Resolution ladder (`ingest/tasks/resolve.py`) — cheapest signal first:
+
+1. **Geographic routing** — countries/cities are relation targets, never companies.
+2. **Exact canonical name** — an ESTABLISHED entity always outranks a data-less
+   stub sharing the name (first-come stub ownership is how false splits are born).
+3. **Exact alias** — an alias owned by an established entity routes immediately;
+   an alias owned only by a stub is a weak hint, not a verdict.
+4. **Candidate adjudication** — ONE batched LLM call over all candidates from
+   trigram similarity **plus word-boundary containment** ("Spire" must see
+   "Spire Global" even when higher-similarity names crowd it out). Uncertain →
+   `match: null`.
+5. **World-knowledge canonical lookup** — acronyms and language variants.
+6. **Stub creation** — last resort, created as `status='stub'`: a hypothesis,
+   not a company.
+
+**Lifecycle**: stub → (≥3 accepted assertions via adjudication) → active.
+Empty stubs never masquerade as companies in the graph's company views.
+
+**Alias ownership is arbitration, not bookkeeping**: when a name resolves to an
+established entity but a stub owns the alias, the alias is rebound; when two
+established entities claim one alias, the pair is queued for context-aware dedup.
+
+**Reopenable verdicts** (`EntityNonMerge.assertions_a/b`): a "different"
+decision made when either side was data-less is a guess. Dedup re-litigates a
+decided pair when either side's evidence has grown past the decision-time base
+(`_should_reopen`) — wrong early verdicts heal themselves as research accrues.
+
+**Fragment healing** (`heal_entity_fragments`): entities with zero evidence
+whose name is word-contained in an established entity are merged
+deterministically — no LLM, nothing to misattribute; the fragment's name becomes
+an alias of the container. Genuinely distinct subsidiaries (which have
+evidence) are untouched.
+
+## 9. What this model deliberately does NOT do (yet)
 
 - **Content-level story dedup** — cross-domain syndication still counts as
   independent (v1 rule above); embedding-based near-duplicate detection is the

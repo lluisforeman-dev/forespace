@@ -20,5 +20,8 @@ LOGGING = {
         'django.db.backends': {
             'level': 'WARNING',  # set to DEBUG to see all SQL
         },
+        # httpx/httpcore DEBUG spam makes LLM call output unreadable
+        'httpx': {'level': 'WARNING'},
+        'httpcore': {'level': 'WARNING'},
     },
 }

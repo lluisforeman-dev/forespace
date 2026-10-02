@@ -15,6 +15,7 @@ import logging
 
 from django.conf import settings
 from django.db import connection, transaction
+from django.db.models import Q
 from django.utils.text import slugify
 
 from core.models import Entity, EntityAlias
@@ -23,43 +24,12 @@ from ingest.prompts import get_prompt
 
 logger = logging.getLogger(__name__)
 
-_TRGM_THRESHOLD = 0.82  # above this: auto-merge (virtually identical names)
 _TRGM_LLM_MIN = 0.10    # below this: too dissimilar to bother — create new entity
 
 _LLM_RESOLVE_SYSTEM = (
     'You are an entity resolver for a space-industry knowledge graph. '
     'Answer only with valid JSON.'
 )
-
-# Fallback prompt used when the candidate entity has no knowledge data yet
-_LLM_RESOLVE_USER_STRINGS_ONLY = """\
-Is the mention "{mention}" (type: {mention_type}) the same real-world organisation as "{candidate}"?
-
-Rules:
-- SAME if one is an abbreviation or short form of the other.
-- SAME if the only difference is a legal/org suffix (Foundation, Institute, Corp, Centre).
-- SAME if one is a local-language form (Fundació = Foundation in Catalan).
-- DIFFERENT if a meaningful prefix/qualifier is present in one but not the other \
-("6G StarLab" ≠ "StarLab", "NASA JPL" ≠ "NASA").
-- DIFFERENT if related but legally distinct.
-- When uncertain reply false — a missed merge is safer than a wrong merge.
-
-Reply: {{"same": true, "confidence": "high"|"medium"|"low"}} or {{"same": false}}"""
-
-# Person-specific prompt — handles compound surnames and accent/diacritic variants
-_LLM_RESOLVE_PERSON = """\
-Is the mention "{mention}" the same real person as "{candidate}"?
-
-Rules:
-- SAME if one is a shortened form of the other's full name, including compound or hyphenated surnames \
-(e.g. "Roger Jove" may be the informal form of "Roger Jové-Casulleras").
-- SAME if the only difference is diacritics or accents ("Jove" = "Jové").
-- SAME if one omits a second surname that the other includes (common in Spanish/Catalan names).
-- DIFFERENT if the given name (first name) differs — that is a different person.
-- DIFFERENT if both names are fully written out and share no surname tokens at all.
-- When uncertain reply false — a missed merge is safer than a wrong merge.
-
-Reply: {{"same": true, "confidence": "high"|"medium"|"low"}} or {{"same": false}}"""
 
 # L5 prompt — world-knowledge canonical name lookup (organisations)
 _LLM_CANONICAL_USER = """\
@@ -93,36 +63,13 @@ Rules:
 
 Reply: {{"canonical": "<full name>", "confidence": "high"|"medium"|"low"}} or {{"canonical": null}} if unknown."""
 
-# Rich prompt used when we have knowledge data for the candidate
-_LLM_RESOLVE_USER_WITH_CONTEXT = """\
-Decide whether the new mention refers to the same real-world entity as the candidate in our database.
-
-New mention : "{mention}"  (type: {mention_type})
-
-Candidate   : "{candidate_name}"
-{context}
-
-Rules:
-- SAME if the mention is an abbreviation, short form, or local-language name for the candidate \
-(e.g. "JPL" = "Jet Propulsion Laboratory", "ESA" = "European Space Agency").
-- SAME if the only difference is a legal/org suffix (Foundation, Ltd, Centre, Agency).
-- DIFFERENT if a meaningful qualifier distinguishes them \
-("6G StarLab" ≠ "StarLab", "NASA JPL" ≠ "NASA", "Airbus DS" ≠ "Airbus").
-- DIFFERENT if related but legally separate organisations.
-- Use the knowledge context above — matching headquarters, relations, or descriptions \
-are strong evidence of being the same entity.
-- When uncertain reply false.
-
-Reply: {{"same": true, "confidence": "high"|"medium"|"low"}} or {{"same": false}}"""
-
-
 # Normalized geographic terms that should never become stub entities.
 # Countries, regions, and continents appear as claim *values*, not subjects.
 _GEOGRAPHIC_BLOCKLIST = {
     # Continents
     'europe', 'north america', 'south america', 'asia', 'africa', 'oceania', 'antarctica',
     # Common countries (normalized — no suffixes)
-    'united', 'united kingdom', 'united arab', 'united arab emirates', 'uae',
+    'united', 'united kingdom', 'united states', 'united arab', 'united arab emirates', 'uae',
     'france', 'germany', 'spain', 'italy', 'japan', 'china', 'india', 'canada',
     'australia', 'brazil', 'russia', 'south korea', 'israel', 'norway', 'sweden',
     'netherlands', 'belgium', 'switzerland', 'austria', 'portugal', 'poland',
@@ -193,7 +140,7 @@ def resolve_mention(
     """Resolve a surface-form mention to an entity UUID. Creates a stub if needed.
 
     subject_context: optional hint about the document's primary subject, e.g.
-        "Researching: SpaceX (company)" — passed to L4/L5 LLM prompts to help
+        "Researching: SpaceX (company)" — passed to L4 LLM prompts to help
         disambiguate mentions that share an acronym or name across domains.
     primary_entity_id / primary_entity_norm: when set, a mention whose normalised form
         contains the primary entity's normalised name as a contiguous substring is
@@ -229,52 +176,72 @@ def resolve_mention(
         logger.info('resolve: primary-entity shortcut "%s" → %s', mention, primary_entity_id)
         return primary_entity_id
 
-    # Level 2a — exact canonical name (case-insensitive)
+    # Level 2a — exact canonical name (case-insensitive), EVIDENCE-GATED.
+    # An entity with actual data always outranks a data-less namesake: routing
+    # a mention to a husk because it got the name first is how permanent false
+    # splits are born. Data-less matches are demoted to weak hints below.
+    evidence_q = (
+        Q(assertions__status='accepted', assertions__superseded_at__isnull=True)
+        | Q(events__isnull=False)
+        | Q(fragments__isnull=False)
+    )
     ent = (
+        Entity.objects
+        .filter(canonical_name__iexact=mention, status__in=('active', 'stub'))
+        .filter(evidence_q)
+        .distinct()
+        .first()
+    )
+    if ent:
+        _add_alias(str(ent.id), mention, norm, document_id)
+        return str(ent.id)
+    weak_ent = (
         Entity.objects
         .filter(canonical_name__iexact=mention, status__in=('active', 'stub'))
         .first()
     )
-    if ent:
-        return str(ent.id)
 
-    # Level 2b — exact alias_norm match
+    # Level 2b — exact alias_norm match. An alias owned by an ESTABLISHED
+    # entity routes immediately; an alias owned only by a STUB is a weak hint
+    # (stubs exist because resolution once failed) — it is only used if the
+    # candidate adjudication below finds nothing better.
     alias = (
         EntityAlias.objects
         .select_related('entity')
-        .filter(alias_norm=norm, entity__status__in=('active', 'stub'))
+        .filter(alias_norm=norm, entity__status='active')
         .first()
     )
     if alias:
         return str(alias.entity_id)
 
-    # Level 3 — trigram similarity via pg_trgm
-    with connection.cursor() as cur:
-        cur.execute(
-            """
-            SELECT entity_id, alias_norm, similarity(alias_norm, %s) AS sim
-            FROM entity_alias
-            WHERE similarity(alias_norm, %s) > %s
-            ORDER BY sim DESC
-            LIMIT 3
-            """,
-            [norm, norm, _TRGM_LLM_MIN],
-        )
-        rows = cur.fetchall()
+    stub_hint = (
+        EntityAlias.objects
+        .select_related('entity')
+        .filter(alias_norm=norm, entity__status='stub')
+        .values_list('entity_id', flat=True)
+        .first()
+    )
 
-    if rows:
-        best_entity_id, best_alias_norm, best_sim = rows[0]
-        if best_sim >= _TRGM_THRESHOLD:
-            logger.info('L3 match: "%s" → %s (sim=%.2f)', mention, best_entity_id, best_sim)
-            _add_alias(str(best_entity_id), mention, norm, document_id)
-            return str(best_entity_id)
-
-        # Level 4 — LLM disambiguation for borderline candidates
-        resolved = _llm_disambiguate(mention, entity_type, rows, subject_context)
+    # Level 3+4 — candidate collection + ONE batched LLM adjudication.
+    # Candidates come from trigram similarity AND word-boundary containment
+    # ("spire" must surface "Spire Global" even when higher-similarity names
+    # crowd it out — the single most common false-split shape).
+    candidates = _collect_candidates(norm)
+    if candidates:
+        resolved, confidence = _llm_pick_candidate(mention, entity_type, candidates, subject_context)
         if resolved:
-            logger.info('L4 LLM match: "%s" → %s', mention, resolved)
+            logger.info(
+                'L4 batch match: "%s" → %s (%s)', mention, resolved, confidence,
+            )
             _add_alias(resolved, mention, norm, document_id)
             return resolved
+
+    # A data-less exact-name match or a stub alias hint — weak evidence only,
+    # used when candidate adjudication finds nothing better.
+    if weak_ent or stub_hint:
+        target = str(weak_ent.id) if weak_ent else stub_hint
+        _add_alias(target, mention, norm, document_id)
+        return target
 
     # Level 5 — LLM world-knowledge canonical lookup
     # Handles acronyms, legal name variants, and compound/diacritic person names.
@@ -339,66 +306,147 @@ def _entity_context_for_resolution(entity_id: str) -> str:
     return '\n'.join(lines)
 
 
-def _llm_disambiguate(mention: str, mention_type: str, candidates: list, subject_context: str = '') -> str | None:
-    """Ask the LLM whether any borderline trigram candidate matches the mention.
-
-    For each candidate, pulls knowledge context from the DB and passes it to the
-    LLM so it can compare facts, not just strings.
-    subject_context provides the primary subject being researched in the source document.
+def _collect_candidates(norm: str, limit: int = 8) -> list:
+    """Candidate entities for adjudication: word-boundary containment FIRST
+    (a short-form mention must see its long-form owner — 'spire' → 'Spire
+    Global' — even when higher-similarity names crowd it out), then trigram
+    similarity. Deduplicated per entity. Returns [(entity_id_str, name, sim)].
     """
+    candidates: dict[str, tuple] = {}
+
+    # 1. Containment — the false-split killer. 'spire' matches 'spire global'
+    #    (prefix) and 'spire global canada' matches 'spire global' (suffix-ish
+    #    word boundary), regardless of trigram score.
+    with connection.cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT ON (a.entity_id::text)
+                a.entity_id::text, a.alias_norm
+            FROM entity_alias a
+            JOIN entity e ON e.id = a.entity_id
+            WHERE e.status IN ('active', 'stub')
+              AND (a.alias_norm LIKE %s || ' %%'
+                   OR a.alias_norm LIKE '%% ' || %s
+                   OR a.alias_norm LIKE '%% ' || %s || ' %%'
+                   OR %s LIKE a.alias_norm || ' %%')
+            LIMIT %s
+            """,
+            [norm, norm, norm, norm, limit],
+        )
+        for entity_id, alias_norm in cur.fetchall():
+            if alias_norm != norm:  # exact match was already handled upstream
+                candidates[entity_id] = (entity_id, alias_norm, 1.0)
+
+    # 2. Trigram similarity
+    with connection.cursor() as cur:
+        cur.execute(
+            """
+            SELECT entity_id::text, alias_norm, similarity(alias_norm, %s) AS sim
+            FROM entity_alias
+            WHERE similarity(alias_norm, %s) > %s
+            ORDER BY sim DESC
+            LIMIT 24
+            """,
+            [norm, norm, _TRGM_LLM_MIN],
+        )
+        for entity_id, alias_norm, sim in cur.fetchall():
+            if entity_id not in candidates and alias_norm != norm:
+                candidates[entity_id] = (entity_id, alias_norm, float(sim))
+
+    if len(candidates) <= limit:
+        # Deterministic order: containment hits first, then similarity desc,
+        # alphabetical tiebreak — stable candidate numbering for the LLM.
+        return sorted(candidates.values(), key=lambda r: (-r[2], r[1]))
+
+    # Cap: keep containment hits (sim==1.0) plus the best trigram hits
+    ranked = sorted(candidates.values(), key=lambda r: (-r[2], r[1]))
+    return ranked[:limit]
+
+
+_PICK_SYSTEM = (
+    'You are an entity resolver for a space-industry knowledge graph. '
+    'Answer only with valid JSON.'
+)
+
+_PICK_USER = """\
+A document mentions "{mention}" (type: {entity_type}). Which ONE of the known
+entities below is the SAME real-world organisation — or is it none of them?
+
+{candidates}
+
+Rules:
+- SAME if the mention is a short form, acronym, or language variant of a candidate
+  ("Spire" = "Spire Global", "JPL" = "Jet Propulsion Laboratory").
+- SAME if the only difference is a legal suffix or a regional arm descriptor
+  ONLY when the candidate has no separate legal existence — when unsure, choose none.
+- DIFFERENT if a meaningful qualifier distinguishes them ("6G StarLab" is not "StarLab",
+  "NASA JPL" is not "NASA", "ICEYE US" is not "ICEYE" — separate legal entities).
+- DIFFERENT if related but legally separate.
+- Use each candidate's knowledge context (facts, relations, description).
+- Reply "match": null when uncertain — a missed match is safer than a wrong merge.
+
+Reply: {{"match": <candidate number or null>, "confidence": "high"|"medium"|"low"}}"""
+
+
+def _llm_pick_candidate(mention: str, entity_type: str, candidates: list,
+                        subject_context: str = '') -> tuple[str | None, str]:
+    """One LLM call adjudicating the mention against ALL candidates at once.
+
+    A comparative decision ("which of these, or none?") is both cheaper than
+    per-candidate calls and more accurate — the model sees the alternatives.
+    Returns (entity_id or None, confidence str).
+    """
+    if not candidates:
+        return None, 'low'
     try:
         from ingest.ai import get_client
         from ingest.cost import log_call
         client = get_client()
 
-        for entity_id, alias_norm, sim in candidates:
-            candidate_entity = Entity.objects.filter(pk=entity_id).only('canonical_name').first()
-            candidate_name = candidate_entity.canonical_name if candidate_entity else alias_norm
+        blocks = []
+        for i, (entity_id, alias_norm, sim) in enumerate(candidates, start=1):
+            context = _entity_context_for_resolution(entity_id)
+            block = f'{i}. "{alias_norm}" (similarity {sim:.2f})'
+            if context:
+                block += f'\n   {context[:220].replace(chr(10), " | ")}'
+            blocks.append(block)
 
-            context = _entity_context_for_resolution(str(entity_id))
-            if mention_type == 'person':
-                user_msg = _LLM_RESOLVE_PERSON.format(mention=mention, candidate=candidate_name)
-            elif context:
-                user_msg = _LLM_RESOLVE_USER_WITH_CONTEXT.format(
-                    mention=mention,
-                    mention_type=mention_type,
-                    candidate_name=candidate_name,
-                    context=context,
-                )
-            else:
-                user_msg = _LLM_RESOLVE_USER_STRINGS_ONLY.format(
-                    mention=mention,
-                    mention_type=mention_type,
-                    candidate=candidate_name,
-                )
-            if subject_context:
-                user_msg += f'\n\nDocument context: {subject_context}'
+        user_msg = _PICK_USER.format(
+            mention=mention, entity_type=entity_type,
+            candidates='\n'.join(blocks),
+        )
+        if subject_context:
+            user_msg += f'\n\nDocument context: {subject_context}'
 
-            resp = client.chat.completions.create(
-                model=settings.AI_MODEL_FAST,
-                messages=[
-                    {'role': 'system', 'content': get_prompt('resolve_entity', _LLM_RESOLVE_SYSTEM)},
-                    {'role': 'user', 'content': user_msg},
-                ],
-                response_format={'type': 'json_object'},
-                max_tokens=60,
-                temperature=0,
-            )
-            log_call('resolve', settings.AI_MODEL_FAST, resp)
-            raw = (resp.choices[0].message.content or '').strip()
-            if not raw:
-                continue
-            raw = raw.replace('True', 'true').replace('False', 'false').replace('None', 'null')
-            result = json.loads(raw)
-            if result.get('same') and result.get('confidence') in ('high', 'medium'):
-                logger.info(
-                    'L4 LLM matched "%s" → %s (%s, sim=%.2f, ctx=%s)',
-                    mention, entity_id, candidate_name, sim, bool(context),
-                )
-                return str(entity_id)
+        resp = client.chat.completions.create(
+            model=settings.AI_MODEL_FAST,
+            messages=[
+                {'role': 'system', 'content': get_prompt('resolve_entity', _PICK_SYSTEM)},
+                {'role': 'user', 'content': user_msg},
+            ],
+            response_format={'type': 'json_object'},
+            max_tokens=120,
+            temperature=0,
+        )
+        log_call('resolve', settings.AI_MODEL_FAST, resp)
+        raw = (resp.choices[0].message.content or '').strip()
+        if not raw:
+            return None, 'low'
+        result = json.loads(raw)
+        confidence = result.get('confidence', 'low')
+        match = result.get('match')
+        if match is None or confidence not in ('high', 'medium'):
+            return None, confidence
+        try:
+            idx = int(match) - 1
+        except (TypeError, ValueError):
+            return None, confidence
+        if 0 <= idx < len(candidates):
+            return str(candidates[idx][0]), confidence
+        return None, confidence
     except Exception as exc:
-        logger.warning('L4 LLM resolve failed for "%s": %s', mention, exc)
-    return None
+        logger.warning('L4 batch resolve failed for "%s": %s', mention, exc)
+        return None, 'low'
 
 
 def _find_or_create_geography(mention: str, norm: str) -> str:
@@ -439,16 +487,67 @@ def _find_or_create_geography(mention: str, norm: str) -> str:
 
 
 def _add_alias(entity_id: str, surface_form: str, norm: str, document_id: str | None) -> None:
-    """Register surface_form as an alias for entity_id if not already present."""
-    EntityAlias.objects.get_or_create(
-        entity_id=entity_id,
-        alias_norm=norm,
-        defaults={
-            'alias': surface_form,
-            'alias_kind': 'abbrev',
-            'document_id': document_id,
-        },
+    """Register surface_form as an alias for entity_id, with ownership arbitration.
+
+    An alias_norm routes every future mention of that name, so WHO owns it is a
+    resolution decision, not bookkeeping:
+      - free → create
+      - owned by the same entity → nothing to do
+      - owned by a STUB → rebind to the established entity (the stub was a
+        failed resolution; it must not keep routing the name)
+      - owned by another ACTIVE entity → do not steal; queue the pair for
+        targeted dedup so the collision is adjudicated with full context.
+    """
+    existing = (
+        EntityAlias.objects
+        .select_related('entity')
+        .filter(alias_norm=norm)
+        .first()
     )
+    if existing is None:
+        EntityAlias.objects.create(
+            entity_id=entity_id,
+            alias=surface_form,
+            alias_norm=norm,
+            alias_kind='abbrev',
+            document_id=document_id,
+        )
+        return
+
+    if str(existing.entity_id) == str(entity_id):
+        return
+
+    owner = existing.entity
+    if owner.status == 'stub':
+        # The stub loses the name to the established entity; the stub itself
+        # is left for the fragment-heal pass to fold away.
+        existing.delete()
+        EntityAlias.objects.create(
+            entity_id=entity_id,
+            alias=surface_form,
+            alias_norm=norm,
+            alias_kind='abbrev',
+            document_id=document_id,
+        )
+        logger.info(
+            'Alias "%s" rebound from stub %s → %s', norm, owner.id, entity_id,
+        )
+        return
+
+    # Two established entities claim the same name — genuine collision.
+    # Adjudicate the pair with full context (cheap, targeted dedup).
+    logger.warning(
+        'Alias collision: "%s" owned by %s (%s); %s also resolved here — queueing dedup',
+        norm, owner.canonical_name, owner.id, entity_id,
+    )
+    try:
+        from ingest.tasks.dedup import dedup_entities
+        dedup_entities.apply_async(
+            args=[[str(entity_id), str(owner.id)]], countdown=120,
+        )
+    except Exception as exc:
+        # Best-effort: alias routing must never break resolution (e.g. broker down)
+        logger.warning('dedup enqueue for alias collision failed: %s', exc)
 
 
 def _llm_known_entity(mention: str, entity_type: str, subject_context: str = '') -> tuple[str | None, str | None]:
@@ -530,7 +629,14 @@ def _create_stub(
     document_id: str | None,
     entity_type: str = 'company',
 ) -> str:
-    """Create a stub entity for an unresolved mention."""
+    """Create a stub entity for an unresolved mention.
+
+    Stubs are born as status='stub' — an unresolved mention is a HYPOTHESIS,
+    not a company. Evidence promotes it: once a stub accumulates enough
+    accepted assertions, adjudication promotes it to 'active' (see
+    _promote_stubs in adjudicate.py). This prevents resolution debris
+    ("Spire" stubs with zero facts) from masquerading as companies.
+    """
     slug_base = slugify(mention)[:200] or 'entity'
     slug = slug_base
     n = 1
@@ -543,7 +649,7 @@ def _create_stub(
             entity_type=entity_type,
             canonical_name=mention,
             slug=slug,
-            status='active',
+            status='stub',
         )
         EntityAlias.objects.create(
             entity=entity,
@@ -553,7 +659,7 @@ def _create_stub(
             document_id=document_id,
         )
 
-    logger.info('Entity created: "%s" → %s', mention, entity.id)
+    logger.info('Stub created: "%s" → %s', mention, entity.id)
 
     # Initial assessment: world-knowledge description + space_relevance score.
     # Fires once per new entity; routes to further research based on score.

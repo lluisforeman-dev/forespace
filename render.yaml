@@ -161,8 +161,9 @@ services:
     runtime: python
     region: frankfurt
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    schedule: "0 4 * * 0"    # Sundays 04:00 UTC — anchor new entities to Wikidata/domains
-    startCommand: python manage.py anchor_identifiers --limit 300 --settings=config.settings.prod
+    schedule: "0 4 * * 0"    # Sundays 04:00 UTC — anchor new entities to Wikidata/domains,
+    # then heal resolution debris (LLM arbitration runs here: the API key lives on Render)
+    startCommand: python manage.py anchor_identifiers --limit 300 --settings=config.settings.prod && python manage.py heal_entity_fragments --apply --limit 20 --settings=config.settings.prod
     plan: free
     envVars:
       - key: DJANGO_SETTINGS_MODULE

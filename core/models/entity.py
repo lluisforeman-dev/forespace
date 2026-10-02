@@ -147,11 +147,18 @@ class EntityNonMerge(models.Model):
     Pair is stored with entity_a.id < entity_b.id (lexicographic) so lookup is O(1).
     This is the primary mechanism for keeping LLM dedup costs flat as the graph grows:
     once a pair is decided, it is never re-checked.
+
+    The recorded assertion counts make decisions REOPENABLE: a "different"
+    verdict reached when one side had no evidence (the LLM defaults to false
+    when uncertain) is not trustworthy forever. Dedup re-litigates a decided
+    pair when either side's evidence has grown substantially since the decision.
     """
     entity_a = models.ForeignKey(Entity, on_delete=models.CASCADE, related_name='+')
     entity_b = models.ForeignKey(Entity, on_delete=models.CASCADE, related_name='+')
     decided_at = models.DateTimeField(auto_now_add=True)
     method = models.CharField(max_length=50, default='auto:dedup_sweep')
+    assertions_a = models.IntegerField(default=0)  # accepted assertions on A at decision time
+    assertions_b = models.IntegerField(default=0)  # accepted assertions on B at decision time
 
     class Meta:
         db_table = 'entity_non_merge'
