@@ -541,9 +541,12 @@ def entity_profile(request, entity_id):
     # Derive display_call_status for every event (used in template)
     for ev in events:
         if ev.event_type == 'grant_call':
-            if ev.call_status:
+            if ev.date and ev.date < today:
+                # Deadline passed — stored status may be stale research data
+                ev.display_call_status = 'closed'
+            elif ev.call_status:
                 ev.display_call_status = ev.call_status
-            elif ev.date and ev.date >= today:
+            elif ev.date:
                 ev.display_call_status = 'open'
             else:
                 ev.display_call_status = 'closed'
@@ -862,6 +865,8 @@ def funding(request):
     from core.models import Entity, Event, Relation
     from django.db.models import Count, Q, Sum
 
+    today = timezone.now().date()
+
     q = request.GET.get('q', '').strip()
     ftype = request.GET.get('ftype', '').strip()
 
@@ -901,6 +906,7 @@ def funding(request):
             Event.objects
             .filter(entity=prog, event_type='grant_call')
             .exclude(call_status='closed')
+            .exclude(date__lt=today)  # deadline passed → treat as closed
             .order_by('-date')[:3]
         )
         award_count = Event.objects.filter(
@@ -923,11 +929,12 @@ def funding(request):
     # Sort: programs with open calls first, then by award count
     programs.sort(key=lambda p: (-len(p['open_calls']), -p['award_count']))
 
-    # Grant calls across all programs — exclude explicitly closed, show rest
+    # Grant calls across all programs — exclude explicitly closed and expired, show rest
     open_calls = (
         Event.objects
         .filter(event_type='grant_call')
         .exclude(call_status='closed')
+        .exclude(date__lt=today)  # deadline passed → treat as closed
         .select_related('entity', 'source')
         .order_by('-date')[:30]
     )
