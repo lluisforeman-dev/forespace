@@ -146,6 +146,15 @@ RULES:
   entity_type=company : the entity builds hardware, launches rockets, operates satellites,
     processes satellite data as a product, or provides space-derived connectivity.
     Its primary mission involves space. Examples: SpaceX, Planet Labs, GMV, Open Cosmos.
+  entity_type=asset   : a named product, vehicle, or spacecraft — NOT a business.
+    Rockets, satellites, rovers, telescopes, constellations-as-products.
+    Examples: Falcon 9, Hubble, Capella-3, ERMINAZ-2.
+    A product is NOT a company: SpaceX's Starship launch vehicle is a different
+    thing from Starship Technologies (the sidewalk delivery-robot company).
+  entity_type=facility: a named place built for space activity — launch sites, factories,
+    test centres, ground stations. Examples: Kennedy Space Center, Svalbard ground station.
+    Owner-prefixed sites ("Airbus Defence and Space Friedrichshafen") are FACILITIES,
+    not companies.
   entity_type=entity  : an institution, agency, or body with a meaningful space role but not
     purely commercial — government agencies, intergovernmental bodies, research labs, NGOs
     with a space department. Examples: ESA, NASA, DLR, CNES, Eutelsat.
@@ -155,6 +164,8 @@ RULES:
     space staff), a supermarket chain using GPS for fleet logistics.
   DEFAULT RULE: if there is any doubt, label the entity company or entity — it is better
   to over-include in the space industry than to incorrectly exclude a space-adjacent actor.
+  NEVER default to company for a named product, a place, or a programme: a possessive
+  ("SpaceX's Falcon 9 flew...") does not make a product into a company.
 - Distinguish INSTITUTION, FUNDING PROGRAMME, and SPACE PROGRAMME:
   entity_type=entity|investor: European Commission, ESA, Generalitat de Catalunya, EIB, Innovate UK, BlackRock
   entity_type=funding_program: Horizon Europe, ESA ARTES, EIC Accelerator, Préstecs ICF, BlackRock Space Fund
@@ -539,8 +550,8 @@ _TYPE_TO_TOPIC = {
     'investor': 'company',
     'entity': 'company',
     'university': 'company',
-    'asset': 'company',
-    'funding_program': 'funding_program',
+    'asset': 'asset',       # products get a product frame — a company prompt on
+    'funding_program': 'funding_program',  # "Raptor"/"Blue Moon"/"Starship" researches
     'end_user': 'end_user',      # focused: only the space connection, leaf node
     'program': 'question',
     'facility': 'question',
@@ -549,7 +560,7 @@ _TYPE_TO_TOPIC = {
 }
 
 # topic_types that are valid for ExtractionRun.task naming
-_VALID_TOPIC_TYPES = {'company', 'news', 'question', 'space_angle', 'research', 'funding', 'funding_program', 'person', 'end_user', 'location'}
+_VALID_TOPIC_TYPES = {'company', 'news', 'question', 'space_angle', 'research', 'funding', 'funding_program', 'person', 'end_user', 'location', 'asset'}
 
 
 def _synthesise_event_description(existing: str, new: str, title: str) -> str:
@@ -1494,6 +1505,26 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         logger.info('research_topic: paused — dropping task for "%s"', topic)
         return
 
+    # Align the research frame with what the entity actually IS. A company
+    # prompt on a vehicle ("Starship") made EigenSearch research the delivery-
+    # robot company and re-contaminate the asset entity. One cheap lookup;
+    # callers that pass topic_type='company' for a known asset get the asset
+    # frame instead.
+    if topic_type == 'company':
+        from core.models import Entity as _Entity
+        from core.normalize import normalize_name as _norm
+        _known_asset = (
+            _Entity.objects
+            .filter(canonical_name__iexact=topic, entity_type='asset', status__in=('active', 'stub'))
+            .first()
+            or _Entity.objects
+            .filter(aliases__alias_norm=_norm(topic), entity_type='asset', status__in=('active', 'stub'))
+            .first()
+        )
+        if _known_asset:
+            topic_type = 'asset'
+            logger.info('research_topic: "%s" is a known asset — switching to the asset frame', topic)
+
     vocab = _attr_vocab()
     if not vocab:
         logger.error('research_topic: AttributeDef is empty — migration 0008 may not have run')
@@ -1521,6 +1552,22 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             f'technology choices, competitive position, key people, strategic pivots, '
             f'and all relationships with other companies, agencies, and assets.'
             f'{angle_str}\n\n'
+            f'{_vocab_block()}'
+            f'{ctx}'
+            f'{_seen_block(seen)}'
+        )
+    elif topic_type == 'asset':
+        seen = _seen_urls_for_company(topic)
+        ctx = _entity_context_block(topic)
+        user_msg = (
+            f'Research the named spacecraft, launch vehicle, rocket engine, or space product "{topic}". '
+            f'This is a PRODUCT, not a company — do NOT research or extract company-level facts '
+            f'(funding rounds, founders, headcount, business description) unless they are directly '
+            f'about this product\'s programme. Find: technical specifications and variants, flight or '
+            f'operational history, milestones and upgrades, anomalies and failures, the manufacturer '
+            f'and operators of this product, and contracts or missions that specifically use it. '
+            f'Extract as much as possible: launches, deployments, test campaigns, performance records, '
+            f'and relationships to manufacturers, operators, and agencies.\n\n'
             f'{_vocab_block()}'
             f'{ctx}'
             f'{_seen_block(seen)}'
@@ -1607,7 +1654,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
             f'are most active in space. Extract relations: invested_in, co_invested_with, received_grant_from.\n\n'
             f'CRITICAL — always distinguish the INSTITUTION from its FUNDING TOOL:\n'
             f'  Institution (entity_type=entity|investor): European Commission, ESA, Generalitat de Catalunya, EIB, Innovate UK\n'
-            f'  Funding programme (entity_type=program): Horizon Europe, ESA ARTES, Préstecs ICF, EIC Accelerator, Smart Grant\n'
+            f'  Funding programme (entity_type=funding_program): Horizon Europe, ESA ARTES, Préstecs ICF, EIC Accelerator, Smart Grant\n'
             f'  Always use the full institutional name — never shorten to a geographic area.\n'
             f'  Extract the chain as TWO relations:\n'
             f'    1. institution → administers → programme\n'
