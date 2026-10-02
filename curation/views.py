@@ -153,6 +153,7 @@ def dashboard(request):
         'relations': Relation.objects.filter(observed_at__gte=week_ago, superseded_at__isnull=True).count(),
     }
 
+    from ingest.alerts import credits_alert, openrouter_credit_balance
     from ingest.pause import paused_operations, get_cascade_cap
     ql = _per_queue_lengths()
     # Operation → queues it uses (for "Running (N)" display)
@@ -168,6 +169,8 @@ def dashboard(request):
     }
     ctx = {
         'candidate_count': Assertion.objects.filter(status='candidate').count(),
+        'credits_alert': credits_alert(),
+        'credit_balance': openrouter_credit_balance(),
         'relation_count': Relation.objects.filter(superseded_at__isnull=True).count(),
         'analytics': snapshot,
         'recent_events': recent_events,
@@ -307,8 +310,10 @@ def resume_tasks(request):
     """Clear all pause flags."""
     if request.method != 'POST':
         return HttpResponseRedirect(reverse('curation:dashboard'))
+    from ingest.alerts import clear_credits_alert
     from ingest.pause import resume
     resume(None)  # clears global + all named flags
+    clear_credits_alert()
     messages.success(request, 'All operations resumed.')
     return HttpResponseRedirect(reverse('curation:dashboard'))
 

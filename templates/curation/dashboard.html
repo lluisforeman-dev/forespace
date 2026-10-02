@@ -100,6 +100,23 @@
   <button type="button" id="dg-auto-btn" class="dg-toggle" title="Reload this page every 60s (off by default)">Auto-refresh</button>
 </div>
 
+{% if credits_alert %}
+<div style="background:#7f1d1d;border:1px solid #fca5a5;border-radius:6px;padding:12px 18px;margin-bottom:16px;
+            display:flex;align-items:center;gap:14px;font-size:13px;color:#fff;flex-wrap:wrap;">
+  <strong>&#9888; Out of OpenRouter credits — research is paused.</strong>
+  <span style="opacity:.85;">
+    Since {{ credits_alert.since|slice:":16"|replace:"T"," " }} UTC
+    {% if credit_balance and credit_balance.remaining is not None %}· remaining balance: ${{ credit_balance.remaining }}{% endif %}
+  </span>
+  <span style="flex:1"></span>
+  <a href="https://openrouter.ai/settings/credits" target="_blank" rel="noopener"
+     style="background:#fff;color:#7f1d1d;font-weight:600;font-size:12px;padding:6px 14px;border-radius:4px;text-decoration:none;">
+    Add credits ↗</a>
+  <form method="post" action="{% url 'curation:resume_tasks' %}" style="margin:0">
+    {% csrf_token %}<button class="btn" style="background:#16a34a;color:#fff;font-size:12px;padding:6px 14px;">&#9654; Resume all</button>
+  </form>
+</div>
+{% endif %}
 {% if 'global' in paused_ops %}
 <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:10px 18px;margin-bottom:16px;
             display:flex;align-items:center;gap:14px;font-size:13px;color:#7f1d1d;">

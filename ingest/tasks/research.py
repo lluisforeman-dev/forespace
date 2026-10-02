@@ -1832,12 +1832,14 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         run.status = 'failed'
         run.finished_at = timezone.now()
         run.save(update_fields=['status', 'finished_at'])
-        # 402 = out of credits — set pause flag and do NOT retry
+        # 402 = out of credits — pause everything and raise the operator alert
         if '402' in str(exc):
             import redis as _redis
             from django.conf import settings as _settings
+            from ingest.alerts import mark_credits_exhausted
             _redis.from_url(_settings.CELERY_BROKER_URL).set(PAUSE_FLAG, '1')
-            logger.warning('research_topic: 402 out of credits — pause flag set, task dropped')
+            mark_credits_exhausted()
+            logger.warning('research_topic: 402 out of credits — paused + operator alerted')
             return
         raise self.retry(exc=exc)
 
