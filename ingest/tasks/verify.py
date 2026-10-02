@@ -85,6 +85,21 @@ def verify_assertion_quote(assertion: Assertion) -> str:
     if not hit:
         prose = trafilatura.extract(text, include_comments=False, favor_recall=True) or ''
         hit = quote in prose
+    if not hit:
+        # Fuzzy fallback — pages fetched in full differ from search snippets in
+        # punctuation, quote marks and whitespace, and Q&A pages split a quote
+        # across elements. High token overlap still proves the source says what
+        # we recorded; exact matching alone punished those claims unfairly.
+        import re as _re
+
+        def _tokens(s: str) -> set:
+            return set(_re.sub(r'[^a-z0-9]+', ' ', s.lower()).split())
+
+        q_tokens = _tokens(quote)
+        if len(q_tokens) >= 6:
+            hay = _tokens(text) | _tokens(prose)
+            if len(q_tokens & hay) / len(q_tokens) >= 0.8:
+                hit = True
 
     if hit:
         Assertion.objects.filter(pk=assertion.pk).update(

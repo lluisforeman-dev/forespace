@@ -315,6 +315,55 @@ def test_classify_proceeds_when_run_adjudicated():
 
 
 @pytest.mark.django_db
+def test_verify_fuzzy_match_saves_snippet_quotes():
+    """Full-page fetches differ from search snippets in punctuation/structure —
+    high token overlap must verify, not punish."""
+    from core.models import Document, Source
+    from ingest.tasks.verify import verify_assertion_quote
+    entity = _make_entity('Rocket Lab', 'company')
+    source = Source.objects.create(name='rl-test', kind='primary', domain='rocketlabcorp.com')
+    doc = Document.objects.create(
+        source=source,
+        url='https://rocketlabcorp.com/investor-faqs',
+        content_sha256=uuid.uuid4().hex,
+        storage_key='test/rl',
+        pipeline_status='done',
+        raw_content='FAQ: Where are Rocket Lab headquarters located? The company operates '
+                    'from 3881 McGowen Street, Long Beach, California 90808, USA.',
+    )
+    # Quote as the LLM would write it from a snippet — different phrasing order
+    a = Assertion.objects.create(
+        entity=entity, attribute_id=_make_attr().key, document=doc,
+        method='extracted', confidence=75, status='accepted',
+        value_text='Long Beach', quote="Where are Rocket Lab's headquarters? 3881 McGowen Street, Long Beach, California 90808.",
+    )
+    assert verify_assertion_quote(a) == 'verified'
+    a.refresh_from_db()
+    assert a.quote_verified is True
+
+
+@pytest.mark.django_db
+def test_verify_still_fails_on_absent_content():
+    """Genuinely absent content must still fail — fuzzy matching is not a pass."""
+    from core.models import Document, Source
+    from ingest.tasks.verify import verify_assertion_quote
+    entity = _make_entity('Acme', 'company')
+    source = Source.objects.create(name='acme-test', kind='primary', domain='acme.test')
+    doc = Document.objects.create(
+        source=source, url='https://acme.test/news', content_sha256=uuid.uuid4().hex,
+        storage_key='test/acme',
+        pipeline_status='done',
+        raw_content='Acme Corp announces a new office in Madrid, Spain for launch operations.',
+    )
+    a = Assertion.objects.create(
+        entity=entity, attribute_id=_make_attr().key, document=doc,
+        method='extracted', confidence=75, status='accepted',
+        value_text='50,000 employees', quote='Acme employs 50,000 people worldwide across offices.',
+    )
+    assert verify_assertion_quote(a) == 'failed'
+
+
+@pytest.mark.django_db
 def test_classify_without_run_id_never_defers():
     """Manual/other triggers (run_id=None) keep immediate behaviour."""
     entity = _make_entity('Acme Space', 'company')

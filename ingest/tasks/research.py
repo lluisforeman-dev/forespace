@@ -289,6 +289,10 @@ def _map_value(value, unit, datatype: str) -> dict:
 
 
 def _get_or_create_url_doc(source_url: str, search_source: Source) -> Document:
+    # URL hygiene: EigenSearch-sourced URLs sometimes carry stray whitespace
+    # ("...flight-14 ") — fetched verbatim they 404/soft-404 and every claim
+    # on them fails quote verification. Normalise before hashing and storing.
+    source_url = ' '.join(str(source_url).split())
     src_trust = domain_trust(source_url)
     url_sha = hashlib.sha256(source_url.encode()).hexdigest()
     doc, _ = Document.objects.get_or_create(
