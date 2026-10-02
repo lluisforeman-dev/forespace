@@ -1,473 +1,465 @@
 {% extends "base.html" %}
+{% load humanize curation_tags %}
 {% block title %}EigenGraph{% endblock %}
 {% block content %}
 
-<!-- Task monitor bar -->
-<div style="display:flex;align-items:center;gap:24px;background:#fff;border:1px solid #ddd;border-radius:6px;padding:12px 20px;margin-bottom:20px;">
-  <div style="display:flex;align-items:center;gap:8px;">
-    <span style="width:10px;height:10px;border-radius:50%;flex-shrink:0;display:inline-block;
-      background:{% if worker_status.online %}#28a745{% else %}#dc3545{% endif %};
-      box-shadow:0 0 0 2px {% if worker_status.online %}rgba(40,167,69,.25){% else %}rgba(220,53,69,.25){% endif %}">
-    </span>
-    <span style="font-size:13px;font-weight:600;color:{% if worker_status.online %}#155724{% else %}#721c24{% endif %}">
-      Worker {% if worker_status.online %}online{% else %}offline{% endif %}
-    </span>
-    {% if worker_status.workers %}
-      <span style="font-size:11px;color:#888">({{ worker_status.workers|length }} node{{ worker_status.workers|length|pluralize }})</span>
-    {% endif %}
-  </div>
-  <div style="flex:1">
-    <span style="font-size:13px;color:#555;">Tasks queued: </span>
-    <strong style="font-size:15px;">
-      {% if queued_tasks is not None %}{{ queued_tasks }}{% else %}—{% endif %}
-    </strong>
-    <span style="font-size:12px;color:#999;margin-left:8px">Refresh to update</span>
-  </div>
-  <form method="post" action="{% url 'curation:stop_all' %}" onsubmit="return confirm('Stop and pause all tasks? Workers will drop prefetched tasks too.')">
-    {% csrf_token %}
-    <button class="btn" style="background:#dc3545;color:#fff;font-size:13px;padding:8px 20px;">
-      &#9632; Stop &amp; pause
-    </button>
-  </form>
-  <form method="post" action="{% url 'curation:resume_tasks' %}">
-    {% csrf_token %}
-    <button class="btn" style="background:#28a745;color:#fff;font-size:13px;padding:8px 20px;">
-      &#9654; Resume
-    </button>
-  </form>
-</div>
-
-<!-- Three modes -->
-<div class="grid2" style="grid-template-columns:1fr 1fr 1fr;">
-
-  <div class="card">
-    <h2>1. Space news (auto)</h2>
-    <p style="font-size:12px;color:#666;margin-bottom:14px;">
-      Fetches the latest articles from {{ num_feeds }} curated space industry feeds
-      (SpaceNews, NASASpaceflight, SpaceflightNow, Ars Technica, Payload…) and runs them through the full pipeline.
-    </p>
-    <form method="post" action="{% url 'curation:auto_news' %}">
-      {% csrf_token %}
-      <button class="btn btn-primary" style="width:100%">Fetch space news now</button>
-    </form>
-  </div>
-
-  <div class="card">
-    <h2>2. Research a company</h2>
-    <p style="font-size:12px;color:#666;margin-bottom:14px;">
-      Searches Google News for recent articles about the company and ingests them.
-    </p>
-    <form method="post" action="{% url 'curation:company_research' %}">
-      {% csrf_token %}
-      <label>Company name</label>
-      <input type="text" name="company" placeholder="e.g. SpaceX, Rocket Lab, ESA" autofocus>
-      <button class="btn btn-primary" style="width:100%">Research company</button>
-    </form>
-  </div>
-
-  <div class="card">
-    <h2>3. Ask a question</h2>
-    <p style="font-size:12px;color:#666;margin-bottom:14px;">
-      Searches for articles relevant to your question and populates the database with what it finds.
-    </p>
-    <form method="post" action="{% url 'curation:question_research' %}">
-      {% csrf_token %}
-      <label>Question</label>
-      <input type="text" name="question" placeholder="e.g. Who invested in SpaceX Series D?">
-      <button class="btn btn-primary" style="width:100%">Search &amp; ingest</button>
-    </form>
-  </div>
-
-</div>
-
-<!-- Operations table -->
 <style>
-  .ops-table { width:100%; border-collapse:collapse; margin-bottom:20px; font-size:12px; }
-  .ops-table th { text-align:left; padding:6px 10px; border-bottom:2px solid #e5e7eb; color:#6b7280; font-weight:600; text-transform:uppercase; letter-spacing:.4px; }
-  .ops-table td { padding:6px 10px; border-bottom:1px solid #f3f4f6; vertical-align:middle; }
-  .ops-table tr:hover td { background:#f9fafb; }
-  .op-status { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
-  .op-status.running { background:#22c55e; }
-  .op-status.paused  { background:#ef4444; }
-  .ops-table form { display:inline; margin:0; }
-  .op-btn { padding:3px 10px; border-radius:4px; border:1px solid; font-size:11px; cursor:pointer; }
-  .op-btn.start  { background:#fff; border-color:#16a34a; color:#16a34a; }
-  .op-btn.stop   { background:#fff; border-color:#dc2626; color:#dc2626; }
-  .op-btn.stop:hover  { background:#dc2626; color:#fff; }
-  .op-btn.start:hover { background:#16a34a; color:#fff; }
+  .dg-strip { display:flex; align-items:center; gap:14px; flex-wrap:wrap; background:#fff; border:1px solid #ddd;
+              border-radius:6px; padding:10px 18px; margin-bottom:16px; font-size:12.5px; color:#555; }
+  .dg-strip .sep { width:1px; height:16px; background:#e5e7eb; }
+  .dg-strip strong { color:#1a1a2e; }
+  .dg-dot { width:9px; height:9px; border-radius:50%; display:inline-block; flex-shrink:0; }
+  .dg-paused-flag { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; border-radius:4px;
+                    padding:2px 8px; font-size:11px; font-weight:600; }
+  .dg-toggle { border:1px solid #cbd5e1; background:#fff; border-radius:4px; padding:3px 10px;
+               font-size:11px; cursor:pointer; color:#64748b; }
+  .dg-toggle.on { border-color:#16a34a; color:#16a34a; }
+
+  .dg-research { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;
+                 background:#fff; border:1px solid #ddd; border-radius:6px; padding:12px 18px; margin-bottom:20px; }
+  .dg-research label { font-size:11px; color:#888; margin-bottom:2px; display:block; }
+  .dg-research input[type=text] { margin-bottom:0; }
+  .dg-research .fld { flex:2; min-width:220px; }
+  .dg-research .fld-q { flex:3; min-width:260px; }
+  .dg-research .btn { white-space:nowrap; }
+
+  .dg-main { display:grid; grid-template-columns: 1.55fr 1fr; gap:20px; align-items:start; }
+  @media (max-width: 1000px) { .dg-main { grid-template-columns: 1fr; } }
+
+  .ev-row { display:flex; gap:10px; padding:9px 0; border-bottom:1px solid #f1f2f4; }
+  .ev-row:last-child { border-bottom:none; }
+  .ev-date { flex-shrink:0; width:52px; text-align:center; background:#f4f5f7; border-radius:5px; padding:3px 0; }
+  .ev-date .d { font-size:13px; font-weight:700; color:#1a1a2e; line-height:1.1; }
+  .ev-date .m { font-size:10px; color:#888; text-transform:uppercase; }
+  .ev-type { display:inline-block; font-size:10px; font-weight:600; letter-spacing:.3px; text-transform:uppercase;
+             border-radius:3px; padding:1px 6px; margin-right:6px; vertical-align:1px; }
+  .et-funding_round    { background:#dbeafe; color:#1e40af; }
+  .et-grant_award      { background:#dcfce7; color:#166534; }
+  .et-research_grant   { background:#dcfce7; color:#166534; }
+  .et-grant_call       { background:#d1fae5; color:#065f46; }
+  .et-contract_award   { background:#fef3c7; color:#92400e; }
+  .et-launch           { background:#ede9fe; color:#5b21b6; }
+  .et-partnership      { background:#ccfbf1; color:#115e59; }
+  .et-acquisition      { background:#fee2e2; color:#991b1b; }
+  .et-ipo              { background:#f3e8ff; color:#6b21a8; }
+  .et-milestone        { background:#f1f5f9; color:#334155; }
+  .et-default          { background:#f1f5f9; color:#475569; }
+  .ev-amount { font-weight:700; color:#166534; font-size:12.5px; white-space:nowrap; }
+  .ev-src { font-size:10.5px; color:#94a3b8; margin-top:2px; }
+  .ev-src a { color:#94a3b8; }
+  .ev-src a:hover { color:#0066cc; }
+  .sig { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px; vertical-align:1px; }
+  .sig-high { background:#dc2626; } .sig-medium { background:#f59e0b; } .sig-low { background:#d1d5db; }
+
+  .h-tiles { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px; }
+  .h-tile { background:#f8f9fb; border:1px solid #e8eaee; border-radius:6px; padding:10px 14px; }
+  .h-tile .num { font-size:21px; font-weight:700; color:#1a1a2e; line-height:1.2; }
+  .h-tile .lbl { font-size:10.5px; color:#888; text-transform:uppercase; letter-spacing:.4px; }
+  .h-tile .sub { font-size:11px; color:#16a34a; }
+
+  .h-bar-row { display:flex; align-items:center; gap:8px; font-size:11.5px; margin:7px 0; }
+  .h-bar-row .h-lab { width:120px; color:#555; flex-shrink:0; }
+  .h-bar-row .h-track { flex:1; height:7px; background:#eef0f3; border-radius:4px; overflow:hidden; }
+  .h-bar-row .h-fill { height:100%; border-radius:4px; }
+  .h-bar-row .h-val { width:70px; text-align:right; color:#888; flex-shrink:0; }
+
+  .run-row { padding:7px 0; border-bottom:1px solid #f1f2f4; font-size:12px; }
+  .run-row:last-child { border-bottom:none; }
+  .run-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:7px; vertical-align:1px; }
+  .run-row .meta { color:#8a93a3; font-size:11px; margin-top:1px; }
+
+  .dg-ops { background:#fff; border:1px solid #ddd; border-radius:6px; margin:20px 0; }
+  .dg-ops > summary { cursor:pointer; padding:11px 18px; font-size:13px; font-weight:600; color:#555;
+                      list-style:none; user-select:none; }
+  .dg-ops > summary::before { content:'▸ '; color:#aaa; }
+  .dg-ops[open] > summary::before { content:'▾ '; }
+  .dg-ops .ops-inner { padding:0 18px 16px; }
 </style>
-<table class="ops-table">
-  <thead><tr><th>Operation</th><th>Status</th><th>Run</th><th>Stop / Resume</th></tr></thead>
-  <tbody>
 
-  {% comment %}Research{% endcomment %}
-  <tr>
-    <td>Research all entities</td>
-    <td>{% if 'research' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.research %}<span class="op-status running"></span>Running ({{ op_queue_counts.research }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
-    <td><form method="post" action="{% url 'curation:research_all' %}" onsubmit="return confirm('Queue full research for all entities with no events?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
-    <td>
-      {% if 'research' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'research' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
-      {% else %}<form method="post" action="{% url 'curation:stop_operation' 'research' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}
-    </td>
-  </tr>
-
-  {% comment %}Assess{% endcomment %}
-  <tr>
-    <td>Assess all (score + describe)</td>
-    <td>{% if 'assess' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.assess %}<span class="op-status running"></span>Running ({{ op_queue_counts.assess }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
-    <td><form method="post" action="{% url 'curation:assess_all' %}" onsubmit="return confirm('Assess all entities with no description?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
-    <td>
-      {% if 'assess' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'assess' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
-      {% else %}<form method="post" action="{% url 'curation:stop_operation' 'assess' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}
-    </td>
-  </tr>
-
-  {% comment %}Classify{% endcomment %}
-  <tr>
-    <td>Score all entities (space_relevance)</td>
-    <td>{% if 'classify' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.classify %}<span class="op-status running"></span>Running ({{ op_queue_counts.classify }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
-    <td><form method="post" action="{% url 'curation:classify_all' %}" onsubmit="return confirm('Score all unscored entities?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
-    <td>
-      {% if 'classify' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'classify' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
-      {% else %}<form method="post" action="{% url 'curation:stop_operation' 'classify' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}
-    </td>
-  </tr>
-
-  {% comment %}Summarise{% endcomment %}
-  <tr>
-    <td>Summarise all entities</td>
-    <td>{% if 'summarise' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.summarise %}<span class="op-status running"></span>Running ({{ op_queue_counts.summarise }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
-    <td><form method="post" action="{% url 'curation:summarise_all' %}" onsubmit="return confirm('Queue summarise for all entities?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
-    <td>
-      {% if 'summarise' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'summarise' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
-      {% else %}<form method="post" action="{% url 'curation:stop_operation' 'summarise' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}
-    </td>
-  </tr>
-
-  {% comment %}Supply chain extract{% endcomment %}
-  <tr>
-    <td>Supply chain — extract outputs &amp; inputs</td>
-    <td>{% if 'supply_chain_extract' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.supply_chain_extract %}<span class="op-status running"></span>Running ({{ op_queue_counts.supply_chain_extract }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
-    <td><form method="post" action="{% url 'curation:fill_supply_chain' %}" onsubmit="return confirm('Extract outputs/inputs for all score=100 entities missing them?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
-    <td>
-      {% if 'supply_chain_extract' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'supply_chain_extract' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
-      {% else %}<form method="post" action="{% url 'curation:stop_operation' 'supply_chain_extract' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}
-    </td>
-  </tr>
-
-  {% comment %}Supply chain classify{% endcomment %}
-  <tr>
-    <td>Supply chain — classify tiers</td>
-    <td>{% if 'supply_chain_classify' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.supply_chain_classify %}<span class="op-status running"></span>Running ({{ op_queue_counts.supply_chain_classify }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
-    <td><form method="post" action="{% url 'curation:classify_supply_chain_all' %}" onsubmit="return confirm('Re-classify tiers for all entities?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
-    <td>
-      {% if 'supply_chain_classify' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'supply_chain_classify' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
-      {% else %}<form method="post" action="{% url 'curation:stop_operation' 'supply_chain_classify' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}
-    </td>
-  </tr>
-
-  {% comment %}Locations{% endcomment %}
-  <tr>
-    <td>Fill missing locations</td>
-    <td>{% if 'locations' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.locations %}<span class="op-status running"></span>Running ({{ op_queue_counts.locations }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
-    <td>
-      <form method="post" action="{% url 'curation:fill_locations_all' %}" onsubmit="return confirm('Fill missing headquarters locations?')" style="display:inline">{% csrf_token %}<button class="op-btn start">Locations</button></form>
-      <form method="post" action="{% url 'curation:fill_addresses_all' %}" onsubmit="return confirm('Fill missing street addresses?')" style="display:inline">{% csrf_token %}<button class="op-btn start">Addresses</button></form>
-      <form method="post" action="{% url 'curation:geocode_offices' %}" onsubmit="return confirm('Geocode office addresses?')" style="display:inline">{% csrf_token %}<button class="op-btn start">Geocode</button></form>
-    </td>
-    <td>
-      {% if 'locations' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'locations' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>
-      {% else %}<form method="post" action="{% url 'curation:stop_operation' 'locations' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}
-    </td>
-  </tr>
-
-  {% comment %}Dedup{% endcomment %}
-  <tr>
-    <td>Deduplication sweep</td>
-    <td><span class="op-status running"></span>Manual</td>
-    <td>
-      <form method="post" action="{% url 'curation:run_dedup_sweep' %}" onsubmit="return confirm('Run dedup sweep (live)?')" style="display:inline">{% csrf_token %}<button class="op-btn start">Live</button></form>
-      <form method="post" action="{% url 'curation:run_dedup_sweep' %}" style="display:inline">{% csrf_token %}<input type="hidden" name="dry_run" value="1"><button class="op-btn start" style="border-color:#6b7280;color:#6b7280">Dry run</button></form>
-      <form method="post" action="{% url 'curation:merge_geography_duplicates' %}" onsubmit="return confirm('Merge geo duplicates?')" style="display:inline">{% csrf_token %}<button class="op-btn start">Merge geo</button></form>
-    </td>
-    <td>&nbsp;</td>
-  </tr>
-
-  </tbody>
-</table>
-
-<!-- Global stop/resume -->
-<div style="display:flex;gap:10px;margin-bottom:20px;align-items:center;flex-wrap:wrap;">
-  {% if 'global' in paused_ops %}
-  <form method="post" action="{% url 'curation:resume_tasks' %}">{% csrf_token %}
-    <button class="btn" style="background:#16a34a;color:#fff;font-size:12px;">&#9654; Resume all</button>
-  </form>
-  {% else %}
-  <form method="post" action="{% url 'curation:stop_all' %}" onsubmit="return confirm('Stop and flush ALL queued tasks?')">{% csrf_token %}
-    <button class="btn" style="background:#dc2626;color:#fff;font-size:12px;">&#9646;&#9646; Stop everything</button>
-  </form>
+<!-- ── Status strip ─────────────────────────────────────────────────── -->
+<div class="dg-strip">
+  <span>
+    <span class="dg-dot" style="background:{% if worker_status.online %}#22c55e{% else %}#dc2626{% endif %}"></span>
+    <strong>Worker {% if worker_status.online %}online{% else %}offline{% endif %}</strong>
+    {% if worker_status.workers %}<span style="color:#999">({{ worker_status.workers|length }})</span>{% endif %}
+  </span>
+  <span class="sep"></span>
+  <span>Queued tasks <strong>{% if queued_tasks is not None %}{{ queued_tasks }}{% else %}—{% endif %}</strong></span>
+  <span class="sep"></span>
+  <span>24h: <strong>{{ analytics.last_24h.llm_calls|default:0 }}</strong> LLM calls ·
+        <strong>${{ analytics.last_24h.cost_usd|default:0|floatformat:2 }}</strong></span>
+  <span class="sep"></span>
+  <span>Entities <strong>{{ total_active }}</strong></span>
+  {% if paused_ops %}
+  <span class="dg-paused-flag">&#9632; Paused: {{ paused_ops|join:", " }}</span>
   {% endif %}
+  <span style="flex:1"></span>
+  <button type="button" id="dg-auto-btn" class="dg-toggle on" title="Reload this page every 30s">Auto-refresh</button>
+</div>
 
-  <form method="post" action="{% url 'curation:set_cascade_cap' %}" style="display:flex;gap:8px;align-items:center;">
+{% if 'global' in paused_ops %}
+<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:10px 18px;margin-bottom:16px;
+            display:flex;align-items:center;gap:14px;font-size:13px;color:#7f1d1d;">
+  <strong>The pipeline is fully paused.</strong> Queued tasks stay in Redis but nothing is processed.
+  <form method="post" action="{% url 'curation:resume_tasks' %}" style="margin-left:auto">
+    {% csrf_token %}<button class="btn" style="background:#16a34a;color:#fff;font-size:12px;padding:6px 16px;">&#9654; Resume all</button>
+  </form>
+</div>
+{% endif %}
+
+<!-- ── Quick research ───────────────────────────────────────────────── -->
+<div class="dg-research">
+  <form method="post" action="{% url 'curation:company_research' %}" class="fld">
     {% csrf_token %}
-    <label style="font-size:12px;color:#555;margin:0;">Cascade depth cap</label>
-    <input type="number" name="cascade_cap" min="0" max="10" value="{{ cascade_cap }}"
-           style="width:60px;margin-bottom:0;padding:5px 8px;">
-    <button class="btn" style="background:#1a1a2e;color:#fff;font-size:12px;padding:6px 14px;">Set</button>
-    <span style="font-size:11px;color:#888;">
-      how deep research auto-cascades: 0&nbsp;=&nbsp;off, 1&nbsp;=&nbsp;one hop, 2&nbsp;=&nbsp;two hops…
-    </span>
+    <label>Research an organisation</label>
+    <input type="text" name="company" placeholder="e.g. SpaceX, Rocket Lab, ESA — deep web research + cascade">
+  </form>
+  <form method="post" action="{% url 'curation:question_research' %}" class="fld-q">
+    {% csrf_token %}
+    <label>Ask the industry a question</label>
+    <input type="text" name="question" placeholder="e.g. Who invested in SpaceX Series D? — findings land in the graph">
+  </form>
+  <form method="post" action="{% url 'curation:auto_news' %}">
+    {% csrf_token %}
+    <button class="btn" style="background:#fff;color:#1a1a2e;border:1px solid #cbd5e1;font-size:12.5px;padding:8px 14px;">
+      Fetch news ({{ num_feeds }} feeds)
+    </button>
   </form>
 </div>
 
-<!-- Assessment progress -->
-<div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:12px 20px;margin-bottom:20px;font-size:13px;display:flex;gap:32px;align-items:center;">
-  <span style="color:#555;font-weight:600;">Assessment progress</span>
-  <span>
-    <strong>{{ with_summary }}</strong> / {{ total_active }}
-    <span style="color:#888"> with description</span>
-    {% if total_active %}
-      <span style="color:#28a745;margin-left:4px">({% widthratio with_summary total_active 100 %}%)</span>
-    {% endif %}
-  </span>
-  <span>
-    <strong>{{ with_score }}</strong> / {{ total_active }}
-    <span style="color:#888"> scored</span>
-    {% if total_active %}
-      <span style="color:#17a2b8;margin-left:4px">({% widthratio with_score total_active 100 %}%)</span>
-    {% endif %}
-  </span>
-  <span style="color:#aaa;font-size:11px;">Refresh to update</span>
-</div>
+<!-- ── Main: intelligence + health ──────────────────────────────────── -->
+<div class="dg-main">
 
-<!-- Stats -->
-<div class="stats">
-  <div class="stat">
-    <div class="num">{{ analytics.entity_counts.company.active|default:0 }}</div>
-    <div class="lbl">Companies</div>
-  </div>
-  <div class="stat">
-    <div class="num">{{ analytics.assertion_counts.accepted|default:0 }}</div>
-    <div class="lbl">Assertions</div>
-  </div>
-  <div class="stat">
-    <div class="num">{{ relation_count }}</div>
-    <div class="lbl">Relations</div>
-  </div>
-  {% if analytics.last_24h %}
-  <div class="stat">
-    <div class="num">${{ analytics.last_24h.cost_usd|floatformat:3 }}</div>
-    <div class="lbl">LLM cost 24h</div>
-  </div>
-  <div class="stat">
-    <div class="num">{{ analytics.last_24h.llm_calls }}</div>
-    <div class="lbl">LLM calls 24h</div>
-  </div>
-  {% endif %}
-</div>
-
-<!-- Activity feed + entities side by side -->
-<div class="grid2">
-
-<!-- Pipeline activity -->
-<div class="card">
-  <h2>Pipeline activity</h2>
-  {% if recent_runs %}
-  <div style="font-size:12px">
-    {% for run in recent_runs %}
-    <div style="padding:6px 0;border-bottom:1px solid #313244">
-      <div style="display:flex;align-items:flex-start;gap:8px">
-        <div style="width:8px;height:8px;border-radius:50%;margin-top:4px;flex-shrink:0;
-          background:{% if run.status == 'completed' %}#a6e3a1{% elif run.status == 'running' %}#89b4fa{% elif run.status == 'failed' %}#f38ba8{% else %}#6c7086{% endif %}">
+  <div>
+    <!-- Latest intelligence -->
+    <div class="card" style="margin-bottom:20px">
+      <h2>Latest intelligence <span style="font-size:11.5px;color:#888;font-weight:400">— most recently discovered events</span></h2>
+      {% if recent_events %}
+      {% for ev in recent_events %}
+      <div class="ev-row">
+        <div class="ev-date">
+          {% if ev.date %}<div class="d">{{ ev.date|date:"j" }}</div><div class="m">{{ ev.date|date:"M" }}</div>
+          {% else %}<div class="d" style="color:#bbb">—</div><div class="m">?</div>{% endif %}
         </div>
         <div style="flex:1;min-width:0">
-          <div style="color:#cdd6f4;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-            {{ run.task }}
-            {% if run.stats.topic %}<span style="color:#cba6f7"> → {{ run.stats.topic|truncatechars:40 }}</span>{% endif %}
+          <div>
+            <span class="sig sig-{{ ev.significance|default:'low' }}"></span><span class="ev-type et-{{ ev.event_type|default:'default' }}">{{ ev.get_event_type_display }}</span>
+            <a href="{% url 'curation:entity_profile' ev.entity_id %}" style="font-weight:600">{{ ev.entity.canonical_name|truncatechars:34 }}</a>
+            — {{ ev.title|truncatechars:70 }}
           </div>
-          <div style="color:#6c7086;margin-top:1px">
-            {{ run.started_at|date:"H:i:s" }}
-            {% if run.stats.accepted is not None %}
-              · <span style="color:#a6e3a1">{{ run.stats.accepted }} claims</span>
-            {% endif %}
-            {% if run.stats.events %}
-              · <span style="color:#89dceb">{{ run.stats.events }} events</span>
-            {% endif %}
-            {% if run.stats.fragments %}
-              · <span style="color:#cba6f7">{{ run.stats.fragments }} fragments</span>
-            {% endif %}
-            {% if run.stats.relations %}
-              · <span style="color:#fab387">{{ run.stats.relations }} relations</span>
-            {% endif %}
-            {% if run.stats.rejected %}
-              · <span style="color:#f38ba8">{{ run.stats.rejected }} rejected</span>
-            {% endif %}
-            {% if run.status == 'failed' %}<span style="color:#f38ba8"> · failed</span>{% endif %}
+          {% if ev.description %}<div style="font-size:11.5px;color:#777;margin-top:2px">{{ ev.description|truncatechars:160 }}</div>{% endif %}
+          <div class="ev-src">
+            {{ ev.created_at|date:"H:i" }}
+            {% if ev.source and ev.source.url %} · <a href="{{ ev.source.url }}" target="_blank" rel="noopener">{{ ev.source.source.name|default:ev.source_id|truncatechars:40 }} &#8599;</a>{% endif %}
           </div>
         </div>
+        {% if ev.amount_usd %}<div class="ev-amount">${{ ev.amount_usd|floatformat:0|intcomma }}</div>{% endif %}
       </div>
-      {% if run.stats.rejections %}
-      <details style="margin-left:16px;margin-top:4px">
-        <summary style="color:#6c7086;font-size:11px;cursor:pointer">Why were {{ run.stats.rejected }} claim{{ run.stats.rejected|pluralize }} rejected?</summary>
-        <div style="margin-top:4px;padding:6px 8px;background:#181825;border-radius:4px;font-size:11px">
-          {% regroup run.stats.rejections by reason as grouped %}
-          {% for group in grouped %}
-            <div style="margin-bottom:4px">
-              {% if group.grouper == 'unknown_attribute' %}
-                <span style="color:#f9e2af">Unknown attribute keys</span>
-                — the LLM used attribute keys not in the vocabulary:
-                <span style="color:#cba6f7">{{ group.list|length }} claim{{ group.list|length|pluralize }}</span>
-                <div style="color:#585b70;margin-top:2px">
-                  {% for r in group.list %}{{ r.attribute_key }}{% if not forloop.last %}, {% endif %}{% endfor %}
-                </div>
-                <div style="color:#45475a;margin-top:2px;font-style:italic">
-                  Fix: seed more AttributeDef rows or check if the taxonomy covers these concepts.
-                </div>
-              {% elif group.grouper == 'db_error' %}
-                <span style="color:#f38ba8">Database errors</span>
-                — {{ group.list|length }} claim{{ group.list|length|pluralize }} hit a constraint:
-                <div style="color:#585b70;margin-top:2px">
-                  {% for r in group.list %}{{ r.subject }}.{{ r.attribute_key }}: {{ r.detail }}{% if not forloop.last %} · {% endif %}{% endfor %}
-                </div>
-              {% endif %}
-            </div>
-          {% endfor %}
-        </div>
-      </details>
+      {% endfor %}
+      <div style="margin-top:10px"><a href="{% url 'curation:funding' %}" style="font-size:12px">All funding intelligence &#8594;</a></div>
+      {% else %}
+      <p style="color:#888;font-size:13px;">Nothing discovered yet — research an organisation above to populate the graph.</p>
       {% endif %}
     </div>
-    {% endfor %}
-  </div>
-  {% else %}
-  <p style="color:#888;font-size:13px;">No runs yet.</p>
-  {% endif %}
-</div>
 
-<!-- Recent entities -->
-<div class="card">
-  <h2>Discovered entities</h2>
-  {% if recent_entities %}
-  <table>
-    <thead>
-      <tr><th>Name</th><th>Type</th><th>Score</th><th>Status</th><th>When</th></tr>
-    </thead>
-    <tbody>
-      {% for e in recent_entities %}
-      <tr>
-        <td><a href="{% url 'curation:entity_profile' e.id %}">{{ e.canonical_name }}</a></td>
-        <td style="font-size:11px;color:#888">{{ e.get_entity_type_display }}</td>
-        <td style="font-size:11px">
-          {% if e.space_relevance == 100 %}
-            <span style="padding:1px 6px;border-radius:8px;font-weight:700;background:#d1fae5;color:#065f46;">100</span>
-          {% elif e.space_relevance == 50 %}
-            <span style="padding:1px 6px;border-radius:8px;font-weight:700;background:#dbeafe;color:#1e40af;">50</span>
-          {% elif e.space_relevance == 20 %}
-            <span style="padding:1px 6px;border-radius:8px;font-weight:700;background:#fef3c7;color:#92400e;">20</span>
-          {% elif e.space_relevance == 0 %}
-            <span style="padding:1px 6px;border-radius:8px;font-weight:700;background:#f3f4f6;color:#6b7280;">0</span>
-          {% else %}
-            <span style="color:#555">—</span>
-          {% endif %}
-        </td>
-        <td><span class="badge badge-{{ e.status }}">{{ e.status }}</span></td>
-        <td style="font-size:11px;color:#888">{{ e.created_at|date:"H:i d/m" }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p style="color:#888;font-size:13px;">No entities yet — press one of the buttons above to start.</p>
-  {% endif %}
-</div>
-
-</div>
-
-<!-- Recently assessed -->
-<div class="card" style="margin-bottom:24px">
-  <h2 style="margin-bottom:12px">Recently assessed <span style="font-size:12px;color:#888;font-weight:400">(classify + summarise)</span></h2>
-  {% if recently_assessed %}
-  <table>
-    <thead>
-      <tr><th>Entity</th><th>Type</th><th>Score</th><th>Description</th><th>When</th></tr>
-    </thead>
-    <tbody>
-      {% for s in recently_assessed %}
-      <tr>
-        <td style="white-space:nowrap"><a href="{% url 'curation:entity_profile' s.entity.id %}">{{ s.entity.canonical_name|truncatechars:35 }}</a></td>
-        <td style="font-size:11px;color:#888">{{ s.entity.get_entity_type_display }}</td>
-        <td style="font-size:11px">
-          {% if s.entity.space_relevance == 100 %}
-            <span style="padding:1px 6px;border-radius:8px;font-weight:700;background:#d1fae5;color:#065f46;">100</span>
-          {% elif s.entity.space_relevance == 50 %}
-            <span style="padding:1px 6px;border-radius:8px;font-weight:700;background:#dbeafe;color:#1e40af;">50</span>
-          {% elif s.entity.space_relevance == 20 %}
-            <span style="padding:1px 6px;border-radius:8px;font-weight:700;background:#fef3c7;color:#92400e;">20</span>
-          {% elif s.entity.space_relevance == 0 %}
-            <span style="padding:1px 6px;border-radius:8px;font-weight:700;background:#f3f4f6;color:#6b7280;">0</span>
-          {% else %}
-            <span style="color:#bbb">—</span>
-          {% endif %}
-        </td>
-        <td style="font-size:12px;color:#555;max-width:400px">{{ s.overview|truncatechars:120 }}</td>
-        <td style="font-size:11px;color:#888;white-space:nowrap">{{ s.last_synthesised|date:"H:i d/m" }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p style="color:#888;font-size:13px;">No assessments yet.</p>
-  {% endif %}
-</div>
-
-<!-- Connections -->
-<div class="grid2">
-
-{% if event_connections %}
-<div class="card">
-  <h2>Connections from events</h2>
-  <table>
-    <thead><tr><th>Entity</th><th>Event</th><th>Connected with</th></tr></thead>
-    <tbody>
-      {% for ev in event_connections %}
-      <tr>
-        <td style="white-space:nowrap"><a href="{% url 'curation:entity_profile' ev.entity.id %}">{{ ev.entity.canonical_name|truncatechars:30 }}</a></td>
-        <td style="font-size:11px;color:#888">{{ ev.title|truncatechars:40 }}</td>
-        <td style="font-size:12px">
-          {% for p in ev.participants.all %}
-            <a href="{% url 'curation:entity_profile' p.id %}">{{ p.canonical_name|truncatechars:25 }}</a>{% if not forloop.last %}, {% endif %}
+    <!-- Newest entities -->
+    <div class="card" style="margin-bottom:20px">
+      <h2>Newest entities <span style="font-size:11.5px;color:#888;font-weight:400">— fresh from the cascade</span></h2>
+      {% if recent_entities %}
+      <table>
+        <thead><tr><th>Name</th><th>Type</th><th>Score</th><th>Status</th><th>When</th></tr></thead>
+        <tbody>
+          {% for e in recent_entities %}
+          <tr>
+            <td><a href="{% url 'curation:entity_profile' e.id %}">{{ e.canonical_name|truncatechars:42 }}</a></td>
+            <td style="font-size:11px;color:#888">{{ e.get_entity_type_display }}</td>
+            <td style="font-size:11px">
+              {% if e.space_relevance == 100 %}<span style="padding:1px 6px;border-radius:8px;font-weight:700;background:#d1fae5;color:#065f46;">100</span>
+              {% elif e.space_relevance == 50 %}<span style="padding:1px 6px;border-radius:8px;font-weight:700;background:#dbeafe;color:#1e40af;">50</span>
+              {% elif e.space_relevance == 20 %}<span style="padding:1px 6px;border-radius:8px;font-weight:700;background:#fef3c7;color:#92400e;">20</span>
+              {% elif e.space_relevance == 0 %}<span style="padding:1px 6px;border-radius:8px;font-weight:700;background:#f3f4f6;color:#6b7280;">0</span>
+              {% else %}<span style="color:#555">—</span>{% endif %}
+            </td>
+            <td><span class="badge badge-{{ e.status }}">{{ e.status }}</span></td>
+            <td style="font-size:11px;color:#888;white-space:nowrap">{{ e.created_at|date:"H:i d/m" }}</td>
+          </tr>
           {% endfor %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
+        </tbody>
+      </table>
+      {% else %}
+      <p style="color:#888;font-size:13px;">No entities yet.</p>
+      {% endif %}
+    </div>
 
-{% if recent_relations %}
-<div class="card">
-  <h2>Typed relations <span style="font-size:11px;font-weight:400;color:#888">({{ relation_count }} total)</span></h2>
-  <table>
-    <thead><tr><th>From</th><th>Relation</th><th>To</th><th>Conf</th></tr></thead>
-    <tbody>
-      {% for r in recent_relations %}
+    <!-- New relations -->
+    <div class="card">
+      <h2>New relations <span style="font-size:11.5px;color:#888;font-weight:400">— {{ relation_count|intcomma }} total</span></h2>
+      {% if recent_relations %}
+      <table>
+        <thead><tr><th>From</th><th></th><th>To</th><th>Conf</th></tr></thead>
+        <tbody>
+          {% for r in recent_relations %}
+          <tr>
+            <td><a href="{% url 'curation:entity_profile' r.subject_id %}">{{ r.subject.canonical_name|truncatechars:26 }}</a></td>
+            <td style="color:#7c3aed;font-size:11px;white-space:nowrap">{{ r.predicate_id }}</td>
+            <td><a href="{% url 'curation:entity_profile' r.object_id %}">{{ r.object.canonical_name|truncatechars:26 }}</a></td>
+            <td style="font-size:11px;color:{% if r.confidence >= 75 %}#16a34a{% elif r.confidence >= 55 %}#2563eb{% else %}#d97706{% endif %}">{{ r.confidence }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div style="margin-top:10px"><a href="{% url 'curation:connections' %}" style="font-size:12px">Explore connections &#8594;</a></div>
+      {% else %}
+      <p style="color:#888;font-size:13px;">None yet — will populate as research runs complete.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div>
+    <!-- Graph health -->
+    <div class="card" style="margin-bottom:20px">
+      <h2>Graph health</h2>
+
+      <div class="h-tiles">
+        <div class="h-tile">
+          <div class="num">{{ analytics.entity_counts.company.active|default:0 }}</div>
+          <div class="lbl">Companies</div>
+        </div>
+        <div class="h-tile">
+          <div class="num">{{ analytics.assertion_counts.accepted|default:0 }}</div>
+          <div class="lbl">Assertions</div>
+        </div>
+        <div class="h-tile">
+          <div class="num">{{ relation_count|intcomma }}</div>
+          <div class="lbl">Relations</div>
+        </div>
+        <div class="h-tile">
+          {% if funding_30d.total %}<div class="num">${{ funding_30d.total|floatformat:0|intcomma }}</div>
+          <div class="sub" style="font-size:10.5px">{{ funding_30d.n }} round{{ funding_30d.n|pluralize }} · 30d</div>{% else %}
+          <div class="num" style="color:#bbb">—</div><div class="sub" style="font-size:10.5px">no amounts · 30d</div>{% endif %}
+          <div class="lbl">Capital tracked</div>
+        </div>
+      </div>
+
+      <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Coverage</div>
+      <div class="h-bar-row">
+        <span class="h-lab">Described</span>
+        <span class="h-track"><span class="h-fill" style="width:{{ pct_described }}%;background:#16a34a"></span></span>
+        <span class="h-val">{{ with_summary|intcomma }}/{{ total_active|intcomma }} · {{ pct_described }}%</span>
+      </div>
+      <div class="h-bar-row">
+        <span class="h-lab">Space-scored</span>
+        <span class="h-track"><span class="h-fill" style="width:{{ pct_scored }}%;background:#2563eb"></span></span>
+        <span class="h-val">{{ with_score|intcomma }}/{{ total_active|intcomma }} · {{ pct_scored }}%</span>
+      </div>
+      {% with s100=relevance_mix|get_item:100 s50=relevance_mix|get_item:50 s20=relevance_mix|get_item:20 s0=relevance_mix|get_item:0 %}
+      <div class="h-bar-row">
+        <span class="h-lab">Core space (100)</span>
+        <span class="h-track"><span class="h-fill" style="width:{% widthratio s100 with_score 100 %}%;background:#059669"></span></span>
+        <span class="h-val">{{ s100|default:0 }}</span>
+      </div>
+      <div class="h-bar-row">
+        <span class="h-lab">Adjacent (50)</span>
+        <span class="h-track"><span class="h-fill" style="width:{% widthratio s50 with_score 100 %}%;background:#3b82f6"></span></span>
+        <span class="h-val">{{ s50|default:0 }}</span>
+      </div>
+      <div class="h-bar-row">
+        <span class="h-lab">Tangential (20)</span>
+        <span class="h-track"><span class="h-fill" style="width:{% widthratio s20 with_score 100 %}%;background:#f59e0b"></span></span>
+        <span class="h-val">{{ s20|default:0 }}</span>
+      </div>
+      <div class="h-bar-row">
+        <span class="h-lab">Not space (0)</span>
+        <span class="h-track"><span class="h-fill" style="width:{% widthratio s0 with_score 100 %}%;background:#9ca3af"></span></span>
+        <span class="h-val">{{ s0|default:0 }}</span>
+      </div>
+      {% endwith %}
+
+      <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.4px;margin:14px 0 4px;">Added last 7 days</div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#555">
+        <span><strong style="color:#1a1a2e">{{ freshness.events }}</strong> events</span>
+        <span><strong style="color:#1a1a2e">{{ freshness.fragments }}</strong> fragments</span>
+        <span><strong style="color:#1a1a2e">{{ freshness.entities }}</strong> entities</span>
+        <span><strong style="color:#1a1a2e">{{ freshness.relations }}</strong> relations</span>
+      </div>
+
+      <div style="border-top:1px solid #f1f2f4;margin-top:14px;padding-top:10px;font-size:12px;color:#555;display:flex;gap:16px">
+        <span><a href="{% url 'curation:stubs' %}">{{ stub_count }} stubs</a></span>
+        <span><a href="{% url 'curation:candidates' %}">{{ candidate_count }} candidates to review</a></span>
+      </div>
+    </div>
+
+    <!-- Pipeline activity -->
+    <div class="card">
+      <h2>Pipeline activity <span style="font-size:11.5px;color:#888;font-weight:400">— last 8 runs</span></h2>
+      {% if recent_runs %}
+      {% for run in recent_runs %}
+      <div class="run-row">
+        <div>
+          <span class="run-dot" style="background:{% if run.status == 'completed' %}#16a34a{% elif run.status == 'running' %}#2563eb{% elif run.status == 'failed' %}#dc2626{% else %}#9ca3af{% endif %}"></span>
+          <strong style="font-size:12px">{{ run.task }}</strong>
+          {% if run.stats.topic %}<span style="color:#7c3aed">· {{ run.stats.topic|truncatechars:34 }}</span>{% endif %}
+          {% if run.status == 'failed' %}<span style="color:#dc2626;font-size:11px">· failed</span>{% endif %}
+        </div>
+        <div class="meta">
+          {{ run.started_at|date:"H:i:s" }}
+          {% if run.stats.accepted is not None %} · {{ run.stats.accepted }} claims{% endif %}
+          {% if run.stats.events %} · {{ run.stats.events }} events{% endif %}
+          {% if run.stats.relations %} · {{ run.stats.relations }} relations{% endif %}
+          {% if run.stats.rejected %} · <span style="color:#dc2626">{{ run.stats.rejected }} rejected</span>{% endif %}
+        </div>
+        {% if run.stats.rejections %}
+        <details style="margin:3px 0 0 15px">
+          <summary style="color:#8a93a3;font-size:11px;cursor:pointer">Why {{ run.stats.rejected }} rejected?</summary>
+          <div style="margin-top:4px;padding:6px 8px;background:#f8f9fb;border-radius:4px;font-size:11px;color:#555">
+            {% regroup run.stats.rejections by reason as grouped %}
+            {% for group in grouped %}
+              <div style="margin-bottom:4px">
+                {% if group.grouper == 'unknown_attribute' %}
+                  <span style="color:#b45309">Unknown attribute keys</span> ({{ group.list|length }}):
+                  {% for r in group.list %}{{ r.attribute_key }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                {% elif group.grouper == 'db_error' %}
+                  <span style="color:#b91c1c">DB errors</span> ({{ group.list|length }}):
+                  {% for r in group.list %}{{ r.subject }}.{{ r.attribute_key }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        </details>
+        {% endif %}
+      </div>
+      {% endfor %}
+      <div style="margin-top:10px"><a href="{% url 'curation:research' %}" style="font-size:12px">All runs &#8594;</a></div>
+      {% else %}
+      <p style="color:#888;font-size:13px;">No runs yet.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- ── Operations (collapsed) ───────────────────────────────────────── -->
+<details class="dg-ops">
+  <summary>Pipeline operations <span style="font-weight:400;color:#888;font-size:12px">— batch runs, pause controls, dedup, cascade cap</span></summary>
+  <div class="ops-inner">
+
+    <style>
+      .ops-table { width:100%; border-collapse:collapse; margin:6px 0 16px; font-size:12px; }
+      .ops-table th { text-align:left; padding:6px 10px; border-bottom:2px solid #e5e7eb; color:#6b7280; font-weight:600; text-transform:uppercase; letter-spacing:.4px; }
+      .ops-table td { padding:6px 10px; border-bottom:1px solid #f3f4f6; vertical-align:middle; }
+      .ops-table tr:hover td { background:#f9fafb; }
+      .op-status { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+      .op-status.running { background:#22c55e; }
+      .op-status.paused  { background:#ef4444; }
+      .ops-table form { display:inline; margin:0; }
+      .op-btn { padding:3px 10px; border-radius:4px; border:1px solid; font-size:11px; cursor:pointer; background:#fff; }
+      .op-btn.start  { border-color:#16a34a; color:#16a34a; }
+      .op-btn.stop   { border-color:#dc2626; color:#dc2626; }
+      .op-btn.stop:hover  { background:#dc2626; color:#fff; }
+      .op-btn.start:hover { background:#16a34a; color:#fff; }
+    </style>
+    <table class="ops-table">
+      <thead><tr><th>Operation</th><th>Status</th><th>Run</th><th>Stop / Resume</th></tr></thead>
+      <tbody>
       <tr>
-        <td><a href="{% url 'curation:entity_profile' r.subject.id %}">{{ r.subject.canonical_name|truncatechars:25 }}</a></td>
-        <td style="color:#cba6f7;font-size:11px">{{ r.predicate_id }}</td>
-        <td><a href="{% url 'curation:entity_profile' r.object.id %}">{{ r.object.canonical_name|truncatechars:25 }}</a></td>
-        <td style="font-size:11px;color:{% if r.confidence >= 75 %}#a6e3a1{% elif r.confidence >= 55 %}#89b4fa{% else %}#f9e2af{% endif %}">{{ r.confidence }}%</td>
+        <td>Research all entities</td>
+        <td>{% if 'research' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.research %}<span class="op-status running"></span>Running ({{ op_queue_counts.research }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
+        <td><form method="post" action="{% url 'curation:research_all' %}" onsubmit="return confirm('Queue full research for all entities with no events?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
+        <td>{% if 'research' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'research' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>{% else %}<form method="post" action="{% url 'curation:stop_operation' 'research' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}</td>
       </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% else %}
-<div class="card">
-  <h2>Typed relations</h2>
-  <p style="color:#888;font-size:13px;">None yet — will populate as research runs complete.</p>
-</div>
-{% endif %}
+      <tr>
+        <td>Assess all (score + describe)</td>
+        <td>{% if 'assess' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.assess %}<span class="op-status running"></span>Running ({{ op_queue_counts.assess }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
+        <td><form method="post" action="{% url 'curation:assess_all' %}" onsubmit="return confirm('Assess all entities with no description?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
+        <td>{% if 'assess' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'assess' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>{% else %}<form method="post" action="{% url 'curation:stop_operation' 'assess' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}</td>
+      </tr>
+      <tr>
+        <td>Score all entities (space_relevance)</td>
+        <td>{% if 'classify' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.classify %}<span class="op-status running"></span>Running ({{ op_queue_counts.classify }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
+        <td><form method="post" action="{% url 'curation:classify_all' %}" onsubmit="return confirm('Score all unscored entities?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
+        <td>{% if 'classify' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'classify' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>{% else %}<form method="post" action="{% url 'curation:stop_operation' 'classify' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}</td>
+      </tr>
+      <tr>
+        <td>Summarise all entities</td>
+        <td>{% if 'summarise' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.summarise %}<span class="op-status running"></span>Running ({{ op_queue_counts.summarise }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
+        <td><form method="post" action="{% url 'curation:summarise_all' %}" onsubmit="return confirm('Queue summarise for all entities?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
+        <td>{% if 'summarise' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'summarise' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>{% else %}<form method="post" action="{% url 'curation:stop_operation' 'summarise' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}</td>
+      </tr>
+      <tr>
+        <td>Supply chain — extract outputs &amp; inputs</td>
+        <td>{% if 'supply_chain_extract' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.supply_chain_extract %}<span class="op-status running"></span>Running ({{ op_queue_counts.supply_chain_extract }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
+        <td><form method="post" action="{% url 'curation:fill_supply_chain' %}" onsubmit="return confirm('Extract outputs/inputs for all score=100 entities missing them?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
+        <td>{% if 'supply_chain_extract' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'supply_chain_extract' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>{% else %}<form method="post" action="{% url 'curation:stop_operation' 'supply_chain_extract' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}</td>
+      </tr>
+      <tr>
+        <td>Supply chain — classify tiers</td>
+        <td>{% if 'supply_chain_classify' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.supply_chain_classify %}<span class="op-status running"></span>Running ({{ op_queue_counts.supply_chain_classify }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
+        <td><form method="post" action="{% url 'curation:classify_supply_chain_all' %}" onsubmit="return confirm('Re-classify tiers for all entities?')">{% csrf_token %}<button class="op-btn start">Run</button></form></td>
+        <td>{% if 'supply_chain_classify' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'supply_chain_classify' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>{% else %}<form method="post" action="{% url 'curation:stop_operation' 'supply_chain_classify' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}</td>
+      </tr>
+      <tr>
+        <td>Fill missing locations</td>
+        <td>{% if 'locations' in paused_ops or 'global' in paused_ops %}<span class="op-status paused"></span>Paused{% elif op_queue_counts.locations %}<span class="op-status running"></span>Running ({{ op_queue_counts.locations }}){% else %}<span class="op-status" style="background:#d1d5db"></span>Idle{% endif %}</td>
+        <td>
+          <form method="post" action="{% url 'curation:fill_locations_all' %}" onsubmit="return confirm('Fill missing headquarters locations?')" style="display:inline">{% csrf_token %}<button class="op-btn start">Locations</button></form>
+          <form method="post" action="{% url 'curation:fill_addresses_all' %}" onsubmit="return confirm('Fill missing street addresses?')" style="display:inline">{% csrf_token %}<button class="op-btn start">Addresses</button></form>
+          <form method="post" action="{% url 'curation:geocode_offices' %}" onsubmit="return confirm('Geocode office addresses?')" style="display:inline">{% csrf_token %}<button class="op-btn start">Geocode</button></form>
+        </td>
+        <td>{% if 'locations' in paused_ops %}<form method="post" action="{% url 'curation:resume_operation' 'locations' %}">{% csrf_token %}<button class="op-btn start">Resume</button></form>{% else %}<form method="post" action="{% url 'curation:stop_operation' 'locations' %}">{% csrf_token %}<button class="op-btn stop">Stop</button></form>{% endif %}</td>
+      </tr>
+      <tr>
+        <td>Deduplication sweep</td>
+        <td><span class="op-status running"></span>Manual</td>
+        <td>
+          <form method="post" action="{% url 'curation:run_dedup_sweep' %}" onsubmit="return confirm('Run dedup sweep (live)?')" style="display:inline">{% csrf_token %}<button class="op-btn start">Live</button></form>
+          <form method="post" action="{% url 'curation:run_dedup_sweep' %}" style="display:inline">{% csrf_token %}<input type="hidden" name="dry_run" value="1"><button class="op-btn start" style="border-color:#6b7280;color:#6b7280">Dry run</button></form>
+          <form method="post" action="{% url 'curation:merge_geography_duplicates' %}" onsubmit="return confirm('Merge geo duplicates?')" style="display:inline">{% csrf_token %}<button class="op-btn start">Merge geo</button></form>
+        </td>
+        <td>&nbsp;</td>
+      </tr>
+      </tbody>
+    </table>
 
-</div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      {% if 'global' not in paused_ops %}
+      <form method="post" action="{% url 'curation:stop_all' %}" onsubmit="return confirm('Stop and flush ALL queued tasks? Workers will drop prefetched tasks too.')">{% csrf_token %}
+        <button class="btn" style="background:#dc2626;color:#fff;font-size:12px;">&#9646;&#9646; Stop everything &amp; pause</button>
+      </form>
+      {% endif %}
+      <form method="post" action="{% url 'curation:set_cascade_cap' %}" style="display:flex;gap:8px;align-items:center;">
+        {% csrf_token %}
+        <label style="font-size:12px;color:#555;margin:0;">Cascade depth cap</label>
+        <input type="number" name="cascade_cap" min="0" max="10" value="{{ cascade_cap }}" style="width:60px;margin-bottom:0;padding:5px 8px;">
+        <button class="btn" style="background:#1a1a2e;color:#fff;font-size:12px;padding:6px 14px;">Set</button>
+        <span style="font-size:11px;color:#888;">how deep research auto-cascades: 0&nbsp;=&nbsp;off, 1&nbsp;=&nbsp;one hop, 2&nbsp;=&nbsp;two hops…</span>
+      </form>
+    </div>
+
+  </div>
+</details>
+
+<script>
+(function () {
+  var KEY = 'dg_autorefresh';
+  var btn = document.getElementById('dg-auto-btn');
+  function enabled() { return localStorage.getItem(KEY) !== '0'; }
+  function paint() {
+    btn.textContent = 'Auto-refresh: ' + (enabled() ? 'on' : 'off');
+    btn.classList.toggle('on', enabled());
+  }
+  btn.addEventListener('click', function () {
+    localStorage.setItem(KEY, enabled() ? '0' : '1');
+    paint();
+  });
+  paint();
+  setInterval(function () {
+    if (!enabled()) return;
+    var el = document.activeElement;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
+    var open = document.querySelector('details.dg-ops[open]');
+    if (open) return;  // don't nuke an open operations panel
+    location.reload();
+  }, 30000);
+})();
+</script>
 
 {% endblock %}

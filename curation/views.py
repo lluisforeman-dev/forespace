@@ -88,40 +88,66 @@ def _get_or_create_scheduled_source(source_name, feed_url, kind='trade_press', t
 
 @staff_member_required
 def dashboard(request):
-    from core.models import Event, ExtractionRun, Relation
+    """Overview: latest intelligence first, graph health second, pipeline last."""
+    from datetime import timedelta
+    from django.db.models import Count, Sum
+
+    from core.models import Event, ExtractionRun, KnowledgeFragment, Relation
+
     snapshot = get_snapshot()
+    now = timezone.now()
+    week_ago = now - timedelta(days=7)
+    month_ago = (now - timedelta(days=30)).date()
+
+    total_active = Entity.objects.exclude(status='merged').count()
+    with_summary = EntitySummary.objects.count()
+    with_score = Entity.objects.exclude(status='merged').exclude(space_relevance__isnull=True).count()
+
+    def _pct(part, whole):
+        return round(100 * part / whole) if whole else 0
+
+    # ── Latest intelligence: what the pipeline most recently learned ─────
+    recent_events = list(
+        Event.objects
+        .select_related('entity', 'source')
+        .order_by('-created_at')[:14]
+    )
     recent_entities = (
         Entity.objects
         .exclude(status='merged')
-        .order_by('-created_at')[:50]
-    )
-    recent_runs = (
-        ExtractionRun.objects
-        .order_by('-started_at')[:30]
+        .order_by('-created_at')[:10]
     )
     recent_relations = (
         Relation.objects
         .filter(superseded_at__isnull=True)
-        .select_related('subject', 'object', 'predicate')
-        .order_by('-id')[:30]
+        .select_related('subject', 'object')
+        .order_by('-id')[:8]
     )
-    # Event-derived connections: events that link multiple entities
-    event_connections = (
-        Event.objects
-        .filter(participants__isnull=False)
-        .select_related('entity')
-        .prefetch_related('participants')
-        .order_by('-id')
-        .distinct()[:30]
+    recent_runs = ExtractionRun.objects.order_by('-started_at')[:8]
+
+    # ── Graph health ─────────────────────────────────────────────────────
+    relevance_mix = dict(
+        Entity.objects
+        .exclude(status='merged')
+        .filter(space_relevance__isnull=False)
+        .values_list('space_relevance')
+        .annotate(n=Count('id'))
     )
-    total_active = Entity.objects.exclude(status='merged').count()
-    with_summary = EntitySummary.objects.count()
-    with_score = Entity.objects.exclude(status='merged').exclude(space_relevance__isnull=True).count()
-    recently_assessed = (
-        EntitySummary.objects
-        .select_related('entity')
-        .order_by('-last_synthesised')[:40]
-    )
+
+    _FUNDING_TYPES = ['funding_round', 'grant_award', 'ipo', 'spac',
+                      'debt_financing', 'convertible', 'crowdfunding', 'research_grant']
+    funding_30d = Event.objects.filter(
+        event_type__in=_FUNDING_TYPES,
+        date__gte=month_ago,
+        amount_usd__isnull=False,
+    ).aggregate(total=Sum('amount_usd'), n=Count('id'))
+
+    freshness = {
+        'events': Event.objects.filter(created_at__gte=week_ago).count(),
+        'fragments': KnowledgeFragment.objects.filter(created_at__gte=week_ago).count(),
+        'entities': Entity.objects.filter(created_at__gte=week_ago).exclude(status='merged').count(),
+        'relations': Relation.objects.filter(observed_at__gte=week_ago, superseded_at__isnull=True).count(),
+    }
 
     from ingest.pause import paused_operations, get_cascade_cap
     ql = _per_queue_lengths()
@@ -141,10 +167,10 @@ def dashboard(request):
         'candidate_count': Assertion.objects.filter(status='candidate').count(),
         'relation_count': Relation.objects.filter(superseded_at__isnull=True).count(),
         'analytics': snapshot,
+        'recent_events': recent_events,
         'recent_entities': recent_entities,
         'recent_runs': recent_runs,
         'recent_relations': recent_relations,
-        'event_connections': event_connections,
         'queued_tasks': _queue_lengths(),
         'worker_status': _worker_status(),
         'num_feeds': len(SPACE_NEWS_FEEDS),
@@ -152,7 +178,11 @@ def dashboard(request):
         'total_active': total_active,
         'with_summary': with_summary,
         'with_score': with_score,
-        'recently_assessed': recently_assessed,
+        'pct_described': _pct(with_summary, total_active),
+        'pct_scored': _pct(with_score, total_active),
+        'relevance_mix': relevance_mix,
+        'funding_30d': funding_30d,
+        'freshness': freshness,
         'paused_ops': paused_operations(),
         'op_queue_counts': op_queue_counts,
         'cascade_cap': get_cascade_cap(),
