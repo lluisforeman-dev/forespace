@@ -106,11 +106,13 @@ def dashboard(request):
     def _pct(part, whole):
         return round(100 * part / whole) if whole else 0
 
-    # ── Latest intelligence: what the pipeline most recently learned ─────
+    # ── Most recent events: the freshest things that happened in the world,
+    # ordered by event date (newest first, undated last) ──────────────────
+    from django.db.models import F
     recent_events = list(
         Event.objects
         .select_related('entity', 'source')
-        .order_by('-created_at')[:14]
+        .order_by(F('date').desc(nulls_last=True), '-created_at')[:14]
     )
     recent_entities = (
         Entity.objects
