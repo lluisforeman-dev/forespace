@@ -106,14 +106,16 @@ def dashboard(request):
     def _pct(part, whole):
         return round(100 * part / whole) if whole else 0
 
-    # ── Most recent events: the freshest things that happened in the world,
-    # ordered by event date (newest first, undated last) ──────────────────
-    from django.db.models import F
-    recent_events = list(
-        Event.objects
-        .select_related('entity', 'source')
-        .order_by(F('date').desc(nulls_last=True), '-created_at')[:14]
-    )
+    # ── Most recent events: closest to today first ───────────────────────
+    # Pure date-desc surfaces far-future planned events (2032 grant deadlines,
+    # "planned launch" placeholders) ahead of actual news. What the user wants
+    # is proximity to today: recent past first, then upcoming, distant last.
+    from datetime import timedelta
+    today = now.date()
+    base = Event.objects.select_related('entity', 'source')
+    past = list(base.filter(date__lte=today).order_by('-date')[:40])
+    upcoming = list(base.filter(date__gt=today).order_by('date')[:20])
+    recent_events = sorted(past + upcoming, key=lambda e: abs((e.date - today).days))[:14]
     recent_entities = (
         Entity.objects
         .exclude(status='merged')
@@ -188,6 +190,8 @@ def dashboard(request):
         'paused_ops': paused_operations(),
         'op_queue_counts': op_queue_counts,
         'cascade_cap': get_cascade_cap(),
+        'year_now': now.year,
+        'today': now.date(),
     }
     return render(request, 'curation/dashboard.html', ctx)
 

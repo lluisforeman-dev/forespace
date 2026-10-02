@@ -31,6 +31,9 @@
   .ev-date { flex-shrink:0; width:52px; text-align:center; background:#f4f5f7; border-radius:5px; padding:3px 0; }
   .ev-date .d { font-size:13px; font-weight:700; color:#1a1a2e; line-height:1.1; }
   .ev-date .m { font-size:10px; color:#888; text-transform:uppercase; }
+  .ev-date .y { font-size:9px; color:#b45309; font-weight:600; line-height:1.2; }
+  .ev-date.upcoming { background:#eff6ff; }
+  .ev-date.upcoming .m { color:#2563eb; }
   .ev-type { display:inline-block; font-size:10px; font-weight:600; letter-spacing:.3px; text-transform:uppercase;
              border-radius:3px; padding:1px 6px; margin-right:6px; vertical-align:1px; }
   .et-funding_round    { background:#dbeafe; color:#1e40af; }
@@ -94,7 +97,7 @@
   <span class="dg-paused-flag">&#9632; Paused: {{ paused_ops|join:", " }}</span>
   {% endif %}
   <span style="flex:1"></span>
-  <button type="button" id="dg-auto-btn" class="dg-toggle on" title="Reload this page every 30s">Auto-refresh</button>
+  <button type="button" id="dg-auto-btn" class="dg-toggle" title="Reload this page every 60s (off by default)">Auto-refresh</button>
 </div>
 
 {% if 'global' in paused_ops %}
@@ -133,12 +136,12 @@
   <div>
     <!-- Most recent events -->
     <div class="card" style="margin-bottom:20px">
-      <h2>Most recent events <span style="font-size:11.5px;color:#888;font-weight:400">— newest first</span></h2>
+      <h2>Most recent events <span style="font-size:11.5px;color:#888;font-weight:400">— closest to today first</span></h2>
       {% if recent_events %}
       {% for ev in recent_events %}
       <div class="ev-row">
-        <div class="ev-date">
-          {% if ev.date %}<div class="d">{{ ev.date|date:"j" }}</div><div class="m">{{ ev.date|date:"M" }}</div>
+        <div class="ev-date {% if ev.date and ev.date > today %}upcoming{% endif %}">
+          {% if ev.date %}<div class="d">{{ ev.date|date:"j" }}</div><div class="m">{{ ev.date|date:"M" }}</div>{% if ev.date.year != year_now %}<div class="y">{{ ev.date|date:"Y" }}</div>{% endif %}
           {% else %}<div class="d" style="color:#bbb">—</div><div class="m">?</div>{% endif %}
         </div>
         <div style="flex:1;min-width:0">
@@ -439,9 +442,11 @@
 
 <script>
 (function () {
+  // Off by default — a self-reloading page surprised people. Toggle to enable:
+  // reloads every 60s, only while the tab is visible and nothing is in progress.
   var KEY = 'dg_autorefresh';
   var btn = document.getElementById('dg-auto-btn');
-  function enabled() { return localStorage.getItem(KEY) !== '0'; }
+  function enabled() { return localStorage.getItem(KEY) === '1'; }
   function paint() {
     btn.textContent = 'Auto-refresh: ' + (enabled() ? 'on' : 'off');
     btn.classList.toggle('on', enabled());
@@ -452,13 +457,13 @@
   });
   paint();
   setInterval(function () {
-    if (!enabled()) return;
+    if (!enabled() || document.visibilityState !== 'visible') return;
     var el = document.activeElement;
     if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
     var open = document.querySelector('details.dg-ops[open]');
     if (open) return;  // don't nuke an open operations panel
     location.reload();
-  }, 30000);
+  }, 60000);
 })();
 </script>
 
