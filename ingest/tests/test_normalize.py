@@ -36,3 +36,47 @@ from core.normalize import normalize_name
 ])
 def test_normalize_name(input_name, expected):
     assert normalize_name(input_name) == expected
+
+
+# ── normalize_country ────────────────────────────────────────────────────────
+
+from core.normalize import normalize_country  # noqa: E402
+
+
+@pytest.mark.parametrize("input_country, expected", [
+    # Long forms → ISO-2
+    ("United States", "US"),
+    ("United States of America", "US"),
+    ("USA", "US"),
+    ("United Kingdom", "GB"),
+    ("The Netherlands", "NL"),
+    ("South Korea", "KR"),
+    ("Czech Republic", "CZ"),
+    # Native-language forms
+    ("Deutschland", "DE"),
+    ("España", "ES"),
+    # Case and whitespace
+    ("  france  ", "FR"),
+    # Full English names resolve
+    ("JAPAN", "JP"),
+    ("japan", "JP"),
+    ("Germany", "DE"),
+    # ISO-2 passthrough, uppercased
+    ("us", "US"),
+    ("fr", "FR"),
+    ("JP", "JP"),
+    # Junk / empty / unknown
+    ("", None),
+    (None, None),
+    ("   ", None),
+    ("Atlantis", None),
+])
+def test_normalize_country(input_country, expected):
+    assert normalize_country(input_country) == expected
+
+
+def test_normalize_country_never_lowercases_iso():
+    # A valid ISO-2 code stays uppercase
+    assert normalize_country("de") == "DE"
+    # A non-country 2-letter word is NOT mapped (not in the whitelist)
+    assert normalize_country("xx") is None

@@ -17,7 +17,7 @@ from django.utils.dateparse import parse_date
 from psycopg2.extras import DateTimeTZRange
 
 from core.models import Assertion, AttributeDef, Document, ExtractionRun
-from core.normalize import normalize_name
+from core.normalize import normalize_country, normalize_name
 from ingest.ai import get_client
 from ingest.confidence import score as compute_score
 from ingest.cost import log_call
@@ -79,9 +79,9 @@ def _git_sha() -> str:
         return 'unknown'
 
 
-def _map_value(claim: ExtractedClaim, datatype: str) -> dict:
+def _map_value(claim: ExtractedClaim, datatype: str, value_override=None) -> dict:
     """Map claim.value to the correct typed Assertion column."""
-    v = claim.value
+    v = value_override if value_override is not None else claim.value
     if datatype in ('int', 'decimal', 'money') and v is not None:
         try:
             return {'value_num': float(v), 'unit': claim.unit}
@@ -163,6 +163,12 @@ def extract_document(self, document_id: str):
             continue
 
         attr = valid_attrs[claim.attribute_key]
+
+        # Value hygiene: countries stored as ISO 3166-1 alpha-2, always.
+        country_override = None
+        if claim.attribute_key == 'headquarters_country' and isinstance(claim.value, str):
+            country_override = normalize_country(claim.value) or None
+
         confidence = compute_score(
             extractor_confidence=claim.extractor_confidence,
             source_base_trust=doc.effective_trust,
@@ -206,7 +212,7 @@ def extract_document(self, document_id: str):
                 confidence=confidence,
                 status=status,
                 valid_range=valid_range,
-                **_map_value(claim, attr.datatype),
+                **_map_value(claim, attr.datatype, value_override=country_override),
             )
         new_assertion_ids.append(assertion.pk)
         accepted += 1

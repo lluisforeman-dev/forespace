@@ -132,6 +132,54 @@ services:
           type: redis
           property: connectionString
 
+  - type: cron
+    name: eigengraph-freshness
+    runtime: python
+    region: frankfurt
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    schedule: "0 5 * * *"    # 05:00 UTC daily, before the feed scheduler
+    startCommand: python manage.py refresh_stale_facts --apply --limit 25 --settings=config.settings.prod
+    plan: free
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.prod
+      - key: SECRET_KEY
+        fromService:
+          name: eigengraph-web
+          type: web
+          envVarKey: SECRET_KEY
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: eigengraph-redis
+          type: redis
+          property: connectionString
+
+  - type: cron
+    name: eigengraph-identity
+    runtime: python
+    region: frankfurt
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    schedule: "0 4 * * 0"    # Sundays 04:00 UTC — anchor new entities to Wikidata/domains
+    startCommand: python manage.py anchor_identifiers --limit 300 --settings=config.settings.prod
+    plan: free
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.prod
+      - key: SECRET_KEY
+        fromService:
+          name: eigengraph-web
+          type: web
+          envVarKey: SECRET_KEY
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: eigengraph-redis
+          type: redis
+          property: connectionString
+
   - type: redis
     name: eigengraph-redis
     region: frankfurt

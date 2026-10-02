@@ -41,6 +41,10 @@ class Document(models.Model):
     published_at = models.DateTimeField(null=True, blank=True)
     fetched_at = models.DateTimeField(auto_now_add=True)
     text_content = models.TextField(null=True, blank=True)
+    # Original bytes/text exactly as fetched — never overwritten. text_content
+    # holds the parsed form; this preserves the ability to re-derive the graph
+    # from source (re-parse with a better extractor, re-verify quotes).
+    raw_content = models.TextField(null=True, blank=True)
     # pgvector embedding — uncomment after: pip install pgvector + CREATE EXTENSION vector;
     # from pgvector.django import VectorField
     # embedding = VectorField(dimensions=1536, null=True, blank=True)

@@ -142,14 +142,19 @@ def _persist_non_merge(id_a: str, id_b: str, method: str = 'auto:dedup_sweep') -
 
 
 def _process_pairs(pairs, decided_pairs, merged_ids, entity_type_map,
-                   client, dry_run, method='auto:dedup_sweep'):
+                   client, dry_run, method='auto:dedup_sweep', identifier_map=None):
     """Core dedup logic shared by full sweep and targeted dedup.
+
+    identifier_map: {entity_id_str: wikidata_qid} — when both entities carry an
+    external QID, arbitration is deterministic (same → merge, different →
+    permanent non-merge) and no LLM call is made.
 
     Returns (merged_count, skipped_count) and mutates decided_pairs / merged_ids in place.
     """
     from core.models import Assertion, Entity
     from ingest.cost import log_call
 
+    identifier_map = identifier_map or {}
     merged_count = skipped_count = 0
 
     for id_a, id_b, sim in pairs:
@@ -170,6 +175,16 @@ def _process_pairs(pairs, decided_pairs, merged_ids, entity_type_map,
             skipped_count += 1
             continue
 
+        # ── Deterministic arbitration via external identifiers ───────────
+        qid_a = identifier_map.get(str(id_a))
+        qid_b = identifier_map.get(str(id_b))
+        if qid_a and qid_b and qid_a != qid_b:
+            # Different real-world entities — decided forever, no LLM, no retry
+            decided_pairs.add(pair_key)
+            _persist_non_merge(id_a, id_b, f'{method}:wikidata_diff')
+            skipped_count += 1
+            continue
+
         try:
             entity_a = Entity.objects.get(pk=id_a)
             entity_b = Entity.objects.get(pk=id_b)
@@ -177,8 +192,12 @@ def _process_pairs(pairs, decided_pairs, merged_ids, entity_type_map,
             skipped_count += 1
             continue
 
-        # Auto-merge for near-identical names
-        if sim >= _DEDUP_AUTO_MERGE:
+        # Auto-merge for anchored-identical or near-identical names
+        if qid_a and qid_b:
+            do_merge = True
+            confidence = 'high'
+            reason = f'wikidata_qid:{qid_a}'
+        elif sim >= _DEDUP_AUTO_MERGE:
             do_merge = True
             confidence = 'high'
             reason = f'trigram_auto sim={sim:.2f}'
@@ -412,7 +431,7 @@ def dedup_entities(self, entity_ids: list, dry_run: bool = False):
     if not entity_ids:
         return {'merged': 0, 'skipped': 0}
 
-    from core.models import Entity
+    from core.models import Entity, EntityIdentifier
     from ingest.ai import get_client
 
     decided_pairs = _load_decided_pairs()
@@ -425,6 +444,10 @@ def dedup_entities(self, entity_ids: list, dry_run: bool = False):
         .values_list('id', 'entity_type')
     )
     entity_type_map = {str(k): v for k, v in entity_type_map.items()}
+    identifier_map = {
+        str(eid): qid for eid, qid in
+        EntityIdentifier.objects.filter(scheme='wikidata').values_list('entity_id', 'value')
+    }
 
     # Find pairs involving at least one of the target entities
     with connection.cursor() as cur:
@@ -448,7 +471,7 @@ def dedup_entities(self, entity_ids: list, dry_run: bool = False):
     client = get_client()
     merged, skipped = _process_pairs(
         pairs, decided_pairs, merged_ids, entity_type_map, client, dry_run,
-        method='auto:research_cascade',
+        method='auto:research_cascade', identifier_map=identifier_map,
     )
     logger.info('dedup_entities done: merged=%d skipped=%d dry_run=%s', merged, skipped, dry_run)
     return {'merged': merged, 'skipped': skipped}
@@ -462,7 +485,7 @@ def dedup_sweep(self, min_similarity: float = _DEDUP_TRGM_MIN, dry_run: bool = F
     Skips all previously decided pairs (EntityMerge + EntityNonMerge) — LLM cost
     per sweep is bounded by the number of NEW pairs only, not the total graph size.
     """
-    from core.models import Entity
+    from core.models import Entity, EntityIdentifier
     from ingest.ai import get_client
 
     decided_pairs = _load_decided_pairs()
@@ -473,6 +496,10 @@ def dedup_sweep(self, min_similarity: float = _DEDUP_TRGM_MIN, dry_run: bool = F
     entity_type_map = {
         str(k): v for k, v in
         Entity.objects.filter(status='active').values_list('id', 'entity_type')
+    }
+    identifier_map = {
+        str(eid): qid for eid, qid in
+        EntityIdentifier.objects.filter(scheme='wikidata').values_list('entity_id', 'value')
     }
 
     with connection.cursor() as cur:
@@ -495,6 +522,7 @@ def dedup_sweep(self, min_similarity: float = _DEDUP_TRGM_MIN, dry_run: bool = F
     client = get_client()
     merged, skipped = _process_pairs(
         pairs, decided_pairs, merged_ids, entity_type_map, client, dry_run,
+        identifier_map=identifier_map,
     )
     logger.info('dedup_sweep done: merged=%d skipped=%d dry_run=%s', merged, skipped, dry_run)
     return {'merged': merged, 'skipped': skipped}

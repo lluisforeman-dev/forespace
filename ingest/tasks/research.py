@@ -22,6 +22,7 @@ from django.utils.dateparse import parse_date
 from psycopg2.extras import DateTimeTZRange
 
 from core.models import Assertion, AttributeDef, Document, Event, ExtractionRun, KnowledgeFragment, PredicateDef, Relation, Source
+from core.normalize import normalize_country
 from ingest.ai import get_client
 from ingest.confidence import domain_trust, score as compute_score
 from ingest.cost import log_call
@@ -1778,6 +1779,7 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         defaults={
             'source': source,
             'storage_key': 'eigensearch',
+            'raw_content': raw,      # the raw model response — re-parseable
             'text_content': raw,
             'pipeline_status': 'done',
             'title': f'EigenSearch: {topic[:200]}',
@@ -1809,6 +1811,10 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         unit = claim.get('unit')
         extractor_conf = claim.get('extractor_confidence', 'medium')
         source_url = claim.get('source_url') or None
+
+        # Value hygiene: countries stored as ISO 3166-1 alpha-2, always.
+        if attr_key == 'headquarters_country' and value:
+            value = normalize_country(value) or value
 
         src_trust = domain_trust(source_url)
         claim_doc = _get_or_create_url_doc(source_url, source) if source_url else doc
