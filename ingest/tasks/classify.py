@@ -425,6 +425,29 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
         if new_relevance is not None and new_relevance != entity.space_relevance:
             old = entity.space_relevance
             promoted = old is None or new_relevance > old
+            if not promoted and old is not None:
+                # RACE GUARD: classification is queued +10s after extraction,
+                # but adjudication of a large run can take longer. An empty
+                # accepted-set at T+10s means "adjudication pending", not
+                # "evidence says irrelevant" — demotion requires evidence
+                # actually on the table. A later pass will decide.
+                from core.models import Event as _Event, KnowledgeFragment as _KF
+                has_evidence = (
+                    Assertion.objects.filter(
+                        entity=entity, status='accepted', superseded_at__isnull=True,
+                    ).exists()
+                    or _KF.objects.filter(entity=entity).exists()
+                    or _Event.objects.filter(entity=entity).exists()
+                )
+                if not has_evidence:
+                    logger.info(
+                        'classify_entity %s: demotion skipped — no accepted evidence yet '
+                        '(adjudication may be pending); next pass will decide', entity_id,
+                    )
+                    new_relevance = None
+        if new_relevance is not None and new_relevance != entity.space_relevance:
+            old = entity.space_relevance
+            promoted = old is None or new_relevance > old
             entity.space_relevance = new_relevance
             entity.save(update_fields=['space_relevance'])
             if promoted:
