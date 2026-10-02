@@ -235,7 +235,10 @@ def synthesise_entity_summary(self, entity_id: str):
             )
         logger.info('synthesise_entity_summary WK: entity=%s overview_len=%d', entity_id, len(overview))
 
-        # Promote space_relevance — never reduce, only increase.
+        # Apply space_relevance — raise-only BY DESIGN. This assessment is the
+        # evidence-less birth guess: it may set or raise the score, but never
+        # lower it. Classification (classify_entity) is the scoring authority:
+        # evidence-informed, it corrects the score in both directions.
         if wk_score is not None and (entity.space_relevance is None or wk_score > entity.space_relevance):
             entity.space_relevance = wk_score
             entity.save(update_fields=['space_relevance'])
@@ -344,10 +347,13 @@ def synthesise_entity_summary(self, entity_id: str):
             ev_score = max(0, min(100, int(ev_score)))
         except (TypeError, ValueError):
             ev_score = None
+    # Evidence-informed summary assessment — raise-only, like the WK path.
+    # Classification is the single demotion authority (it re-runs after every
+    # extraction with the entity's accepted assertions as input).
     if ev_score is not None and (entity.space_relevance is None or ev_score > entity.space_relevance):
         entity.space_relevance = ev_score
         entity.save(update_fields=['space_relevance'])
-        logger.info('synthesise_entity_summary: space_relevance promoted to %d for entity=%s', ev_score, entity_id)
+        logger.info('synthesise_entity_summary: space_relevance raised to %d for entity=%s', ev_score, entity_id)
 
     # On first summary creation, trigger alias enrichment with the overview as context.
     # Aliases are enriched here rather than at stub creation so the LLM has real evidence

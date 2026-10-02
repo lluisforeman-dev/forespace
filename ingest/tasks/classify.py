@@ -405,9 +405,13 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
 
     logger.info('classify_entity %s (%s): %d classifications, %d skipped', entity_id, entity.entity_type, created, skipped)
 
-    # Update space_relevance — promote only, never reduce.
-    # New evidence (more assertions, new taxonomy hits) can reveal higher relevance;
-    # it should never reduce a score that was set from richer prior evidence.
+    # Update space_relevance — classification is the SCORING AUTHORITY.
+    # This pass is evidence-informed (it sees the entity's accepted assertions)
+    # and runs after every extraction, so it may move the score in BOTH
+    # directions: new evidence can reveal higher relevance, and evidence that
+    # contradicts an early world-knowledge guess must be able to correct it
+    # down. The evidence-less birth assessment (summarise WK) stays raise-only:
+    # a blind guess may set or raise, never erase an informed judgment.
     _relevance_types = {'company', 'investor', 'entity', 'university', 'person'}
     if entity.entity_type in _relevance_types:
         score = raw.get('space_relevance', None)
@@ -418,15 +422,20 @@ def classify_entity(self, entity_id: str, run_id: str | None = None):
         # If LLM gave no score but classified successfully, assume relevant
         if new_relevance is None and created > 0:
             new_relevance = 100
-        if new_relevance is not None and (entity.space_relevance is None or new_relevance > entity.space_relevance):
+        if new_relevance is not None and new_relevance != entity.space_relevance:
+            old = entity.space_relevance
+            promoted = old is None or new_relevance > old
             entity.space_relevance = new_relevance
             entity.save(update_fields=['space_relevance'])
-            logger.info('classify_entity %s: space_relevance promoted to %s', entity_id, new_relevance)
+            if promoted:
+                logger.info('classify_entity %s: space_relevance promoted %s → %s', entity_id, old, new_relevance)
+            else:
+                logger.info('classify_entity %s: space_relevance corrected DOWN %s → %s', entity_id, old, new_relevance)
 
             # Person entities skip WK summary so synthesise_entity_summary returns
             # early without ever queuing research.  Trigger it here on first
             # score promotion so space-relevant persons get their own research run.
-            if entity.entity_type == 'person' and new_relevance >= 50:
+            if entity.entity_type == 'person' and promoted and new_relevance >= 50:
                 from core.models import Event, KnowledgeFragment
                 has_data = (
                     Event.objects.filter(entity=entity).exists()
