@@ -105,7 +105,7 @@
             display:flex;align-items:center;gap:14px;font-size:13px;color:#fff;flex-wrap:wrap;">
   <strong>&#9888; Out of OpenRouter credits — research is paused.</strong>
   <span style="opacity:.85;">
-    Since {{ credits_alert.since|slice:":16"|replace:"T"," " }} UTC
+    Since {{ credits_alert.since_display }}
     {% if credit_balance and credit_balance.remaining is not None %}· remaining balance: ${{ credit_balance.remaining }}{% endif %}
   </span>
   <span style="flex:1"></span>

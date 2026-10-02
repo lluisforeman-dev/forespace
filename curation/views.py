@@ -167,9 +167,16 @@ def dashboard(request):
         'locations':             ql.get('extract', 0),
         'crawl':                 ql.get('crawl', 0),
     }
+    from datetime import datetime as _dt
+    _alert = credits_alert()
+    if _alert:
+        try:
+            _alert['since_display'] = _dt.fromisoformat(_alert['since']).strftime('%Y-%m-%d %H:%M UTC')
+        except (ValueError, TypeError):
+            _alert['since_display'] = _alert['since']
     ctx = {
         'candidate_count': Assertion.objects.filter(status='candidate').count(),
-        'credits_alert': credits_alert(),
+        'credits_alert': _alert,
         'credit_balance': openrouter_credit_balance(),
         'relation_count': Relation.objects.filter(superseded_at__isnull=True).count(),
         'analytics': snapshot,
