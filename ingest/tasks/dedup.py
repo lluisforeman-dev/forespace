@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 
 import json
+from datetime import timedelta
 
 from celery import shared_task
 from django.conf import settings
@@ -623,6 +624,28 @@ def periodic_maintenance(self):
         if is_paused():
             logger.info('periodic_maintenance: pipeline paused — skipping this cycle')
         else:
+            # 0. Lost-batch repair: research runs queue adjudication +5s after
+            # completion; if that task died, its claims stay 'candidate' forever
+            # and classification defers against them. Re-queue candidates aged
+            # 1-24h (idempotent: accepted/rejected rows are untouched).
+            from core.models import Assertion
+            from ingest.tasks.adjudicate import adjudicate_assertions
+            now = timezone.now()
+            stranded = list(
+                Assertion.objects
+                .filter(
+                    status='candidate',
+                    created_at__lt=now - timedelta(hours=1),
+                    created_at__gte=now - timedelta(hours=24),
+                )
+                .values_list('id', flat=True)
+            )
+            if stranded:
+                logger.info('periodic_maintenance: re-queuing %d stranded candidate(s) for adjudication', len(stranded))
+                for i in range(0, len(stranded), 100):
+                    adjudicate_assertions.apply_async(
+                        args=[str(aid) for aid in stranded[i:i + 100]], countdown=60 + i,
+                    )
             dedup_sweep()
     except Exception as exc:
         logger.warning('periodic_maintenance dedup_sweep failed: %s', exc)
