@@ -201,20 +201,38 @@ def resolve_mention(
     # TYPE GUARD: an evidence-bearing namesake of a different kind ("Falcon 9"
     # the launch vehicle vs a company-typed mention) is not auto-routed — the
     # LLM confirms against the entity's actual context first.
+    # COLLISION GUARD: when TWO OR MORE evidence-bearing entities share the
+    # exact name (two companies legitimately called "Stellar"), first() would
+    # be an arbitrary pick that silently absorbs documents into the wrong
+    # entity — so the choice is promoted to comparative adjudication with each
+    # candidate's distinctive context, exactly like Level 4.
     evidence_q = (
         Q(assertions__status='accepted', assertions__superseded_at__isnull=True)
         | Q(events__isnull=False)
         | Q(fragments__isnull=False)
     )
-    ent = (
+    ent_matches = list(
         Entity.objects
         .filter(canonical_name__iexact=mention, status__in=('active', 'stub'))
         .filter(evidence_q)
         .distinct()
-        .first()
     )
     type_rejected = None
-    if ent:
+    ambig_ids: frozenset = frozenset()
+    if len(ent_matches) > 1:
+        ambig_ids = frozenset(str(e.id) for e in ent_matches)
+        cand = [(str(e.id), e.canonical_name, 1.0) for e in ent_matches]
+        resolved, confidence = _llm_disambiguate(mention, entity_type, cand, subject_context)
+        if resolved:
+            logger.info('L2a ambiguous-exact adjudicated: "%s" → %s (%s)',
+                        mention, resolved, confidence)
+            _add_alias(resolved, mention, norm, document_id)
+            return resolved
+        logger.info(
+            'L2a ambiguous-exact unresolved for "%s" (%d same-name entities) — falling through',
+            mention, len(ent_matches))
+    elif ent_matches:
+        ent = ent_matches[0]
         if ent.entity_type == entity_type or _llm_verify_entity(
                 mention, entity_type, subject_context, str(ent.id)):
             _add_alias(str(ent.id), mention, norm, document_id)
@@ -224,11 +242,16 @@ def resolve_mention(
             'L2a type-guard: "%s" (%s) rejected namesake %s (%s)',
             mention, entity_type, type_rejected, ent.entity_type,
         )
-    weak_ent = (
-        Entity.objects
-        .filter(canonical_name__iexact=mention, status__in=('active', 'stub'))
-        .first()
-    )
+    # Weak exact-name shortcut: only when the name is unambiguous (a single
+    # data-less match). In an unresolved collision even the husk is an
+    # arbitrary pick — let L4/L5/stub decide instead.
+    weak_ent = None
+    if not ambig_ids:
+        weak_matches = list(
+            Entity.objects
+            .filter(canonical_name__iexact=mention, status__in=('active', 'stub'))
+        )
+        weak_ent = weak_matches[0] if len(weak_matches) == 1 else None
 
     # Level 2b — exact alias_norm match. An alias owned by an ESTABLISHED
     # entity routes immediately; an alias owned only by a STUB is a weak hint
@@ -236,13 +259,19 @@ def resolve_mention(
     # candidate adjudication below finds nothing better.
     # TYPE GUARD: same check as L2a — an established owner of a different kind
     # must be confirmed before the alias routes blindly.
-    alias = (
+    # COLLISION GUARD: same as L2a — an alias owned by several established
+    # entities is adjudicated, never routed arbitrarily.
+    alias_rows = list(
         EntityAlias.objects
         .select_related('entity')
         .filter(alias_norm=norm, entity__status='active')
-        .first()
     )
-    if alias:
+    owner_ids: list[str] = []
+    for r in alias_rows:
+        if str(r.entity_id) not in owner_ids:
+            owner_ids.append(str(r.entity_id))
+    if len(owner_ids) == 1:
+        alias = alias_rows[0]
         if alias.entity.entity_type == entity_type or _llm_verify_entity(
                 mention, entity_type, subject_context, str(alias.entity_id)):
             return str(alias.entity_id)
@@ -250,14 +279,34 @@ def resolve_mention(
             'L2b type-guard: alias "%s" (%s) rejected owner %s (%s)',
             mention, entity_type, alias.entity_id, alias.entity.entity_type,
         )
+    elif len(owner_ids) > 1 and frozenset(owner_ids) != ambig_ids:
+        cand = []
+        seen = set()
+        for r in alias_rows:
+            eid = str(r.entity_id)
+            if eid not in seen:
+                seen.add(eid)
+                cand.append((eid, r.entity.canonical_name, 1.0))
+        resolved, confidence = _llm_disambiguate(mention, entity_type, cand, subject_context)
+        if resolved:
+            logger.info('L2b ambiguous-alias adjudicated: "%s" → %s (%s)',
+                        mention, resolved, confidence)
+            return resolved
+        logger.info('L2b ambiguous-alias unresolved for "%s" (%d owners)', mention, len(owner_ids))
+    # (owner set already adjudicated at L2a → same candidates at temperature 0 —
+    #  asking twice would return the same answer, so we fall through instead.)
 
-    stub_hint = (
-        EntityAlias.objects
-        .select_related('entity')
-        .filter(alias_norm=norm, entity__status='stub')
-        .values_list('entity_id', flat=True)
-        .first()
-    )
+    # Stub alias hint: only when exactly ONE stub owns the norm — several stub
+    # owners is unresolved debris from an old collision, not a routing hint.
+    stub_hint = None
+    if not ambig_ids:
+        stub_hints = list(
+            EntityAlias.objects
+            .filter(alias_norm=norm, entity__status='stub')
+            .values_list('entity_id', flat=True)
+            .distinct()
+        )
+        stub_hint = stub_hints[0] if len(stub_hints) == 1 else None
 
     # Level 3+4 — candidate collection + ONE batched LLM adjudication.
     # Candidates come from trigram similarity AND word-boundary containment
@@ -489,6 +538,85 @@ def _llm_pick_candidate(mention: str, entity_type: str, candidates: list,
         return None, confidence
     except Exception as exc:
         logger.warning('L4 batch resolve failed for "%s": %s', mention, exc)
+        return None, 'low'
+
+
+# ── Same-name collision adjudication (small focused call) ────────────────────
+# Operator rule: prefer a small LLM call that clearly distinguishes things over
+# being too fast to compare — but keep input AND output tiny. One-line identity
+# summaries, ~30-token JSON answer. Distinctive features still decide.
+
+_DISAMBIG_SYSTEM = (
+    'You disambiguate same-name entities for a knowledge graph. '
+    'Answer only with valid JSON.'
+)
+
+_DISAMBIG_USER = """\
+A document mentions "{mention}" (type: {entity_type}).
+Document context: {context}
+
+Entities with this exact name:
+{blocks}
+
+Which one is the mention about, or none?
+Reply: {{"match": <number or null>, "confidence": "high"|"medium"|"low"}}"""
+
+
+def _llm_disambiguate(mention: str, entity_type: str, candidates: list,
+                      subject_context: str = '') -> tuple[str | None, str]:
+    """Minimal-token adjudication between same-name evidence-bearing entities.
+
+    Same contract as _llm_pick_candidate, but the prompt carries no rulebook
+    and each candidate is ONE line (~200 chars): type + facts + description
+    prefix — the distinctive features, nothing else. Returns (entity_id|None,
+    confidence). Fails closed like every resolve call.
+    """
+    if not candidates:
+        return None, 'low'
+    try:
+        from ingest.ai import get_client
+        from ingest.cost import log_call
+        client = get_client()
+
+        blocks = []
+        for i, (entity_id, name, _sim) in enumerate(candidates, start=1):
+            ctx = _entity_context_for_resolution(entity_id)
+            summary = ctx[:200].replace('\n', ' | ') if ctx else '(no data)'
+            blocks.append(f'{i}. "{name}" — {summary}')
+
+        user_msg = _DISAMBIG_USER.format(
+            mention=mention, entity_type=entity_type,
+            context=(subject_context or '(not available)')[:200],
+            blocks='\n'.join(blocks),
+        )
+        resp = client.chat.completions.create(
+            model=settings.AI_MODEL_FAST,
+            messages=[
+                {'role': 'system', 'content': _DISAMBIG_SYSTEM},
+                {'role': 'user', 'content': user_msg},
+            ],
+            response_format={'type': 'json_object'},
+            max_tokens=30,
+            temperature=0,
+        )
+        log_call('resolve', settings.AI_MODEL_FAST, resp)
+        raw = (resp.choices[0].message.content or '').strip()
+        if not raw:
+            return None, 'low'
+        result = json.loads(raw)
+        confidence = result.get('confidence', 'low')
+        match = result.get('match')
+        if match is None or confidence not in ('high', 'medium'):
+            return None, confidence
+        try:
+            idx = int(match) - 1
+        except (TypeError, ValueError):
+            return None, confidence
+        if 0 <= idx < len(candidates):
+            return str(candidates[idx][0]), confidence
+        return None, confidence
+    except Exception as exc:
+        logger.warning('disambiguation failed for "%s": %s', mention, exc)
         return None, 'low'
 
 
