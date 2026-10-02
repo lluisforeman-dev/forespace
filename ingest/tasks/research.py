@@ -1894,6 +1894,14 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
     # ── Store events ──────────────────────────────────────────────────────
     events_stored, event_entity_ids = _store_events(events, name_to_id, doc, source, subject_context=_subject_ctx, primary_entity_id=_primary_id, primary_entity_norm=_primary_norm)
 
+    # Derived facts (§7g): if funding events arrived, recompute the companies'
+    # total_funding_usd as a derived fact chained to those events.
+    if events_stored:
+        from ingest.tasks.derive import derive_funding_totals
+        derive_funding_totals.apply_async(
+            args=[list(event_entity_ids)], countdown=30,
+        )
+
     # ── Store fragments ───────────────────────────────────────────────────
     fragments_stored, fragment_entity_ids = _store_fragments(fragments, name_to_id, doc, source, subject_context=_subject_ctx, primary_entity_id=_primary_id, primary_entity_norm=_primary_norm)
 
@@ -1926,7 +1934,11 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
     if new_ids:
         from ingest.tasks.adjudicate import adjudicate_assertions
         from ingest.tasks.project import refresh_entity_current
+        from ingest.tasks.verify import verify_assertion_quotes
         adjudicate_assertions.delay(new_ids)
+        # §7c on the eigensearch path: fetch cited URLs, archive them, and
+        # mechanically verify each quote (penalise fabrications, reward hits).
+        verify_assertion_quotes.apply_async(args=[new_ids], countdown=20)
         refresh_entity_current.apply_async(countdown=5)
 
     # Collect ALL touched entities: claims + event subjects/participants + fragments + relation subjects/objects

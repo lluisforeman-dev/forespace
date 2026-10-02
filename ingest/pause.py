@@ -29,6 +29,7 @@ OPERATIONS = {
     'locations':               'eigengraph:pause:locations',
     'geocode':                 'eigengraph:pause:geocode',
     'crawl':                   'eigengraph:pause:crawl',
+    'verify':                  'eigengraph:pause:verify',
 }
 
 # Keep backward-compat alias for old code that used PAUSE_FLAG

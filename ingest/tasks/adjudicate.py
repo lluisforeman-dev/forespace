@@ -18,6 +18,7 @@ from django.utils import timezone
 from psycopg2.extras import DateTimeTZRange
 
 from core.models import Assertion
+from ingest.confidence import documents_independent
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,11 @@ def adjudicate_assertions(self, assertion_ids: list[int]):
 
 
 def _adjudicate_one(new_a: Assertion) -> None:
+    # Derived facts are owned by the derive tasks — never adjudicated,
+    # and never usable as evidence for anything else (§9.2).
+    if new_a.method == 'derived':
+        return
+
     # ── Rule 0: multi-cardinality attributes hold independent values ─────
     # e.g. funding_round_amount_usd — Series A $5M and Series B $40M are BOTH
     # correct; treating the second as a conflict would flatten the history
@@ -56,8 +62,11 @@ def _adjudicate_one(new_a: Assertion) -> None:
             status='accepted',
             superseded_at__isnull=True,
         )
+        # A derived fact is a computation, not evidence (§9.2) — it can never
+        # corroborate an extracted claim or win an adjudication.
+        .exclude(method='derived')
         .exclude(pk=new_a.pk)
-        .select_related('attribute')
+        .select_related('attribute', 'document')
     )
 
     if not existing_qs.exists():
@@ -70,23 +79,43 @@ def _adjudicate_one(new_a: Assertion) -> None:
 
     # ── Rules 1 & 2: same value ───────────────────────────────────────────
     if _values_equal(new_a, best):
-        same_source = (
+        same_document = (
             new_a.document_id is not None
             and new_a.document_id == best.document_id
         )
-        if same_source:
+        if same_document:
             Assertion.objects.filter(pk=new_a.pk).update(status='rejected')
             return
-        # Independent corroboration — asymptotic bump toward 100
+
+        independent = documents_independent(new_a.document, best.document)
         gap = 100 - best.confidence
-        bump = min(99, best.confidence + max(3, int(gap * new_a.confidence / 300)))
         with transaction.atomic():
-            Assertion.objects.filter(pk=best.pk).update(confidence=bump)
-            Assertion.objects.filter(pk=new_a.pk).update(status='rejected')
-        logger.info(
-            'Adjudicate: corroboration entity=%s attr=%s conf %d→%d',
-            new_a.entity_id, new_a.attribute_id, best.confidence, bump,
-        )
+            if independent:
+                # True corroboration — bump confidence AND record the count
+                new_count = (best.corroboration_count or 0) + 1
+                docs = list(best.corroborated_by or [])
+                if new_a.document_id and new_a.document_id not in docs:
+                    docs.append(new_a.document_id)
+                bump = min(99, best.confidence + max(5, int(gap * new_a.confidence / 300)))
+                Assertion.objects.filter(pk=best.pk).update(
+                    confidence=bump,
+                    corroboration_count=new_count,
+                    corroborated_by=docs,
+                )
+                Assertion.objects.filter(pk=new_a.pk).update(status='rejected')
+                logger.info(
+                    'Adjudicate: independent corroboration entity=%s attr=%s '
+                    'conf %d→%d (sources=%d)',
+                    new_a.entity_id, new_a.attribute_id, best.confidence, bump, new_count,
+                )
+            else:
+                # Same story reprinted by the same outlet — recorded, but zero
+                # trust gain: echoing your own claim is not confirmation.
+                Assertion.objects.filter(pk=new_a.pk).update(status='rejected')
+                logger.info(
+                    'Adjudicate: non-independent echo entity=%s attr=%s (same domain/hash) — no bump',
+                    new_a.entity_id, new_a.attribute_id,
+                )
         return
 
     # ── Rule 3: volatile + clearly newer → supersede without LLM ─────────

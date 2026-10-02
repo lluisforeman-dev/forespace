@@ -169,6 +169,13 @@ def synthesize_conflict(self, entity_id: str, attribute_key: str, assertion_ids:
     with transaction.atomic():
         # Supersede ALL open-ended assertions for this (entity, attribute) —
         # not just the conflicting ones — to satisfy the no_overlapping_validity constraint.
+        superseded_ids = list(
+            Assertion.objects.filter(
+                entity_id=entity_id,
+                attribute_id=attribute_key,
+                superseded_at__isnull=True,
+            ).values_list('id', flat=True)
+        )
         Assertion.objects.filter(
             entity_id=entity_id,
             attribute_id=attribute_key,
@@ -182,9 +189,28 @@ def synthesize_conflict(self, entity_id: str, attribute_key: str, assertion_ids:
             method='synthesis',
             confidence=synth_confidence,
             status='accepted',
+            # Evidential basis: the synthesis was computed FROM these claims.
+            # The chain stays queryable — resolution replaces, never erases.
+            derived_from=superseded_ids,
             valid_range=DateTimeTZRange(now, None),
             **value_fields,
         )
+        # Keep the disagreement on record (§8b): a curator can see that sources
+        # conflicted, what was superseded, and what the LLM chose and why.
+        from core.models import Conflict
+        if not Conflict.objects.filter(
+            entity_id=entity_id, attribute_key=attribute_key, resolution__isnull=True,
+        ).exists():
+            Conflict.objects.create(
+                entity_id=entity_id,
+                attribute_key=attribute_key,
+                assertion_ids=superseded_ids[:10],
+                severity='medium',
+                resolution='picked',
+                resolved_by='llm_synthesis',
+                resolved_at=now,
+                notes=reasoning[:500],
+            )
 
     logger.info(
         'synthesize_conflict: entity=%s attr=%s → value=%s conf=%d (from %d sources)',

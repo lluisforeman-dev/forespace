@@ -134,6 +134,13 @@ class Assertion(models.Model):
     confidence_model_version = models.CharField(max_length=20, default='v1')
     status = models.CharField(max_length=20, choices=STATUSES, default='accepted')
     review_state = models.CharField(max_length=20, choices=REVIEW_STATES, null=True, blank=True)
+    # Corroboration — how many INDEPENDENT documents assert the same value
+    corroboration_count = models.IntegerField(default=0)
+    corroborated_by = ArrayField(models.BigIntegerField(), null=True, blank=True)  # document ids
+    # Mechanical quote verification (null = not checked, True = verified in
+    # fetched source, False = failed verification / quote too weak)
+    quote_verified = models.BooleanField(null=True, blank=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 

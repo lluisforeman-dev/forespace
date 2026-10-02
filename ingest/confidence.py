@@ -58,6 +58,51 @@ def _clamp(v: int, lo: int = 0, hi: int = 100) -> int:
     return max(lo, min(hi, v))
 
 
+# ── Source independence (§8a) ────────────────────────────────────────────────
+# "Two corroborations only count if the sources are independent. Three trade
+# outlets reprinting the same press release is one source."
+#
+# v1 rule (deterministic, no embeddings):
+#   · same document row                                  → NOT independent
+#   · identical content hash                             → NOT independent
+#   · same publication domain (reprints, syndication)    → NOT independent
+#   · different domains                                  → independent
+#
+# Known v1 limitation: two different domains covering the same underlying press
+# release still count as independent. Content-level story dedup (embedding
+# similarity) is the v2 upgrade and can only make trust STRICTER.
+
+def document_domain(doc) -> str:
+    """Best-effort publication domain for a document ('' when unknown)."""
+    if doc is None:
+        return ''
+    url = getattr(doc, 'url', None)
+    if url:
+        netloc = urlparse(url).netloc.lower().removeprefix('www.')
+        if netloc:
+            return netloc
+    return (getattr(getattr(doc, 'source', None), 'domain', '') or '') \
+        .lower().removeprefix('www.')
+
+
+def documents_independent(doc_a, doc_b) -> bool:
+    """True when two documents count as separate evidence for the same fact."""
+    if doc_a is None or doc_b is None:
+        return False
+    if getattr(doc_a, 'pk', None) == getattr(doc_b, 'pk', None):
+        return False
+    sha_a = getattr(doc_a, 'content_sha256', None)
+    sha_b = getattr(doc_b, 'content_sha256', None)
+    if sha_a and sha_b and sha_a == sha_b:
+        return False
+    domain_a = document_domain(doc_a)
+    domain_b = document_domain(doc_b)
+    if not domain_a or not domain_b:
+        # Unknown provenance on either side — do not grant corroboration credit
+        return False
+    return domain_a != domain_b
+
+
 def _recency_penalty(published_at, volatility_days: int | None) -> int:
     """Penalise claims whose source is older than the attribute's volatility window."""
     if not published_at or not volatility_days:

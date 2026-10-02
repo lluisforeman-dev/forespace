@@ -16,6 +16,8 @@ from ingest.tasks.evolve import evolve_taxonomy
 from ingest.tasks.synthesize import synthesize_conflict
 from ingest.tasks.summarise import synthesise_entity_summary
 from ingest.tasks.dedup import dedup_sweep
+from ingest.tasks.verify import verify_assertion_quotes
+from ingest.tasks.derive import derive_funding_totals
 
 __all__ = [
     'crawl_url', 'parse_document', 'triage_document',
@@ -25,4 +27,5 @@ __all__ = [
     'classify_entity', 'extract_relations', 'extract_relations_eigensearch',
     'build_analytics_snapshot', 'research_topic', 'evolve_taxonomy',
     'synthesize_conflict', 'synthesise_entity_summary', 'dedup_sweep',
+    'verify_assertion_quotes', 'derive_funding_totals',
 ]
