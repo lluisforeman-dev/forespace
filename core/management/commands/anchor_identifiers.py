@@ -132,7 +132,7 @@ class Command(BaseCommand):
             )
             candidates = (
                 Entity.objects
-                .filter(status__in='active',
+                .filter(status='active',
                         space_relevance__gte=options['min_score'])
                 .filter(Q(entity_type='company') | Q(entity_type='investor')
                         | Q(entity_type='entity') | Q(entity_type='university')

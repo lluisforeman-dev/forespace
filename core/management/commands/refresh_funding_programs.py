@@ -39,7 +39,7 @@ class Command(BaseCommand):
 
         programs = Entity.objects.filter(
             entity_type='funding_program',
-            status__in='active',
+            status='active',
         )
 
         queued = 0
