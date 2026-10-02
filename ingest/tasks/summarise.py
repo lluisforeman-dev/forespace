@@ -249,14 +249,7 @@ def synthesise_entity_summary(self, entity_id: str):
         # exclusively on their space-related activities and ignores the rest.
         effective_score = entity.space_relevance  # use post-promote value
         if effective_score is not None and effective_score >= 50:
-            from ingest.tasks.research import research_topic
-            _TYPE_TO_TOPIC = {
-                'company': 'company', 'investor': 'company', 'entity': 'company',
-                'university': 'company', 'asset': 'company',
-                'funding_program': 'funding_program', 'end_user': 'end_user',
-                'program': 'question', 'facility': 'question',
-                'person': 'person', 'event': 'question',
-            }
+            from ingest.tasks.research import research_topic, _TYPE_TO_TOPIC
             topic_type = _TYPE_TO_TOPIC.get(entity.entity_type, 'company')
             # Adjacent entities: narrow search to space-specific facts only
             if effective_score < 100 and topic_type == 'company':
