@@ -90,7 +90,7 @@ def _taxonomy_tree() -> str:
 
 def _entity_sample(entity_ids: list[str] | None = None, limit: int = 50) -> str:
     """Build a compact entity profile list for the LLM."""
-    qs = Entity.objects.filter(status__in=('active', 'stub'))
+    qs = Entity.objects.filter(status__in='active')
     if entity_ids:
         qs = qs.filter(id__in=entity_ids)
     else:

@@ -167,7 +167,6 @@ def dashboard(request):
         'crawl':                 ql.get('crawl', 0),
     }
     ctx = {
-        'stub_count': Entity.objects.filter(status='stub').count(),
         'candidate_count': Assertion.objects.filter(status='candidate').count(),
         'relation_count': Relation.objects.filter(superseded_at__isnull=True).count(),
         'analytics': snapshot,
@@ -340,40 +339,6 @@ def ingest_trigger(request):
         else:
             messages.error(request, 'URL is required.')
     return HttpResponseRedirect(reverse('curation:dashboard'))
-
-
-@staff_member_required
-def stubs(request):
-    stub_list = (
-        Entity.objects
-        .filter(status='stub')
-        .prefetch_related('aliases', 'assertions')
-        .order_by('-created_at')[:100]
-    )
-    return render(request, 'curation/stubs.html', {
-        'stubs': stub_list,
-        'title': 'Stub Entities',
-    })
-
-
-@staff_member_required
-def promote_stub(request, entity_id):
-    """Promote a stub to active (curator has verified it's a real entity)."""
-    if request.method != 'POST':
-        return HttpResponseRedirect(reverse('curation:stubs'))
-    entity = get_object_or_404(Entity, pk=entity_id, status='stub')
-    canonical = request.POST.get('canonical_name', '').strip()
-    with transaction.atomic():
-        if canonical:
-            entity.canonical_name = canonical
-        entity.status = 'active'
-        entity.save(update_fields=['canonical_name', 'status'])
-        # Re-accept any candidate assertions on this entity
-        Assertion.objects.filter(
-            entity=entity, status='candidate', confidence__gte=50,
-        ).update(status='accepted')
-    return HttpResponseRedirect(reverse('curation:stubs'))
-
 
 
 @staff_member_required
@@ -890,7 +855,7 @@ def funding(request):
     from core.models import KnowledgeFragment
     program_entities = (
         Entity.objects
-        .filter(entity_type='funding_program', status__in=('active', 'stub'))
+        .filter(entity_type='funding_program', status='active')
         .order_by('canonical_name')[:60]
     )
     # For each program: find administrator, open calls, award count, best fragment
@@ -1634,7 +1599,7 @@ def supply_chain(request):
     _SC_TYPES = ('company', 'investor', 'entity', 'university', 'facility')
     qs = (
         Entity.objects
-        .filter(id__in=entity_ids, status__in=('active', 'stub'), entity_type__in=_SC_TYPES)
+        .filter(id__in=entity_ids, status='active', entity_type__in=_SC_TYPES)
     )
     if q:
         qs = qs.filter(Q(canonical_name__icontains=q) | Q(aliases__alias__icontains=q)).distinct()

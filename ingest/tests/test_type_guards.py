@@ -77,7 +77,9 @@ def test_l2a_type_mismatch_verified_match_routes():
 
 
 @pytest.mark.django_db
-def test_l2a_type_mismatch_rejected_falls_through():
+def test_l2a_type_mismatch_rejected_falls_back_to_namesake():
+    """Guard rejection tries L4/L5 for something better, then falls back to the
+    evidence-bearing namesake — never mints a same-name duplicate."""
     entity = _make_entity('Falcon 9', 'asset')
     _frag(entity, 'Reusable two-stage launch vehicle.')
     client = _client_replying(
@@ -85,15 +87,14 @@ def test_l2a_type_mismatch_rejected_falls_through():
         _reply({'canonical': None, 'confidence': 'low'}),  # L5 → unknown
     )
     with patch('ingest.ai.get_client', return_value=client), \
-         patch('ingest.tasks.resolve._create_stub', return_value='stub-id-123') as stub:
+         patch('ingest.tasks.resolve._create_entity') as create_entity:
         resolved = resolve_mention('Falcon 9', entity_type='company')
-        assert resolved == 'stub-id-123'
-        stub.assert_called_once()
-        assert resolved != str(entity.id)
+        assert resolved == str(entity.id)
+        create_entity.assert_not_called()
 
 
 @pytest.mark.django_db
-def test_l2b_type_mismatch_rejected_alias_does_not_route():
+def test_l2b_type_mismatch_rejected_falls_back_to_owner():
     entity = _make_entity('Starship', 'asset')
     _frag(entity, 'Fully reusable launch vehicle with Raptor engines.')
     EntityAlias.objects.create(
@@ -105,11 +106,11 @@ def test_l2b_type_mismatch_rejected_alias_does_not_route():
         _reply({'canonical': None, 'confidence': 'low'}),  # L5
     )
     with patch('ingest.ai.get_client', return_value=client), \
-         patch('ingest.tasks.resolve._create_stub', return_value='stub-id-456'):
+         patch('ingest.tasks.resolve._create_entity') as create_entity:
         resolved = resolve_mention(
             'Starship e-model delivery robot', entity_type='company')
-        assert resolved == 'stub-id-456'
-        assert resolved != str(entity.id)
+        assert resolved == str(entity.id)
+        create_entity.assert_not_called()
 
 
 # ── classify._validate_entity_type ───────────────────────────────────────────
@@ -176,7 +177,8 @@ def test_ambiguous_exact_name_adjudicates_with_context():
 
 
 @pytest.mark.django_db
-def test_ambiguous_exact_name_unresolved_falls_through_to_stub():
+def test_ambiguous_exact_name_unresolved_falls_back_not_stub():
+    """Undecided collision → best-known namesake, never a third same-name entity."""
     a = _make_entity('Stellar', 'company')
     _frag(a, 'Space startup building smallsat buses. ' * 3)
     b = _make_entity('Stellar', 'company')
@@ -186,11 +188,10 @@ def test_ambiguous_exact_name_unresolved_falls_through_to_stub():
         _reply({'canonical': None, 'confidence': 'low'}),  # L5 → unknown
     )
     with patch('ingest.ai.get_client', return_value=client), \
-         patch('ingest.tasks.resolve._create_stub', return_value='stub-id-789') as stub:
+         patch('ingest.tasks.resolve._create_entity') as create_entity:
         resolved = resolve_mention('Stellar', entity_type='company')
-    assert resolved == 'stub-id-789'
-    stub.assert_called_once()
-    assert resolved not in {str(a.id), str(b.id)}
+    assert resolved in {str(a.id), str(b.id)}
+    create_entity.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -209,25 +210,24 @@ def test_ambiguous_alias_adjudicated_never_arbitrary():
 
 
 @pytest.mark.django_db
-def test_multi_stub_alias_hint_suppressed():
-    """Two stubs owning one alias = collision debris — never a routing hint.
-
-    The suppressed hint falls through to L5 (world knowledge, returns unknown
-    here) and then stub creation — never to an arbitrary same-name stub.
-    """
-    s1 = _make_entity('Stellar', 'company', with_evidence=False, status='stub')
-    s2 = _make_entity('Stellar', 'company', with_evidence=False, status='stub')
+def test_same_name_data_less_entities_never_route_arbitrarily():
+    """Two data-less entities sharing one name: no arbitrary routing — a new
+    entity is created instead (active from birth; dedup reconciles later)."""
+    s1 = _make_entity('Stellar', 'company', with_evidence=False)
+    s2 = _make_entity('Stellar', 'company', with_evidence=False)
     EntityAlias.objects.create(entity=s1, alias='Stellar', alias_norm='stellar', alias_kind='trading')
     EntityAlias.objects.create(entity=s2, alias='Stellar', alias_norm='stellar', alias_kind='trading')
-    client = _client_replying(_reply({'canonical': None, 'confidence': 'low'}))
+    client = _client_replying(
+        _reply({'match': None, 'confidence': 'low'}),     # alias-collision adjudication → undecided
+        _reply({'canonical': None, 'confidence': 'low'}),  # L5 → unknown
+    )
     with patch('ingest.ai.get_client', return_value=client), \
-         patch('ingest.tasks.resolve._create_stub', return_value='stub-id-999') as stub:
+         patch('ingest.tasks.resolve._create_entity', return_value='new-entity-999') as create_entity:
         resolved = resolve_mention('Stellar', entity_type='company')
-    assert resolved == 'stub-id-999'
-    stub.assert_called_once()
-    # exactly one LLM call (L5) — no adjudication of the stub collision, no
-    # arbitrary routing to s1/s2
-    client.chat.completions.create.assert_called_once()
+    assert resolved == 'new-entity-999'
+    create_entity.assert_called_once()
+    # one disambiguation call + one L5 call — no arbitrary routing to s1/s2
+    assert client.chat.completions.create.call_count == 2
     assert resolved not in {str(s1.id), str(s2.id)}
 
 

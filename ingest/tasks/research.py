@@ -335,7 +335,7 @@ def _entity_context_block(topic: str) -> str:
     norm = normalize_name(topic)
     entity = (
         Entity.objects
-        .filter(status__in=('active', 'stub'))
+        .filter(status__in='active')
         .filter(Q(canonical_name__iexact=topic) | Q(aliases__alias_norm=norm))
         .first()
     )
@@ -459,7 +459,7 @@ def _seen_urls_for_company(topic: str) -> str:
     norm = normalize_name(topic)
     entity = (
         Entity.objects
-        .filter(status__in=('active', 'stub'))
+        .filter(status__in='active')
         .filter(Q(canonical_name__iexact=topic) | Q(aliases__alias_norm=norm))
         .first()
     )
@@ -1415,7 +1415,7 @@ def _geocode_office_relations(topic: str, assertion_ids: list) -> None:
     entity = (
         _Entity.objects
         .filter(Q(canonical_name__iexact=topic) | Q(aliases__alias_norm=entity_norm))
-        .filter(status__in=('active', 'stub'))
+        .filter(status__in='active')
         .first()
     )
     if not entity:
@@ -1515,10 +1515,10 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         from core.normalize import normalize_name as _norm
         _known_asset = (
             _Entity.objects
-            .filter(canonical_name__iexact=topic, entity_type='asset', status__in=('active', 'stub'))
+            .filter(canonical_name__iexact=topic, entity_type='asset', status__in='active')
             .first()
             or _Entity.objects
-            .filter(aliases__alias_norm=_norm(topic), entity_type='asset', status__in=('active', 'stub'))
+            .filter(aliases__alias_norm=_norm(topic), entity_type='asset', status__in='active')
             .first()
         )
         if _known_asset:

@@ -23,7 +23,6 @@ class Entity(models.Model):
         ('active', 'Active'),
         ('merged', 'Merged'),
         ('disputed', 'Disputed'),
-        ('stub', 'Stub'),
         ('dormant', 'Dormant'),   # no signal in 12+ months — deprioritised by scheduler
     ]
 

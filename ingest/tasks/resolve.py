@@ -78,6 +78,8 @@ Name   : "{candidate_name}" (type: {candidate_type})
 Is the mention referring to THIS SAME real-world entity?
 A shared or similar name alone is NOT enough — names collide across domains.
 Judge by what each entity IS and DOES (sector, domain, described purpose).
+NOTE: type labels are noisy — if the name matches and the document context
+does not clearly point to a different real-world thing, it is the same entity.
 
 Reply: {{"match": true|false, "confidence": "high"|"medium"|"low"}}"""
 
@@ -213,11 +215,12 @@ def resolve_mention(
     )
     ent_matches = list(
         Entity.objects
-        .filter(canonical_name__iexact=mention, status__in=('active', 'stub'))
+        .filter(canonical_name__iexact=mention, status='active')
         .filter(evidence_q)
         .distinct()
     )
     type_rejected = None
+    fallback_id = None
     ambig_ids: frozenset = frozenset()
     if len(ent_matches) > 1:
         ambig_ids = frozenset(str(e.id) for e in ent_matches)
@@ -231,6 +234,12 @@ def resolve_mention(
         logger.info(
             'L2a ambiguous-exact unresolved for "%s" (%d same-name entities) — falling through',
             mention, len(ent_matches))
+        # Unresolved collision: routing to one of them is 50/50, but minting a
+        # THIRD same-name entity is always wrong — fall back to the best-known.
+        try:
+            fallback_id = str(max(ent_matches, key=lambda e: e.assertions.count()).id)
+        except Exception:
+            fallback_id = str(ent_matches[0].id)
     elif ent_matches:
         ent = ent_matches[0]
         if ent.entity_type == entity_type or _llm_verify_entity(
@@ -238,6 +247,7 @@ def resolve_mention(
             _add_alias(str(ent.id), mention, norm, document_id)
             return str(ent.id)
         type_rejected = str(ent.id)
+        fallback_id = type_rejected
         logger.info(
             'L2a type-guard: "%s" (%s) rejected namesake %s (%s)',
             mention, entity_type, type_rejected, ent.entity_type,
@@ -249,7 +259,7 @@ def resolve_mention(
     if not ambig_ids:
         weak_matches = list(
             Entity.objects
-            .filter(canonical_name__iexact=mention, status__in=('active', 'stub'))
+            .filter(canonical_name__iexact=mention, status='active')
         )
         weak_ent = weak_matches[0] if len(weak_matches) == 1 else None
 
@@ -279,6 +289,8 @@ def resolve_mention(
             'L2b type-guard: alias "%s" (%s) rejected owner %s (%s)',
             mention, entity_type, alias.entity_id, alias.entity.entity_type,
         )
+        if not fallback_id:
+            fallback_id = str(alias.entity_id)
     elif len(owner_ids) > 1 and frozenset(owner_ids) != ambig_ids:
         cand = []
         seen = set()
@@ -296,18 +308,6 @@ def resolve_mention(
     # (owner set already adjudicated at L2a → same candidates at temperature 0 —
     #  asking twice would return the same answer, so we fall through instead.)
 
-    # Stub alias hint: only when exactly ONE stub owns the norm — several stub
-    # owners is unresolved debris from an old collision, not a routing hint.
-    stub_hint = None
-    if not ambig_ids:
-        stub_hints = list(
-            EntityAlias.objects
-            .filter(alias_norm=norm, entity__status='stub')
-            .values_list('entity_id', flat=True)
-            .distinct()
-        )
-        stub_hint = stub_hints[0] if len(stub_hints) == 1 else None
-
     # Level 3+4 — candidate collection + ONE batched LLM adjudication.
     # Candidates come from trigram similarity AND word-boundary containment
     # ("spire" must surface "Spire Global" even when higher-similarity names
@@ -322,14 +322,13 @@ def resolve_mention(
             _add_alias(resolved, mention, norm, document_id)
             return resolved
 
-    # A data-less exact-name match or a stub alias hint — weak evidence only,
-    # used when candidate adjudication finds nothing better.
+    # A data-less exact-name match — weak evidence only, used when candidate
+    # adjudication finds nothing better.
     if weak_ent and str(weak_ent.id) == type_rejected:
         weak_ent = None  # the type guard already rejected this namesake
-    if weak_ent or stub_hint:
-        target = str(weak_ent.id) if weak_ent else stub_hint
-        _add_alias(target, mention, norm, document_id)
-        return target
+    if weak_ent:
+        _add_alias(str(weak_ent.id), mention, norm, document_id)
+        return str(weak_ent.id)
 
     # Level 5 — LLM world-knowledge canonical lookup
     # Handles acronyms, legal name variants, and compound/diacritic person names.
@@ -343,9 +342,22 @@ def resolve_mention(
         return found_id
 
     # Use LLM-suggested canonical as the stub name when provided (cleaner than raw mention)
+    # SAFETY FLOOR: a same-name duplicate is ALWAYS wrong. If the exact-name
+    # match was rejected by the type guard or the collision adjudication came
+    # back undecided, routing to the existing evidence-bearing namesake — even
+    # with a mismatched type label — beats minting a twin entity.
+    if fallback_id:
+        logger.info(
+            'resolve: "%s" → same-name fallback %s (guard rejected/undecided; '
+            'a duplicate stub is worse than a type-label mismatch)',
+            mention, fallback_id,
+        )
+        _add_alias(fallback_id, mention, norm, document_id)
+        return fallback_id
+
     stub_mention = canonical if canonical else mention
     stub_norm = normalize_name(stub_mention) if canonical else norm
-    entity_id = _create_stub(stub_mention, stub_norm, document_id, entity_type)
+    entity_id = _create_entity(stub_mention, stub_norm, document_id, entity_type)
     if canonical and canonical != mention:
         _add_alias(entity_id, mention, norm, document_id)
     return entity_id
@@ -412,7 +424,7 @@ def _collect_candidates(norm: str, limit: int = 8) -> list:
                 a.entity_id::text, a.alias_norm
             FROM entity_alias a
             JOIN entity e ON e.id = a.entity_id
-            WHERE e.status IN ('active', 'stub')
+            WHERE e.status IN ('active')
               AND (a.alias_norm LIKE %s || ' %%'
                    OR a.alias_norm LIKE '%% ' || %s
                    OR a.alias_norm LIKE '%% ' || %s || ' %%'
@@ -688,25 +700,9 @@ def _add_alias(entity_id: str, surface_form: str, norm: str, document_id: str | 
     if str(existing.entity_id) == str(entity_id):
         return
 
-    owner = existing.entity
-    if owner.status == 'stub':
-        # The stub loses the name to the established entity; the stub itself
-        # is left for the fragment-heal pass to fold away.
-        existing.delete()
-        EntityAlias.objects.create(
-            entity_id=entity_id,
-            alias=surface_form,
-            alias_norm=norm,
-            alias_kind='abbrev',
-            document_id=document_id,
-        )
-        logger.info(
-            'Alias "%s" rebound from stub %s → %s', norm, owner.id, entity_id,
-        )
-        return
-
     # Two established entities claim the same name — genuine collision.
     # Adjudicate the pair with full context (cheap, targeted dedup).
+    owner = existing.entity
     logger.warning(
         'Alias collision: "%s" owned by %s (%s); %s also resolved here — queueing dedup',
         norm, owner.canonical_name, owner.id, entity_id,
@@ -770,7 +766,7 @@ def _llm_known_entity(mention: str, entity_type: str, subject_context: str = '')
         # Try to find it in the DB by canonical name
         ent = Entity.objects.filter(
             canonical_name__iexact=canonical,
-            status__in=('active', 'stub'),
+            status__in=('active',),
         ).first()
         if ent:
             if not _llm_verify_entity(mention, entity_type, subject_context, str(ent.id)):
@@ -785,7 +781,7 @@ def _llm_known_entity(mention: str, entity_type: str, subject_context: str = '')
         alias = (
             EntityAlias.objects
             .select_related('entity')
-            .filter(alias_norm=normalize_name(canonical), entity__status__in=('active', 'stub'))
+            .filter(alias_norm=normalize_name(canonical), entity__status='active')
             .first()
         )
         if alias:
@@ -873,19 +869,17 @@ def _llm_verify_entity(
         return False
 
 
-def _create_stub(
+def _create_entity(
     mention: str,
     norm: str,
     document_id: str | None,
     entity_type: str = 'company',
 ) -> str:
-    """Create a stub entity for an unresolved mention.
+    """Create an entity for an unresolved mention — active from birth.
 
-    Stubs are born as status='stub' — an unresolved mention is a HYPOTHESIS,
-    not a company. Evidence promotes it: once a stub accumulates enough
-    accepted assertions, adjudication promotes it to 'active' (see
-    _promote_stubs in adjudicate.py). This prevents resolution debris
-    ("Spire" stubs with zero facts) from masquerading as companies.
+    There is no stub lifecycle: an entity created by resolution is a real
+    entity immediately. The daily dedup sweep reconciles duplicates, and the
+    classify pass audits types; neither needs a probation status.
     """
     slug_base = slugify(mention)[:200] or 'entity'
     slug = slug_base
@@ -899,7 +893,7 @@ def _create_stub(
             entity_type=entity_type,
             canonical_name=mention,
             slug=slug,
-            status='stub',
+            status='active',
         )
         EntityAlias.objects.create(
             entity=entity,
@@ -909,7 +903,7 @@ def _create_stub(
             document_id=document_id,
         )
 
-    logger.info('Stub created: "%s" → %s', mention, entity.id)
+    logger.info('Entity created: "%s" → %s', mention, entity.id)
 
     # Initial assessment: world-knowledge description + space_relevance score.
     # Fires once per new entity; routes to further research based on score.
