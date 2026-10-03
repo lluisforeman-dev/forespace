@@ -200,8 +200,8 @@ class Command(BaseCommand):
                         )
                         anchored += 1
                         self.stdout.write(
-                            f'  {entity.canonical_name[:50]:<50} → {qid} '
-                            f'(QID collision with another entity → merged)'
+                            f'  {entity.canonical_name[:50]:<50} -> {qid} '
+                            f'(QID collision with another entity -> merged)'
                         )
                         continue
                     if existing is None and not options['dry_run']:
@@ -210,7 +210,7 @@ class Command(BaseCommand):
                             defaults={'entity_id': entity.id, 'confidence': 90},
                         )
                     anchored += 1
-                    self.stdout.write(f'  {entity.canonical_name[:50]:<50} → {qid}')
+                    self.stdout.write(f'  {entity.canonical_name[:50]:<50} -> {qid}')
                 else:
                     skipped += 1
                 time.sleep(0.6)  # Wikidata politeness
@@ -221,4 +221,4 @@ class Command(BaseCommand):
             )
 
         if options['dry_run']:
-            self.stdout.write(self.style.WARNING('DRY RUN — nothing written.'))
+            self.stdout.write(self.style.WARNING('DRY RUN - nothing written.'))
