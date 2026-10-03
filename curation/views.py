@@ -661,6 +661,38 @@ def research(request):
 
     runs = runs_qs[:150]
 
+    # Resolve each run's topic to its entity so topics are clickable.
+    # Merged entities redirect to their survivor (a stale topic name like
+    # "Italian National Institute for Astrophysics" lands on the merged
+    # graph's canonical page, not a husk).
+    topics = list({r.stats.get('topic') for r in runs if r.stats.get('topic')})
+    entity_ids = {}
+    if topics:
+        topic_qs = Q()
+        for t in topics:
+            topic_qs |= Q(canonical_name__iexact=t)
+        matched = (
+            Entity.objects
+            .filter(topic_qs)
+            .filter(status__in=('active', 'dormant'))
+            .values_list('canonical_name', 'id')
+        )
+        by_name = {n.lower(): eid for n, eid in matched}
+        # merged entities: follow redirects_to the survivor
+        merged_matched = (
+            Entity.objects
+            .filter(topic_qs, status='merged')
+            .values_list('canonical_name', 'redirects_to_id')
+        )
+        for name, rid in merged_matched:
+            if name.lower() not in by_name and rid:
+                by_name[name.lower()] = rid
+        entity_ids = {
+            r.stats.get('topic'): by_name[r.stats['topic'].lower()]
+            for r in runs
+            if r.stats.get('topic') and r.stats['topic'].lower() in by_name
+        }
+
     # Summary totals from all runs
     totals = ExtractionRun.objects.aggregate(
         total=Count('id'),
@@ -672,6 +704,7 @@ def research(request):
     return render(request, 'curation/research.html', {
         'runs': runs,
         'totals': totals,
+        'entity_ids': entity_ids,
         'q': q,
         'status_filter': status_filter,
         'title': 'Research Progress',

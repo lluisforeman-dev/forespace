@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load curation_tags %}
 {% block title %}Research Progress — EigenGraph{% endblock %}
 {% block content %}
 <style>
@@ -78,7 +79,15 @@
       {% for run in runs %}
       <tr class="run-row">
         <td class="topic-cell" title="{{ run.stats.topic|default:run.task }}">
-          {{ run.stats.topic|default:run.task|truncatechars:60 }}
+          {% with t=run.stats.topic|default:run.task %}
+            {% if t and entity_ids|get_item:t %}
+              <a href="{% url 'curation:entity_profile' entity_ids|get_item:t %}" style="color:#1a1a2e;text-decoration:none;font-weight:500">
+                {{ t|truncatechars:60 }}
+              </a>
+            {% else %}
+              {{ t|truncatechars:60 }}
+            {% endif %}
+          {% endwith %}
         </td>
         <td style="font-size:12px;color:#666">{{ run.task }}</td>
         <td>
