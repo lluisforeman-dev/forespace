@@ -33,6 +33,11 @@ logger = logging.getLogger(__name__)
 
 _EIGENSEARCH_SOURCE_NAME = 'EigenSearch'
 
+# Skip research on a topic+frame completed within this window — Celery
+# redelivers queued tasks on worker restarts (every deploy), and duplicate
+# full-price EigenSearch runs are the single largest avoidable cost.
+_RESEARCH_COOLDOWN_H = 6
+
 _SYSTEM = """\
 You are a structured data extractor for a space-industry knowledge graph.
 Search the web for current, verifiable information and return JSON with THREE sections.
@@ -1814,6 +1819,27 @@ def research_topic(self, topic: str, topic_type: str = 'company', cascade_depth:
         )
 
     model = settings.AI_MODEL_EIGENSEARCH
+
+    # Fresh-research guard: worker restarts redeliver queued tasks (Celery
+    # is at-least-once), and a deploy drains the backlog — re-running
+    # research that completed minutes earlier burns full-price tokens on
+    # identical output (Open Cosmos was researched 3x after one deploy).
+    # Same task type + same topic completed within the cooldown -> skip.
+    _cutoff = datetime.now(tz=tz.utc) - timedelta(hours=_RESEARCH_COOLDOWN_H)
+    _recent = (
+        ExtractionRun.objects
+        .filter(task=f'research_{topic_type}', status='completed',
+                started_at__gte=_cutoff)
+        .exclude(stats__topic__isnull=True)
+        .values_list('stats', flat=True)
+    )
+    if any((s or {}).get('topic', '').casefold() == topic.casefold() for s in _recent):
+        logger.info(
+            'research_topic: "%s" (%s) completed within %dh — skipping redelivered duplicate',
+            topic, topic_type, _RESEARCH_COOLDOWN_H,
+        )
+        return
+
     run = ExtractionRun.objects.create(
         task=f'research_{topic_type}',
         prompt_sha256=hashlib.sha256(user_msg.encode()).hexdigest(),
