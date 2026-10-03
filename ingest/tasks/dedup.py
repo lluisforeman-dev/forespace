@@ -34,6 +34,57 @@ logger = logging.getLogger(__name__)
 _DEDUP_TRGM_MIN = 0.25        # minimum similarity to consider a pair
 _DEDUP_LLM_MIN = 0.35         # below this: skip LLM, treat as different (saves tokens)
 _DEDUP_AUTO_MERGE = 0.92      # above this: auto-merge without LLM (virtually identical)
+_CONTAINMENT_SIM = 0.75       # containment pairs: LLM adjudication band on purpose
+_CONTAINMENT_MIN_LEN = 5      # short tokens ('leo', 'iss') stay trigram-only
+
+
+def _fetch_candidate_pairs(cur, min_similarity, only_entity_ids=None, limit=2000):
+    """Candidate entity pairs by alias similarity OR word-boundary containment.
+
+    Trigram alone misses short-form/long-form splits ('Starliner' vs
+    'CST-100 Starliner'); word-boundary containment catches them. Containment
+    pairs carry _CONTAINMENT_SIM — inside the LLM band, never auto-merged:
+    'Apollo' vs 'Apollo 11' must not fuse on name shape alone.
+    """
+    sql = """
+        SELECT DISTINCT
+            LEAST(a.entity_id::text, b.entity_id::text)   AS id_a,
+            GREATEST(a.entity_id::text, b.entity_id::text) AS id_b,
+            MAX(GREATEST(
+                similarity(a.alias_norm, b.alias_norm),
+                CASE WHEN
+                    ((' ' || a.alias_norm || ' ') LIKE ('%% ' || b.alias_norm || ' %%')
+                     OR (' ' || b.alias_norm || ' ') LIKE ('%% ' || a.alias_norm || ' %%'))
+                    AND length(a.alias_norm) >= %s AND length(b.alias_norm) >= %s
+                THEN %s ELSE 0 END
+            )) AS sim
+        FROM entity_alias a
+        JOIN entity_alias b
+          ON a.entity_id != b.entity_id
+         AND (
+              similarity(a.alias_norm, b.alias_norm) > %s
+              OR (
+                  ((' ' || a.alias_norm || ' ') LIKE ('%% ' || b.alias_norm || ' %%')
+                   OR (' ' || b.alias_norm || ' ') LIKE ('%% ' || a.alias_norm || ' %%'))
+                  AND length(a.alias_norm) >= %s AND length(b.alias_norm) >= %s
+              )
+             )
+    """
+    params = [
+        _CONTAINMENT_MIN_LEN, _CONTAINMENT_MIN_LEN, _CONTAINMENT_SIM,
+        min_similarity, _CONTAINMENT_MIN_LEN, _CONTAINMENT_MIN_LEN,
+    ]
+    if only_entity_ids:
+        sql += " WHERE a.entity_id::text = ANY(%s)"
+        params.append(only_entity_ids)
+    sql += """
+        GROUP BY 1, 2
+        ORDER BY sim DESC
+        LIMIT %s
+    """
+    params.append(limit)
+    cur.execute(sql, params)
+    return cur.fetchall()
 
 # Entity types that are comparable for deduplication.
 # Only compare within the same compatibility group.
@@ -516,21 +567,8 @@ def dedup_entities(self, entity_ids: list, dry_run: bool = False):
 
     # Find pairs involving at least one of the target entities
     with connection.cursor() as cur:
-        cur.execute("""
-            SELECT DISTINCT
-                LEAST(a.entity_id::text, b.entity_id::text)   AS id_a,
-                GREATEST(a.entity_id::text, b.entity_id::text) AS id_b,
-                MAX(similarity(a.alias_norm, b.alias_norm))    AS sim
-            FROM entity_alias a
-            JOIN entity_alias b
-              ON a.entity_id != b.entity_id
-             AND similarity(a.alias_norm, b.alias_norm) > %s
-            WHERE a.entity_id::text = ANY(%s)
-            GROUP BY 1, 2
-            ORDER BY sim DESC
-            LIMIT 300
-        """, [_DEDUP_TRGM_MIN, entity_ids])
-        pairs = cur.fetchall()
+        pairs = _fetch_candidate_pairs(cur, _DEDUP_TRGM_MIN,
+                                       only_entity_ids=entity_ids, limit=300)
 
     pair_ids = {id_ for pair in pairs for id_ in pair[:2]}
     assertion_counts = {
@@ -581,34 +619,7 @@ def dedup_sweep(self, min_similarity: float = _DEDUP_TRGM_MIN, dry_run: bool = F
     }
 
     with connection.cursor() as cur:
-        cur.execute("""
-            SELECT DISTINCT
-                LEAST(a.entity_id::text, b.entity_id::text)   AS id_a,
-                GREATEST(a.entity_id::text, b.entity_id::text) AS id_b,
-                MAX(GREATEST(
-                    similarity(a.alias_norm, b.alias_norm),
-                    CASE WHEN
-                        ((' ' || a.alias_norm || ' ') LIKE ('%% ' || b.alias_norm || ' %%')
-                         OR (' ' || b.alias_norm || ' ') LIKE ('%% ' || a.alias_norm || ' %%'))
-                        AND length(a.alias_norm) >= 5 AND length(b.alias_norm) >= 5
-                    THEN 0.75 ELSE 0 END
-                )) AS sim
-            FROM entity_alias a
-            JOIN entity_alias b
-              ON a.entity_id != b.entity_id
-             AND (
-                  similarity(a.alias_norm, b.alias_norm) > %s
-                  OR (
-                      ((' ' || a.alias_norm || ' ') LIKE ('%% ' || b.alias_norm || ' %%')
-                       OR (' ' || b.alias_norm || ' ') LIKE ('%% ' || a.alias_norm || ' %%'))
-                      AND length(a.alias_norm) >= 5 AND length(b.alias_norm) >= 5
-                  )
-                 )
-            GROUP BY 1, 2
-            ORDER BY sim DESC
-            LIMIT 2000
-        """, [min_similarity])
-        pairs = cur.fetchall()
+        pairs = _fetch_candidate_pairs(cur, min_similarity)
 
     pair_ids = {id_ for pair in pairs for id_ in pair[:2]}
     assertion_counts = {
