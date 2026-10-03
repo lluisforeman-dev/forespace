@@ -38,6 +38,36 @@ _CONTAINMENT_SIM = 0.75       # containment pairs: LLM adjudication band on purp
 _CONTAINMENT_MIN_LEN = 5      # short tokens ('leo', 'iss') stay trigram-only
 
 
+def _pairs_from_qid_map(qid_map, only=None):
+    """Same-QID entity pairs from an {entity_id_str: qid} map.
+
+    Same QID = same real-world thing regardless of how different the names
+    look across languages ('Institute of Space Studies of Catalonia' vs
+    'Institut d'Estudis Espacials de Catalunya'). Arbitration auto-merges
+    these pairs without an LLM call."""
+    by_qid = {}
+    for eid, qid in qid_map.items():
+        if only is not None and eid not in only:
+            continue
+        by_qid.setdefault(qid, []).append(eid)
+    pairs = []
+    for eids in by_qid.values():
+        for i in range(len(eids)):
+            for j in range(i + 1, len(eids)):
+                pairs.append((min(eids[i], eids[j]), max(eids[i], eids[j]), 1.0))
+    return pairs
+
+
+def _merge_pair_lists(name_pairs, identifier_pairs):
+    """Combine name-similarity pairs with identifier pairs, dedup by key."""
+    seen = {(p[0], p[1]) for p in name_pairs}
+    combined = list(name_pairs)
+    for p in identifier_pairs:
+        if (p[0], p[1]) not in seen:
+            combined.append(p)
+    return combined
+
+
 def _fetch_candidate_pairs(cur, min_similarity, only_entity_ids=None, limit=2000):
     """Candidate entity pairs by alias similarity OR word-boundary containment.
 
@@ -349,30 +379,31 @@ def _process_pairs(pairs, decided_pairs, merged_ids, entity_type_map,
             skipped_count += 1
             continue
 
-        # Keep the entity with more accepted assertions; ties → richer
-        # evidence base (fragments + events); still tied → the older entity.
-        # A zero-evidence short form must never absorb its established
-        # long-form parent ("Starliner" must not swallow "CST-100 Starliner").
-        count_a = Assertion.objects.filter(entity_id=id_a, status='accepted').count()
-        count_b = Assertion.objects.filter(entity_id=id_b, status='accepted').count()
-        if count_a == count_b:
-            from core.models import Event as _Event, KnowledgeFragment as _KF
-            ev_a = _KF.objects.filter(entity_id=id_a).count() + _Event.objects.filter(entity_id=id_a).count()
-            ev_b = _KF.objects.filter(entity_id=id_b).count() + _Event.objects.filter(entity_id=id_b).count()
-            if ev_a != ev_b:
-                kept_id = id_a if ev_a > ev_b else id_b
-            else:
-                kept_id = id_a if entity_a.created_at <= entity_b.created_at else id_b
+        # Keep the entity with the larger total evidence base: accepted
+        # assertions, fragments and events all count. A handful of fresh
+        # assertions must not outweigh an established knowledge base (the
+        # English "Institute of Space Studies of Catalonia" briefly absorbed
+        # the richer "Institut d'Estudis Espacials de Catalunya (IEEC)" that
+        # way). Ties → the older entity.
+        from core.models import Event as _Event, KnowledgeFragment as _KF
+        ev_a = (assertion_counts.get(id_a, 0)
+                + _KF.objects.filter(entity_id=id_a).count()
+                + _Event.objects.filter(entity_id=id_a).count())
+        ev_b = (assertion_counts.get(id_b, 0)
+                + _KF.objects.filter(entity_id=id_b).count()
+                + _Event.objects.filter(entity_id=id_b).count())
+        if ev_a != ev_b:
+            kept_id = id_a if ev_a > ev_b else id_b
         else:
-            kept_id = id_a if count_a >= count_b else id_b
+            kept_id = id_a if entity_a.created_at <= entity_b.created_at else id_b
         merged_id = id_b if kept_id == id_a else id_a
 
         rationale = {
             'reason': reason,
             'similarity': round(float(sim), 3),
             'confidence': confidence,
-            'kept_assertions': max(count_a, count_b),
-            'merged_assertions': min(count_a, count_b),
+            'kept_assertions': assertion_counts.get(kept_id, 0),
+            'merged_assertions': assertion_counts.get(merged_id, 0),
         }
 
         if dry_run:
@@ -536,12 +567,18 @@ def execute_merge(kept_id: str, merged_id: str, rationale: dict, performed_by: s
 
 
 @shared_task(bind=True, queue='extract', max_retries=0)
-def dedup_entities(self, entity_ids: list, dry_run: bool = False):
+def dedup_entities(self, entity_ids: list, dry_run: bool = False, forced_qids=None):
     """Targeted dedup: check a specific set of entities against the whole DB.
 
     Called automatically after each research_topic run with the set of touched
     entity IDs. Much cheaper than a full sweep — only checks pairs where at
     least one entity is in the provided set.
+
+    forced_qids: {entity_id_str: qid} merged into the identifier map before
+    arbitration. Used by anchor_identifiers when a fresh anchor collides with
+    a QID already held by another entity (the unique (scheme, value)
+    constraint means the collision can't be stored — it must merge instead).
+    Same-QID pairs bypass name-similarity pairing entirely.
     """
     if not entity_ids:
         return {'merged': 0, 'skipped': 0}
@@ -569,6 +606,12 @@ def dedup_entities(self, entity_ids: list, dry_run: bool = False):
     with connection.cursor() as cur:
         pairs = _fetch_candidate_pairs(cur, _DEDUP_TRGM_MIN,
                                        only_entity_ids=entity_ids, limit=300)
+    # Same-QID pairs bypass name similarity entirely (cross-language names).
+    if forced_qids:
+        identifier_map.update(forced_qids)
+    pairs = _merge_pair_lists(
+        pairs, _pairs_from_qid_map(identifier_map, only=set(str(e) for e in entity_ids)),
+    )
 
     pair_ids = {id_ for pair in pairs for id_ in pair[:2]}
     assertion_counts = {
@@ -649,8 +692,9 @@ def periodic_maintenance(self):
 
     worker_ready (config/celery.py) schedules the first run; a Redis lock
     ensures one fleet-wide chain. Each pass:
-      1. dedup_sweep          — false-split reconciliation (LLM-adjudicated)
-      2. anchor_identifiers   — wikidata/LEI/DUNS anchors for resolution quality
+      1. anchor_identifiers   — wikidata/domain anchors (must precede dedup:
+                                 same-QID pairs merge deterministically)
+      2. dedup_sweep          — false-split reconciliation (LLM-adjudicated)
       3. enrich_ownership     — subsidiary_of links from wikidata hierarchies
     Each run re-schedules itself for +24h, even on failure — a crashed pass
     must not kill the schedule. Respects the global pause flag (the chain
@@ -683,16 +727,23 @@ def periodic_maintenance(self):
                     adjudicate_assertions.apply_async(
                         args=[str(aid) for aid in stranded[i:i + 100]], countdown=60 + i,
                     )
-            dedup_sweep()
     except Exception as exc:
-        logger.warning('periodic_maintenance dedup_sweep failed: %s', exc)
+        logger.warning('periodic_maintenance stranded re-adjudication failed: %s', exc)
 
+    # Anchoring MUST precede dedup: same-QID pairs merge deterministically in
+    # the sweep, so identifiers assigned tonight reconcile splits tonight.
     try:
         if not is_paused():
             from django.core.management import call_command
             call_command('anchor_identifiers', limit=200)
     except Exception as exc:
         logger.warning('periodic_maintenance anchor_identifiers failed: %s', exc)
+
+    try:
+        if not is_paused():
+            dedup_sweep()
+    except Exception as exc:
+        logger.warning('periodic_maintenance dedup_sweep failed: %s', exc)
 
     try:
         if not is_paused():

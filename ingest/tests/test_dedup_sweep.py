@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.models import Entity, EntityAlias
+from core.models import Entity, EntityAlias, EntityIdentifier
 
 
 def _make_named(name, etype, norm):
@@ -28,6 +28,66 @@ def _client_replying(payload):
     resp.usage.completion_tokens = 10
     client.chat.completions.create.return_value = resp
     return client
+
+
+@pytest.mark.django_db
+@pytest.mark.django_db
+def test_forced_qid_merges_without_llm():
+    """An anchor colliding with a QID already held by another entity means the
+    two are the same real-world thing — typically a cross-language split
+    (English vs Catalan institute name). dedup_entities merges them
+    deterministically with zero LLM calls, however dissimilar the names."""
+    a = _make_named('Institute of Space Studies of Catalonia', 'company',
+                    'institute of space studies of catalonia')
+    b = _make_named("Institut d'Estudis Espacials de Catalunya", 'company',
+                    'institut d estudis espacials de catalunya')
+    EntityIdentifier.objects.create(scheme='wikidata', value='Q123456', entity=a, confidence=90)
+
+    client = MagicMock()
+    with patch('ingest.ai.get_client', return_value=client):
+        from ingest.tasks.dedup import dedup_entities
+        result = dedup_entities([str(a.id), str(b.id)],
+                                forced_qids={str(b.id): 'Q123456'})
+
+    assert result['merged'] == 1
+    client.chat.completions.create.assert_not_called()
+    b.refresh_from_db()
+    assert b.status == 'merged'
+
+
+@pytest.mark.django_db
+@pytest.mark.django_db
+def test_kept_selection_weighs_total_evidence_not_fresh_assertions():
+    """A few fresh accepted assertions must not let a young entity absorb an
+    established one (the IEEC failure: 9 fresh assertions outweighed 23
+    fragments + 17 events). Total evidence mass decides. The pair arrives via
+    a QID collision, as it did in production."""
+    from core.models import Assertion, EntityIdentifier, Event, KnowledgeFragment
+
+    young = _make_named('Institute of Space Studies of Catalonia', 'company',
+                        'institute of space studies of catalonia')
+    est = _make_named("Institut d'Estudis Espacials de Catalunya (IEEC)", 'company',
+                      'institut d estudis espacials de catalunya ieec')
+    EntityIdentifier.objects.create(scheme='wikidata', value='Q20105088', entity=est, confidence=90)
+    for attr in ('website', 'headquarters_country', 'founding_year'):
+        Assertion.objects.create(entity=young, attribute_id=attr,
+                                 value_text='ES', status='accepted', confidence=90)
+    for _ in range(10):
+        KnowledgeFragment.objects.create(entity=est, category='general', text='x', confidence=80)
+    for _ in range(8):
+        Event.objects.create(entity=est, title='e')
+
+    client = MagicMock()
+    with patch('ingest.ai.get_client', return_value=client):
+        from ingest.tasks.dedup import dedup_entities
+        result = dedup_entities([str(young.id), str(est.id)],
+                                forced_qids={str(young.id): 'Q20105088'})
+
+    assert result['merged'] == 1
+    client.chat.completions.create.assert_not_called()
+    young.refresh_from_db()
+    est.refresh_from_db()
+    assert est.status == 'active' and young.status == 'merged'
 
 
 @pytest.mark.django_db

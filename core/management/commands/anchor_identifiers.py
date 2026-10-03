@@ -18,6 +18,7 @@ Usage:
 """
 from django.core.management.base import BaseCommand
 from django.db.models import Q
+import re
 
 from core.models import Assertion, Entity, EntityIdentifier
 from core.normalize import normalize_name
@@ -47,28 +48,67 @@ def _search_wikidata(name: str) -> list:
     return resp.json().get('search', [])
 
 
+def _entity_name_variants(entity: Entity) -> set:
+    """Normalised name variants for matching: canonical + aliases, each also
+    with parenthetical acronyms stripped ("X (ABC)" matches "x" and "x abc").
+
+    Canonical names often carry a parenthetical qualifier the external
+    registry never uses ("Institut d'Estudis Espacials de Catalunya (IEEC)"),
+    and the registry label may match an ALIAS instead ("Institute of Space
+    Studies of Catalonia" is an English alias of the Catalan-named item).
+    """
+    from core.models import EntityAlias
+    raw_names = [entity.canonical_name]
+    raw_names.extend(
+        EntityAlias.objects.filter(entity=entity).values_list('alias', flat=True)
+    )
+    variants = set()
+    for raw in raw_names:
+        for form in (raw, re.sub(r'\([^)]*\)', ' ', raw)):
+            norm = normalize_name(form)
+            if norm:
+                variants.add(norm)
+    return variants
+
+
 def _anchor_wikidata(entity: Entity) -> str:
-    """Return the QID if exactly one unambiguous, plausible match exists."""
-    norm = normalize_name(entity.canonical_name)
-    if not norm:
+    """Return the QID if exactly one unambiguous, plausible match exists.
+
+    Searches the canonical name (parenthetical stripped) plus up to two
+    aliases, and requires ONE distinct QID across ALL searches — a second
+    name form matching a different item means the entity's names disagree
+    about what it is, and a wrong anchor poisons dedup forever.
+    """
+    from core.models import EntityAlias
+
+    variants = _entity_name_variants(entity)
+    if not variants:
         return ''
-    try:
-        results = _search_wikidata(entity.canonical_name)
-    except Exception as exc:
-        return ''  # network errors must not abort the sweep
 
-    matches = []
-    for cand in results:
-        labels = {cand.get('label', '')}
-        labels.update(cand.get('aliases', []) or [])
-        if not any(normalize_name(a) == norm for a in labels if a):
-            continue
-        description = (cand.get('description') or '').lower()
-        if entity.space_relevance == 100 or any(h in description for h in _SPACE_HINTS):
-            matches.append(cand['id'])
+    search_strings = [re.sub(r'\([^)]*\)', ' ', entity.canonical_name).strip()]
+    for alias in EntityAlias.objects.filter(entity=entity).values_list('alias', flat=True)[:3]:
+        stripped = re.sub(r'\([^)]*\)', ' ', alias).strip()
+        if stripped and stripped not in search_strings:
+            search_strings.append(stripped)
 
-    if len(matches) == 1:
-        return matches[0]
+    found = set()
+    for query in search_strings[:3]:
+        try:
+            results = _search_wikidata(query)
+        except Exception:
+            return ''  # network errors must not abort the sweep
+        for cand in results:
+            labels = {cand.get('label', '')}
+            labels.update(cand.get('aliases', []) or [])
+            cand_norms = {normalize_name(a) for a in labels if a}
+            if not (cand_norms & variants):
+                continue
+            description = (cand.get('description') or '').lower()
+            if entity.space_relevance == 100 or any(h in description for h in _SPACE_HINTS):
+                found.add(cand['id'])
+
+    if len(found) == 1:
+        return next(iter(found))
     return ''  # zero or ambiguous
 
 
@@ -144,7 +184,27 @@ class Command(BaseCommand):
             for entity in candidates:
                 qid = _anchor_wikidata(entity)
                 if qid:
-                    if not options['dry_run']:
+                    existing = EntityIdentifier.objects.filter(
+                        scheme='wikidata', value=qid,
+                    ).exclude(entity_id=entity.id).first()
+                    if existing is not None and not options['dry_run']:
+                        # Same QID, different entity = same real-world thing
+                        # (typically a cross-language or short-form split).
+                        # Route through dedup's guarded merge; arbitration
+                        # auto-merges with zero LLM calls. The QID ends up on
+                        # the survivor via execute_merge's identifier transfer.
+                        from ingest.tasks.dedup import dedup_entities
+                        dedup_entities(
+                            [str(existing.entity_id), str(entity.id)],
+                            forced_qids={str(entity.id): qid},
+                        )
+                        anchored += 1
+                        self.stdout.write(
+                            f'  {entity.canonical_name[:50]:<50} → {qid} '
+                            f'(QID collision with another entity → merged)'
+                        )
+                        continue
+                    if existing is None and not options['dry_run']:
                         EntityIdentifier.objects.get_or_create(
                             scheme='wikidata', value=qid,
                             defaults={'entity_id': entity.id, 'confidence': 90},
